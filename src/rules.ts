@@ -523,6 +523,20 @@ export const CHEAT_SHEET: { title: string; lines: string[] }[] = [
     ],
   },
   {
+    title: 'Paired activations (house rule)',
+    lines: [
+      'A side turn is TWO operatives, activated by two DIFFERENT players, resolved together.',
+      'Then the turn hands over to the other alliance, who also pick two players.',
+      'Conflicts between the two: declare both intents, then roll sequentially — e.g. resolve the',
+      'charge first, and only shoot if the target survives.',
+      'Lone Wolf: if only one player on a side still has ready operatives, that side reverts to',
+      'single activations for the rest of the turning point.',
+      'Counteract (2024 has no Overwatch): once a side has nothing ready, the other keeps activating',
+      'back-to-back. Per enemy activation the flushed side may pick one expended operative on ENGAGE',
+      'to perform any single 1AP action, moving at most 2". The tracker banks these — spend with –.',
+    ],
+  },
+  {
     title: 'This game (homebrew)',
     lines: [
       'Board 44"×30". Drop zone = full width × 6" deep on your long edge.',

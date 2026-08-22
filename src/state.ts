@@ -33,6 +33,10 @@ export type Game = {
   crit: Record<SideId, number[]> // one entry per turning point
   killOverride: Record<SideId, number[] | null> // GM-editable kill grade thresholds
   order: Record<SideId, string[]> // team ids in activation order, per side
+  paired: boolean // house rule: two operatives from two different players per side turn
+  sideTurn: SideId // which alliance is activating, in paired mode
+  pairUsed: string[] // team ids that have already activated in this side turn
+  counteracts: Record<SideId, number> // banked Counteracts for a flushed side
   roster: Record<string, Operative[]> // teamId -> live, editable operatives
   ops: Record<string, OpState>
   teams: Record<string, PlayerState>
@@ -64,6 +68,10 @@ export const initialGame = (): Game => {
       imperium: TEAMS.filter((t) => t.side === 'imperium').map((t) => t.id),
       xenos: TEAMS.filter((t) => t.side === 'xenos').map((t) => t.id),
     },
+    paired: true,
+    sideTurn: 'imperium',
+    pairUsed: [],
+    counteracts: { imperium: 0, xenos: 0 },
     roster,
     ops: freshOps(roster),
     teams: Object.fromEntries(TEAMS.map((t) => [t.id, { player: t.player, cp: STARTING_CP, tacOp: '', tacVp: 0 }])),
@@ -90,6 +98,9 @@ export type Action =
   | { type: 'activate'; opId: string }
   | { type: 'skip' }
   | { type: 'moveTeam'; teamId: string; dir: -1 | 1 }
+  | { type: 'paired'; value: boolean }
+  | { type: 'counteractBank'; side: SideId; delta: number }
+  | { type: 'passPair' }
   | { type: 'order'; opId: string; value: Order }
   | { type: 'teamOrder'; teamId: string; value: Order }
   | { type: 'cp'; teamId: string; delta: number }
@@ -120,7 +131,13 @@ export function reduce(g: Game, a: Action): Game {
     case 'critOp':
       return { ...g, critOp: a.id }
     case 'initiative':
-      return { ...g, initiative: a.side, turnIdx: 0 }
+      return { ...g, initiative: a.side, sideTurn: a.side, pairUsed: [], turnIdx: 0 }
+    case 'paired':
+      return { ...g, paired: a.value, sideTurn: g.initiative, pairUsed: [], turnIdx: 0 }
+    case 'counteractBank':
+      return { ...g, counteracts: { ...g.counteracts, [a.side]: Math.max(0, g.counteracts[a.side] + a.delta) } }
+    case 'passPair':
+      return handOff({ ...g, pairUsed: [] })
     case 'primary':
       return { ...g, primary: { ...g.primary, [a.side]: a.op } }
     case 'critVp': {
@@ -172,12 +189,30 @@ export function reduce(g: Game, a: Action): Game {
     }
     case 'activate': {
       const o = g.ops[a.opId]
-      const isCurrent = currentTeamId(g) === teamIdOf(g, a.opId)
-      return {
-        ...g,
-        ops: { ...g.ops, [a.opId]: { ...o, expended: !o.expended } },
-        turnIdx: !o.expended && isCurrent ? g.turnIdx + 1 : g.turnIdx,
+      const teamId = teamIdOf(g, a.opId)
+      const spending = !o.expended // readying an operative again is a correction, not an activation
+      const next = { ...g, ops: { ...g.ops, [a.opId]: { ...o, expended: spending } } }
+
+      if (!g.paired) {
+        const isCurrent = currentTeamId(g) === teamId
+        return { ...next, turnIdx: spending && isCurrent ? g.turnIdx + 1 : g.turnIdx }
       }
+      if (!spending || !teamId) return next
+
+      const team = TEAMS.find((t) => t.id === teamId)!
+      // An out-of-turn activation is the GM's call; we only track whose turn it is.
+      if (team.side !== g.sideTurn) return next
+
+      // While the enemy has nothing ready, each activation banks them a Counteract.
+      const foe = enemy(g.sideTurn)
+      const enemyDry = !teamsOf(next, foe).some((t) => readyCount(next, t.id) > 0)
+      const banked = enemyDry
+        ? { ...next, counteracts: { ...next.counteracts, [foe]: next.counteracts[foe] + 1 } }
+        : next
+
+      const used = g.pairUsed.includes(teamId) ? g.pairUsed : [...g.pairUsed, teamId]
+      const staged = { ...banked, pairUsed: used }
+      return used.length >= pairTarget(staged) ? handOff({ ...staged, pairUsed: [] }) : staged
     }
     case 'skip':
       return { ...g, turnIdx: g.turnIdx + 1 }
@@ -223,7 +258,16 @@ export function reduce(g: Game, a: Action): Game {
       const teams = Object.fromEntries(
         TEAMS.map((t) => [t.id, { ...g.teams[t.id], cp: g.teams[t.id].cp + (t.side === g.initiative ? 1 : 2) }]),
       )
-      return { ...g, tp: Math.min(g.tpCount, g.tp + 1), ops, teams, turnIdx: 0 }
+      return {
+        ...g,
+        tp: Math.min(g.tpCount, g.tp + 1),
+        ops,
+        teams,
+        turnIdx: 0,
+        sideTurn: g.initiative,
+        pairUsed: [],
+        counteracts: { imperium: 0, xenos: 0 }, // a Counteract is a this-turn opportunity
+      }
     }
     case 'finish':
       return { ...g, finished: a.finished }
@@ -355,6 +399,29 @@ export const maxTeamsPerSide = Math.max(
   ...(['imperium', 'xenos'] as SideId[]).map((s) => TEAMS.filter((t) => t.side === s).length),
 )
 
+/**
+ * How many activations this side turn takes. Two, per the Buddy System — but the
+ * Lone Wolf exception drops it to one when only a single player still has ready
+ * operatives. Teams already counted in this pair still count toward the target, so
+ * spending a player's last operative cannot move the goalposts mid-turn.
+ */
+export const pairTarget = (g: Game) => {
+  if (!g.paired) return 1
+  const live = teamsOf(g, g.sideTurn).filter((t) => readyCount(g, t.id) > 0 || g.pairUsed.includes(t.id))
+  return Math.min(2, live.length)
+}
+
+/** Teams on the active side that may still take one of this side turn's activations. */
+export const pairEligible = (g: Game) =>
+  teamsOf(g, g.sideTurn).filter((t) => readyCount(g, t.id) > 0 && !g.pairUsed.includes(t.id))
+
+/** Hand the turn over — unless the other side has nothing ready, in which case the
+ *  active side keeps activating back-to-back and the other side banks Counteracts. */
+const handOff = (g: Game): Game => {
+  const other = enemy(g.sideTurn)
+  return teamsOf(g, other).some((t) => readyCount(g, t.id) > 0) ? { ...g, sideTurn: other } : g
+}
+
 /** How the team's surviving operatives are split across orders, and how many are still ready. */
 export const orderCounts = (g: Game, teamId: string) => {
   const live = teamOps(g, teamId).filter((o) => g.ops[o.id] && !g.ops[o.id].dead)
@@ -393,7 +460,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v9' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v10' // bump when the shape changes; old saves are ignored
 
 export function useGame() {
   const [game, dispatch] = useReducer(reduce, null, () => {

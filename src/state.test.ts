@@ -24,6 +24,8 @@ import {
   kills,
   objectiveCounts,
   orderCounts,
+  pairEligible,
+  pairTarget,
   reduce,
   scores,
   sideOps,
@@ -33,6 +35,8 @@ import {
 } from './state'
 
 const ids = (g: Game, teamId: string) => teamOps(g, teamId).map((o) => o.id)
+/** Paired activations are the default, so official-alternation tests opt out. */
+const single = () => reduce(initialGame(), { type: 'paired', value: false })
 const killOff = (g: Game, opIds: string[]) =>
   opIds.reduce((acc, opId) => reduce(acc, { type: 'dead', opId, dead: true }), g)
 
@@ -128,7 +132,7 @@ test('end-of-battle bonus VP goes to the higher kill grade', () => {
 })
 
 test('rotation alternates sides and skips exhausted players', () => {
-  let g = initialGame() // initiative: imperium
+  let g = single() // initiative: imperium
   expect(currentTeamId(g)).toBe('dw')
   g = reduce(g, { type: 'activate', opId: ids(g, 'dw')[0] })
   expect(currentTeamId(g)).toBe('rav') // alternates to the other side
@@ -244,7 +248,7 @@ test('a team can be moved within its own side, changing the rotation', () => {
 })
 
 test('reordering resets the activation cursor', () => {
-  let g = reduce(initialGame(), { type: 'activate', opId: teamOps(initialGame(), 'dw')[0].id })
+  let g = reduce(single(), { type: 'activate', opId: teamOps(initialGame(), 'dw')[0].id })
   expect(g.turnIdx).toBe(1)
   g = reduce(g, { type: 'moveTeam', teamId: 'aod', dir: 1 })
   expect(g.turnIdx).toBe(0)
@@ -269,6 +273,123 @@ test('a saved order missing a newly added team self-heals instead of dropping it
 test('a saved order holding a team that no longer exists ignores it', () => {
   const g = { ...initialGame(), order: { imperium: ['ghost', 'aod'], xenos: [] } }
   expect(teamsOf(g, 'imperium').map((t) => t.id)).toEqual(['aod', 'dw', 'dw2', 'sct'])
+})
+
+/* ---------- paired activations (Buddy System) ---------- */
+
+const spend = (g: Game, teamId: string, n = 1) => {
+  let out = g
+  for (const opId of teamOps(g, teamId)
+    .filter((o) => !out.ops[o.id].expended && !out.ops[o.id].dead)
+    .slice(0, n)
+    .map((o) => o.id))
+    out = reduce(out, { type: 'activate', opId })
+  return out
+}
+
+test('paired activations are on by default and take two different players', () => {
+  let g = initialGame()
+  expect(g.paired).toBe(true)
+  expect(g.sideTurn).toBe('imperium')
+  expect(pairTarget(g)).toBe(2)
+  expect(pairEligible(g).map((t) => t.id)).toEqual(['dw', 'aod', 'dw2', 'sct'])
+
+  g = spend(g, 'dw')
+  expect(g.sideTurn).toBe('imperium') // still Imperium's turn, one to go
+  expect(g.pairUsed).toEqual(['dw'])
+  expect(pairEligible(g).map((t) => t.id)).toEqual(['aod', 'dw2', 'sct']) // DW cannot go twice
+
+  g = spend(g, 'aod')
+  expect(g.sideTurn).toBe('xenos') // pair complete, handed over
+  expect(g.pairUsed).toEqual([])
+})
+
+test('a second operative from the same player does not complete the pair', () => {
+  let g = spend(initialGame(), 'dw', 2) // both from Deathwatch
+  expect(g.pairUsed).toEqual(['dw'])
+  expect(g.sideTurn).toBe('imperium') // no handover: that was one player, not two
+})
+
+test('activating out of turn expends the operative but does not advance the side turn', () => {
+  let g = spend(initialGame(), 'rav') // Xenos acting during Imperium's turn
+  expect(g.sideTurn).toBe('imperium')
+  expect(g.pairUsed).toEqual([])
+  expect(g.ops[teamOps(g, 'rav')[0].id].expended).toBe(true) // the GM's call still lands
+})
+
+test('Pass hands the turn over mid-pair', () => {
+  let g = spend(initialGame(), 'dw')
+  expect(g.sideTurn).toBe('imperium')
+  g = reduce(g, { type: 'passPair' })
+  expect(g.sideTurn).toBe('xenos')
+  expect(g.pairUsed).toEqual([])
+})
+
+test('Lone Wolf: one player left on a side drops the target to a single activation', () => {
+  let g = initialGame()
+  // flush every Imperium player but the Scouts
+  for (const t of ['dw', 'aod', 'dw2']) g = spend(g, t, 99)
+  g = { ...g, sideTurn: 'imperium', pairUsed: [] }
+  expect(pairTarget(g)).toBe(1)
+  g = spend(g, 'sct')
+  expect(g.sideTurn).toBe('xenos') // one activation was the whole side turn
+})
+
+test('spending a player last operative cannot move the pair goalposts mid-turn', () => {
+  let g = initialGame()
+  for (const t of ['aod', 'sct', 'dw2']) g = spend(g, t, 99) // only Deathwatch has anything ready
+  g = { ...g, sideTurn: 'imperium', pairUsed: [] }
+  expect(pairTarget(g)).toBe(1)
+  g = spend(g, 'dw', 99) // burn all five in one go
+  expect(pairTarget({ ...g, sideTurn: 'imperium', pairUsed: ['dw'] })).toBe(1)
+})
+
+test('a flushed side banks one Counteract per enemy activation', () => {
+  let g = initialGame()
+  for (const t of ['dw', 'aod', 'sct', 'dw2']) g = spend(g, t, 99) // Imperium is out
+  expect(g.counteracts.imperium).toBe(0)
+
+  g = { ...g, sideTurn: 'xenos', pairUsed: [] }
+  g = spend(g, 'rav')
+  expect(g.counteracts.imperium).toBe(1)
+  g = spend(g, 'xv26')
+  expect(g.counteracts.imperium).toBe(2)
+  expect(g.sideTurn).toBe('xenos') // no handover — there is nobody to hand to
+  expect(g.counteracts.xenos).toBe(0)
+
+  g = reduce(g, { type: 'counteractBank', side: 'imperium', delta: -1 })
+  expect(g.counteracts.imperium).toBe(1)
+  g = reduce(g, { type: 'counteractBank', side: 'imperium', delta: -5 })
+  expect(g.counteracts.imperium).toBe(0) // never negative
+})
+
+test('a new turning point resets the side turn, the pair and any banked Counteracts', () => {
+  let g = initialGame()
+  for (const t of ['dw', 'aod', 'sct', 'dw2']) g = spend(g, t, 99)
+  g = { ...g, sideTurn: 'xenos' }
+  g = spend(g, 'rav')
+  expect(g.counteracts.imperium).toBeGreaterThan(0)
+
+  g = reduce(g, { type: 'nextTp' })
+  expect(g.sideTurn).toBe(g.initiative)
+  expect(g.pairUsed).toEqual([])
+  expect(g.counteracts).toEqual({ imperium: 0, xenos: 0 })
+  expect(pairTarget(g)).toBe(2) // everyone readied, back to the Buddy System
+})
+
+test('changing initiative moves the side turn with it', () => {
+  const g = reduce(initialGame(), { type: 'initiative', side: 'xenos' })
+  expect(g.sideTurn).toBe('xenos')
+  expect(pairEligible(g).map((t) => t.id)).toEqual(['rav', 'xv26', 'kom'])
+})
+
+test('switching to single mode restores the official alternation', () => {
+  let g = spend(initialGame(), 'dw')
+  expect(g.pairUsed).toEqual(['dw'])
+  g = reduce(g, { type: 'paired', value: false })
+  expect(g.pairUsed).toEqual([])
+  expect(g.turnIdx).toBe(0)
+  expect(pairTarget(g)).toBe(1)
 })
 
 /* ---------- orders ---------- */

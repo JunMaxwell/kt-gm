@@ -33,6 +33,8 @@ import {
   maxTeamsPerSide,
   objectiveCounts,
   orderCounts,
+  pairEligible,
+  pairTarget,
   readyCount,
   rotation,
   scores,
@@ -193,7 +195,6 @@ function TurnBar({
   editing: boolean
   setEditing: (v: boolean) => void
 }) {
-  const current = TEAMS.find((t) => t.id === currentTeamId(game))
   const critOp = CRIT_OPS.find((c) => c.id === game.critOp)
 
   return (
@@ -289,6 +290,14 @@ function TurnBar({
         </label>
 
         <div className="ml-auto flex items-center gap-2">
+          <DarkBtn
+            on={game.paired}
+            onClick={() => dispatch({ type: 'paired', value: !game.paired })}
+            className="display"
+            title="House rule: each side activates two operatives from two different players, then hands over. Off = the official one-at-a-time alternation."
+          >
+            {game.paired ? 'Paired' : 'Single'}
+          </DarkBtn>
           <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
             {editing ? 'Done editing' : 'Edit rosters'}
           </DarkBtn>
@@ -315,36 +324,106 @@ function TurnBar({
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        {current ? (
-          <p className="flex items-baseline gap-2">
-            <Label className="text-white/50">Activating</Label>
-            <span
-              className="display rounded px-2 py-0.5 text-xl"
-              style={{ background: current.color, color: current.ink ? '#282c34' : '#fff' }}
-            >
-              {current.name} · {game.teams[current.id].player}
-            </span>
-            <span className="text-sm text-white/50">{readyCount(game, current.id)} ready</span>
-          </p>
-        ) : (
-          <p className="display text-xl text-amber-300">Firefight phase over — start the next turning point</p>
-        )}
-        {current && (
-          <DarkBtn onClick={() => dispatch({ type: 'skip' })} className="display">
-            Skip / pass
-          </DarkBtn>
-        )}
-        {SIDE_IDS.map((s) => [s, counteract(game, s)] as const)
-          .filter(([, c]) => c.available)
-          .map(([s, c]) => (
-            <p key={s} className="rounded bg-amber-300 px-2 py-1 text-sm text-ink">
-              {SIDES[s]} may <b>counteract</b>: one expended <b>Engage</b> operative, free 1AP action (not Guard), max 2"
-              move.{' '}
-              {c.eligible.length ? `${c.eligible.length} eligible on Engage.` : 'None on Engage — nobody can.'}
-            </p>
-          ))}
+        {game.paired ? <PairedTurn game={game} dispatch={dispatch} /> : <SingleTurn game={game} dispatch={dispatch} />}
       </div>
     </header>
+  )
+}
+
+/** Official alternation: one named team is up. */
+function SingleTurn({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
+  const current = TEAMS.find((t) => t.id === currentTeamId(game))
+  return (
+    <>
+      {current ? (
+        <p className="flex items-baseline gap-2">
+          <Label className="text-white/50">Activating</Label>
+          <span
+            className="display rounded px-2 py-0.5 text-xl"
+            style={{ background: current.color, color: current.ink ? '#282c34' : '#fff' }}
+          >
+            {current.name} · {game.teams[current.id].player}
+          </span>
+          <span className="text-sm text-white/50">{readyCount(game, current.id)} ready</span>
+        </p>
+      ) : (
+        <p className="display text-xl text-amber-300">Firefight phase over — start the next turning point</p>
+      )}
+      {current && (
+        <DarkBtn onClick={() => dispatch({ type: 'skip' })} className="display">
+          Skip / pass
+        </DarkBtn>
+      )}
+      {SIDE_IDS.map((s) => [s, counteract(game, s)] as const)
+        .filter(([, c]) => c.available)
+        .map(([s, c]) => (
+          <p key={s} className="rounded bg-amber-300 px-2 py-1 text-sm text-ink">
+            {SIDES[s]} may <b>counteract</b>: one expended <b>Engage</b> operative, free 1AP action (not Guard), max 2"
+            move. {c.eligible.length ? `${c.eligible.length} eligible on Engage.` : 'None on Engage — nobody can.'}
+          </p>
+        ))}
+    </>
+  )
+}
+
+/** Buddy System: the side is up, and two different players must each spend one. */
+function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
+  const target = pairTarget(game)
+  const done = game.pairUsed.length
+  const eligible = pairEligible(game)
+  const foe = enemy(game.sideTurn)
+  const foeDry = !teamsOf(game, foe).some((t) => readyCount(game, t.id) > 0)
+  const banked = game.counteracts[foe]
+
+  if (!target)
+    return <p className="display text-xl text-amber-300">Firefight phase over — start the next turning point</p>
+
+  return (
+    <>
+      <p className="flex flex-wrap items-baseline gap-2">
+        <Label className="text-white/50">Activating</Label>
+        <span
+          className="display rounded px-2 py-0.5 text-xl"
+          style={{ background: SIDE_COLOR[game.sideTurn], color: '#fff' }}
+        >
+          {SIDES[game.sideTurn]}
+        </span>
+        <span className="display text-lg text-white">
+          {done}/{target}
+        </span>
+        {target === 1 && (
+          <span className="display rounded bg-amber-300 px-1.5 text-xs text-ink" title="Only one player on this side still has ready operatives, so it reverts to single activations">
+            lone wolf
+          </span>
+        )}
+      </p>
+
+      <p className="flex flex-wrap items-center gap-1">
+        <Label className="text-white/40">{done ? 'still to go' : 'pick two'}</Label>
+        {eligible.map((t) => (
+          <TeamPill key={t.id} team={t} />
+        ))}
+        {game.pairUsed.map((id) => {
+          const t = TEAMS.find((x) => x.id === id)
+          return t ? <TeamPill key={id} team={t} className="opacity-30 line-through" /> : null
+        })}
+      </p>
+
+      <DarkBtn onClick={() => dispatch({ type: 'passPair' })} className="display" title="Hand the turn over without spending the rest of this pair">
+        Pass
+      </DarkBtn>
+
+      {foeDry && (
+        <p className="flex items-center gap-2 rounded bg-amber-300 px-2 py-1 text-sm text-ink">
+          <b>{SIDES[foe]} is out — Counteract:</b> per enemy activation, one expended <b>Engage</b> operative may
+          perform any single 1AP action, moving at most 2".
+          <span className="display">banked {banked}</span>
+          <Btn className="w-6 px-0" onClick={() => dispatch({ type: 'counteractBank', side: foe, delta: -1 })} disabled={!banked}>
+            –
+          </Btn>
+        </p>
+      )}
+    </>
   )
 }
 
@@ -594,9 +673,40 @@ function ActivationOrder({ game, dispatch }: { game: Game; dispatch: Dispatch })
     <section className="overflow-hidden rounded-xl border border-rule bg-paper shadow-sm">
       <header className="flex items-center justify-between bg-ink px-3 py-1.5 text-white">
         <h2 className="display text-xl">Activation order</h2>
-        <span className="display text-xs text-white/50">move within a side</span>
+        <span className="display text-xs text-white/50">{game.paired ? 'paired — order unused' : 'move within a side'}</span>
       </header>
 
+      {game.paired ? (
+        <div className="p-3">
+          {SIDE_IDS.map((side) => (
+            <div key={side} className="mb-2 last:mb-0">
+              <p className="display text-sm" style={{ color: SIDE_COLOR[side] }}>
+                {SIDES[side]}
+                {side === game.sideTurn && <span className="ml-1 text-ink/45">· activating</span>}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {teamsOf(game, side).map((t) => {
+                  const ready = readyCount(game, t.id)
+                  const used = game.pairUsed.includes(t.id)
+                  return (
+                    <li key={t.id} className="flex items-center gap-2 text-xs">
+                      <TeamPill team={t} className={used || !ready ? 'opacity-40' : ''} />
+                      <span className="min-w-0 flex-1 truncate text-ink/55">{game.teams[t.id].player}</span>
+                      <span className="text-ink/40">
+                        {!ready ? 'nothing ready' : used ? 'gone this pair' : `${ready} ready`}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+          <p className="mt-2 text-xs text-ink/45">
+            Two operatives from two different players, then hand over. One player left on a side means single
+            activations for the rest of the turning point.
+          </p>
+        </div>
+      ) : (
       <ol className="p-3">
         {seq.map((t, i) => {
           const live = t.id === currentId
@@ -632,10 +742,13 @@ function ActivationOrder({ game, dispatch }: { game: Game; dispatch: Dispatch })
           )
         })}
       </ol>
-      <p className="px-3 pb-3 text-xs text-ink/45">
-        Sides alternate one operative per slot. Reordering a team moves it within its own side, and
-        resets the cursor to the top of the cycle.
-      </p>
+      )}
+      {!game.paired && (
+        <p className="px-3 pb-3 text-xs text-ink/45">
+          Sides alternate one operative per slot. Reordering a team moves it within its own side, and resets the cursor
+          to the top of the cycle.
+        </p>
+      )}
     </section>
   )
 }
@@ -891,7 +1004,9 @@ function TeamCard({
   const ops = teamOps(game, teamId)
   const counts = orderCounts(game, teamId)
   const selectedTacOp = tacOp(p.tacOp)
-  const isCurrent = !editing && currentTeamId(game) === teamId
+  const isCurrent =
+    !editing &&
+    (game.paired ? pairEligible(game).some((t) => t.id === teamId) : currentTeamId(game) === teamId)
 
   const add = (value: string) => {
     if (!value) return
