@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+@import '@fontsource/bebas-neue/400.css';
+
+@theme {
+  /* chrome */
+  --color-ink: #282c34;
+  --color-paper: #ffffff;
+  --color-wash: #eef0f3;
+  --color-rule: #d8dbe0;
+
+  /* sides */
+  --color-imperium: #0066a5;
+  --color-xenos: #d1232a;
+
+  /* archetypes, from the reference palette */
+  --color-seek: #bd0003;
+  --color-security: #0b6be1;
+  --color-recon: #f05c22;
+  --color-infiltration: #5f5f5f;
+
+  --font-display: 'Bebas Neue', 'Haettenschweiler', 'Arial Narrow', sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-wash);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Bebas has no lowercase — always drive it uppercase with a little tracking. */
+.display {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+/* the reference's op names: letterspaced monospace caps under a rule */
+.opname {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
