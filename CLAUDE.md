@@ -253,8 +253,19 @@ at it without a Caddyfile entry. green-orange's Caddy already claims 3000/3001/3
 
 The `killteam` database had to be created **by hand, once** — the multi-database init script only
 runs on a fresh volume, and prod's has existed for a long time. `server/index.ts` then creates its
-two tables with `create table if not exists` at boot; there is no migration tool, which is also why
-it cannot land in the restart loop that `DEPLOY.md` warns about.
+two tables with `create table if not exists` at boot; there is no migration tool.
+
+That does **not** make it immune to the restart loop `DEPLOY.md` warns about — an earlier version of
+this note claimed it did, and was wrong. The table creation is a top-level `await`, so *any*
+connection failure crashes the process and `restart: unless-stopped` retries forever with the same
+error. It has happened once, from a mangled password (below).
+
+**Postgres credentials are passed as discrete `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` /
+`PGDATABASE` vars, never as an interpolated `DATABASE_URL`.** A password containing `@ : / ? # %`
+silently corrupts the URL and Postgres answers `28P01 password authentication failed` for a password
+that is perfectly correct — a very expensive red herring. `new SQL()` takes no argument: Bun reads
+`DATABASE_URL` when it exists (so the local-dev command above still works) and otherwise falls back
+to the `PG*` vars, which is what `docker-compose.yml` sets.
 
 There is no SSH to the VPS. The only way in is Pangolin's WireGuard tunnel followed by Dockhand's
 webhook, which is why `api.yml` carries that whole shell block verbatim from green-orange.

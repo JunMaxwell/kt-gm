@@ -11,8 +11,15 @@ services:
     image: ghcr.io/junmaxwell/kt-gm-api:latest
     restart: unless-stopped
     environment:
+      # Discrete PG* vars, NOT an interpolated DATABASE_URL — a password containing
+      # @ : / ? # or % silently mangles the URL and you get "password authentication
+      # failed" with a perfectly correct password. Bun's SQL reads these directly.
       # Reuses the green-orange postgres role and password; only the database is new.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/killteam
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: killteam
       # Comma-separated. The SPA's origin — not this service's own.
       CORS_ORIGINS: ${CORS_ORIGINS}
       PORT: 3003
