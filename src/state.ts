@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 
 import {
   CRIT_CAP_PER_TP,
@@ -81,6 +81,7 @@ export const initialGame = (): Game => {
 
 export type Action =
   | { type: 'reset' }
+  | { type: 'replace'; game: Game } // a whole snapshot: from the relay, or a loaded save
   | { type: 'critOp'; id: CritOpId }
   | { type: 'initiative'; side: SideId }
   | { type: 'primary'; side: SideId; op: OpKind | null }
@@ -128,6 +129,10 @@ export function reduce(g: Game, a: Action): Game {
   switch (a.type) {
     case 'reset':
       return initialGame()
+    // Merged over a fresh game the same way a localStorage load is, so a snapshot from an
+    // older client can't leave a newer top-level field undefined.
+    case 'replace':
+      return { ...initialGame(), ...a.game }
     case 'critOp':
       return { ...g, critOp: a.id }
     case 'initiative':
@@ -461,18 +466,98 @@ export const counteract = (g: Game, s: SideId) => {
 /* ---------- persistence ---------- */
 
 const KEY = 'killteam-gm/v10' // bump when the shape changes; old saves are ignored
+const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
+
+/* ---------- rooms ---------- */
+
+export const API = import.meta.env.VITE_API_URL ?? ''
+
+/** A GM has the write token. A viewer has only the code, off the URL. */
+export type Room = { code: string; token?: string }
+export type SaveMeta = { id: string; label: string; saved_at: string }
+
+const read = <T,>(key: string): T | null => {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? 'null')
+  } catch {
+    return null
+  }
+}
+
+/** `#/r/ABCD` in the URL means spectator. Otherwise fall back to the stored GM room. */
+const readRoom = (): Room | null => {
+  const viewing = location.hash.match(/^#\/r\/([A-Z0-9]{4})$/)
+  return viewing ? { code: viewing[1] } : read<Room>(ROOM_KEY)
+}
+
+export const viewerUrl = (code: string) => `${location.origin}${location.pathname}#/r/${code}`
+
+const api = (path: string, token: string, init: RequestInit = {}) =>
+  fetch(`${API}${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
+  })
+
+export const createRoom = async (): Promise<Room> => {
+  const room = (await (await fetch(`${API}/rooms`, { method: 'POST' })).json()) as Room
+  localStorage.setItem(ROOM_KEY, JSON.stringify(room))
+  return room
+}
+
+export const listSaves = async (r: Room): Promise<SaveMeta[]> =>
+  r.token ? await (await api(`/rooms/${r.code}/saves`, r.token)).json() : []
+
+export const saveMatch = (r: Room, label: string, game: Game) =>
+  api(`/rooms/${r.code}/saves`, r.token!, { method: 'POST', body: JSON.stringify({ label, game }) })
+
+export const loadSave = async (r: Room, id: string): Promise<Game> =>
+  await (await api(`/rooms/${r.code}/saves/${id}`, r.token!)).json()
 
 export function useGame() {
   const [game, dispatch] = useReducer(reduce, null, () => {
-    try {
-      const saved = localStorage.getItem(KEY)
-      return saved ? { ...initialGame(), ...JSON.parse(saved) } : initialGame()
-    } catch {
-      return initialGame()
-    }
+    const saved = read<Game>(KEY)
+    return saved ? { ...initialGame(), ...saved } : initialGame()
   })
+  const [room, setRoom] = useState(readRoom)
+  const viewer = !!room && !room.token
+
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify(game))
-  }, [game])
-  return [game, dispatch] as const
+    if (!viewer) localStorage.setItem(KEY, JSON.stringify(game))
+  }, [game, viewer])
+
+  // GM → relay. Debounced because player-name and tac-op inputs dispatch per keystroke, and
+  // best-effort because localStorage is the source of truth — a dead VPS must not stop the match.
+  useEffect(() => {
+    if (!room?.token) return
+    const t = setTimeout(() => {
+      api(`/rooms/${room.code}/state`, room.token!, { method: 'POST', body: JSON.stringify(game) }).catch(
+        () => {},
+      )
+    }, 400)
+    return () => clearTimeout(t)
+  }, [game, room])
+
+  // Viewer ← relay. The server sends the current snapshot on connect, so a late joiner or a
+  // reconnect is caught up without a separate fetch.
+  useEffect(() => {
+    if (!viewer || !room) return
+    let ws: WebSocket
+    let retry: ReturnType<typeof setTimeout>
+    let done = false
+    const connect = () => {
+      ws = new WebSocket(`${API.replace(/^http/, 'ws')}/rooms/${room.code}/ws`)
+      ws.onmessage = (e) => dispatch({ type: 'replace', game: JSON.parse(e.data) })
+      ws.onclose = () => {
+        if (!done) retry = setTimeout(connect, 2000)
+      }
+    }
+    connect()
+    return () => {
+      done = true
+      clearTimeout(retry)
+      ws.close()
+    }
+  }, [viewer, room])
+
+  return [game, dispatch, { room, viewer, setRoom }] as const
 }

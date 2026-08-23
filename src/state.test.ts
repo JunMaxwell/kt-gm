@@ -608,3 +608,38 @@ test('setCritVp writes an absolute value and respects the per-TP cap', () => {
   g = reduce(g, { type: 'setCritVp', side: 'xenos', tp: 1, value: 2 })
   expect(g.crit.xenos[1]).toBe(2)
 })
+
+/* ---------- replace: relay snapshots and loaded saves ---------- */
+
+test('replace adopts a whole snapshot, wounds and turn state included', () => {
+  const played = [
+    { type: 'setTp', value: 3 },
+    { type: 'wound', opId: sideOps(initialGame(), 'xenos')[0].id, delta: -2 },
+    { type: 'cp', teamId: 'dw', delta: 2 },
+  ].reduce((g, a) => reduce(g, a as Parameters<typeof reduce>[1]), initialGame())
+
+  const wire = JSON.parse(JSON.stringify(played)) as Game // what the socket actually delivers
+  const got = reduce(initialGame(), { type: 'replace', game: wire })
+
+  expect(got.tp).toBe(3)
+  expect(got.teams.dw.cp).toBe(played.teams.dw.cp)
+  expect(got.ops).toEqual(played.ops)
+  expect(got.roster).toEqual(played.roster)
+})
+
+test('replace fills in fields a snapshot from an older client is missing', () => {
+  const { critCap: _c, counteracts: _n, ...stale } = initialGame()
+  const got = reduce(initialGame(), { type: 'replace', game: stale as Game })
+
+  expect(got.critCap).toBe(initialGame().critCap)
+  expect(got.counteracts).toEqual({ imperium: 0, xenos: 0 })
+  expect(Object.keys(got).sort()).toEqual(Object.keys(initialGame()).sort())
+})
+
+test('replace does not read the previous game, so viewers cannot drift', () => {
+  const diverged = reduce(reduce(initialGame(), { type: 'nextTp' }), { type: 'passPair' })
+  const fresh = initialGame()
+  expect(reduce(diverged, { type: 'replace', game: fresh })).toEqual(
+    reduce(fresh, { type: 'replace', game: fresh }),
+  )
+})

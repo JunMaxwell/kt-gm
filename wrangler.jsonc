@@ -1,0 +1,11 @@
+{
+  // Static assets only — there is no Worker script. The SPA talks straight to the
+  // relay on the VPS, so nothing needs to run at the edge.
+  "name": "kt-gm",
+  "compatibility_date": "2026-08-23",
+  "assets": {
+    "directory": "./dist",
+    // Room links are hash-based (#/r/ABCD), so this only matters for a stray deep link.
+    "not_found_handling": "single-page-application"
+  }
+}

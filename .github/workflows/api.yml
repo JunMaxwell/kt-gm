@@ -1,0 +1,81 @@
+# Builds the room relay image and tells Dockhand to redeploy the kt-gm stack.
+#
+# Only runs when the server actually changes — the SPA deploys on its own (deploy.yml)
+# and the two are independent. The image tag stays `latest` because Dockhand pulls on
+# redeploy; the webhook below is what makes a new image go live.
+name: Deploy relay API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - '.github/workflows/api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: kt-gm-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The VPS is amd64; the runner is too, so no buildx emulation needed.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/junmaxwell/kt-gm-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The VPS has no public SSH. The only way in is Pangolin's WireGuard tunnel,
+      # then Dockhand's webhook. Lifted verbatim from the green-orange pipeline.
+      - name: Connect to Pangolin and trigger Dockhand
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://static.pangolin.net/get-cli.sh | sed "s|curl -fsSL \\\"\$GITHUB_API_URL\\\"|curl -fsSL -H \\\"Authorization: Bearer ${{ github.token }}\\\" \\\"\$GITHUB_API_URL\\\"|g" | sudo bash
+
+          sudo pangolin up \
+            --id "${{ secrets.PANGOLIN_ID }}" \
+            --secret "${{ secrets.PANGOLIN_SECRET }}" \
+            --endpoint "${{ secrets.PANGOLIN_ENDPOINT }}" \
+            --override-dns \
+            --attach > /tmp/pangolin.log 2>&1 &
+
+          echo "Waiting for WireGuard tunnel…"
+          for i in $(seq 1 40); do
+            grep -q "WireGuard device created" /tmp/pangolin.log && break
+            sleep 2
+          done
+          grep -q "WireGuard device created" /tmp/pangolin.log \
+            || { echo "Tunnel did not come up:"; cat /tmp/pangolin.log; exit 1; }
+
+          # Holepunch fails behind GitHub's NAT, so wait for the relay path too.
+          echo "Waiting for peer path…"
+          for i in $(seq 1 20); do
+            grep -qE "holepunch (succeeded|connected)|point to relay" /tmp/pangolin.log 2>/dev/null && break
+            sleep 2
+          done
+          sleep 3
+
+          echo "Triggering Dockhand webhook…"
+          curl -fsS -X POST "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
+            --retry 8 --retry-all-errors --retry-connrefused --max-time 90 \
+            || { echo "Webhook call failed:"; cat /tmp/pangolin.log; exit 1; }

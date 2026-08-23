@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy console to Cloudflare
 
 on:
   push:
@@ -7,17 +7,15 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time. A newer push waits rather than cancelling a run that is
-# already publishing, so Pages never ends up serving a half-uploaded artifact.
+# already publishing, so the site never serves a half-uploaded build.
 concurrency:
-  group: pages
+  group: cloudflare
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,24 +30,12 @@ jobs:
       - run: bun run lint
       - run: bun test
 
-      # Emits base_path (/kt-gm), which Vite needs to rewrite asset URLs.
-      - id: pages
-        uses: actions/configure-pages@v5
-
       - run: bun run build
         env:
-          VITE_BASE: ${{ steps.pages.outputs.base_path }}
+          # Baked in at build time — a static SPA has no runtime config.
+          VITE_API_URL: https://kt-api.ydothien.work
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: cloudflare/wrangler-action@v3
         with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

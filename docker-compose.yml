@@ -1,0 +1,35 @@
+# Room relay, deployed as its own Dockhand stack on the VPS.
+#
+# It touches the green-orange stack in exactly one place: it joins that stack's existing
+# `internal` network to reach the Postgres container. No changes to green-orange's compose,
+# Caddyfile, or deploy.env — the port is published straight to the host and a Pangolin
+# resource points at it, so Caddy is not in the path at all.
+name: kt-gm
+
+services:
+  api:
+    image: ghcr.io/junmaxwell/kt-gm-api:latest
+    restart: unless-stopped
+    environment:
+      # Reuses the green-orange postgres role and password; only the database is new.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/killteam
+      # Comma-separated. The SPA's origin — not this service's own.
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      PORT: 3003
+    ports:
+      - '3003:3003'
+    healthcheck:
+      # `.ok ||` matters: a bare fetch resolves on a 500 and would report healthy.
+      test: ['CMD', 'bun', '-e', '(await fetch("http://localhost:3003/health")).ok || process.exit(1)']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal]
+
+networks:
+  # Joins the green-orange stack's existing network so `postgres` resolves by alias.
+  # The name is project-prefixed and the project differs by environment: `green-orange`
+  # in prod, `green-orange-local` in a local checkout — hence the variable.
+  internal:
+    name: ${PG_NETWORK:-green-orange_internal}
+    external: true
