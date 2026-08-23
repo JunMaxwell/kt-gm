@@ -18,7 +18,17 @@ const ORIGINS = (process.env.CORS_ORIGINS ?? '')
   .map((o) => o.trim())
   .filter(Boolean)
 
-const sql = new SQL(process.env.DATABASE_URL!)
+// Fail with the actual reason. Compose substitutes an *unset* variable with an empty string,
+// so a missing POSTGRES_PASSWORD in the stack env reaches Postgres as a blank password and
+// comes back as `28P01 password authentication failed` — which reads like a wrong password
+// and sends you hunting in the wrong place. Cost us an afternoon once.
+if (!process.env.DATABASE_URL && !process.env.PGPASSWORD)
+  throw new Error('No DATABASE_URL and no PGPASSWORD: check POSTGRES_PASSWORD is set on this stack')
+
+// No argument on purpose: Bun reads DATABASE_URL if it is set, and otherwise falls back to
+// the discrete PGHOST / PGUSER / PGPASSWORD / PGDATABASE vars. Prod passes the discrete ones,
+// because interpolating a password into a URL breaks the moment it contains @ : / ? # or %.
+const sql = new SQL()
 
 // One table each. `if not exists` instead of a migration tool: two tables do not need
 // Prisma, and migrate-on-start is how you get a container in a restart loop.
