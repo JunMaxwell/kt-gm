@@ -29,7 +29,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 59 reducer tests, the only automated suite
+bun test           # 80 reducer tests, the only automated suite
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -53,15 +53,15 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 
 | File | Holds |
 |---|---|
-| `src/rules.ts` | All static data and every tunable: teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text |
-| `src/state.ts` | `useReducer` + localStorage + the room client, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
+| `src/rules.ts` | All static data and every tunable: teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board constants and terrain palette |
+| `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
 | `src/App.tsx` | The whole UI |
 | `server/index.ts` | The room relay. Not part of the SPA's tsconfig, so `tsc -b` never sees it |
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v10`). Any change to
-the state shape bumps the version; old saves are ignored rather than migrated. That has happened ten
-times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v11`). Any change to
+the state shape bumps the version; old saves are ignored rather than migrated. That has happened
+eleven times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -168,13 +168,84 @@ turn. The GM is the referee; the app tracks whose turn it is and never blocks a 
 Teams already counted in the current pair still count toward the target, so spending a player's last
 operative cannot retroactively turn a 2 into a 1 mid-turn.
 
+## The board
+
+The score is only half a save. `Game` also carries the table: `terrain: Piece[]` as the GM laid it
+out, `markers: Point[]` for where the objectives actually sit, and `pos?: Point` on each `OpState`.
+Because a save is already "insert the whole `Game`" and the relay already ships whole snapshots,
+**the board needed no server change at all** — it saves, loads and syncs to spectators for free.
+All measurements are inches, origin top-left, the 44" edges running left-right.
+
+The builder's UX follows <https://labrador.dev/layout-builder>: a preset footprint palette, an
+X/Y/W/H/Rot inspector for the selected piece, and a mirror toggle. Nothing is copied from it — it
+is a 40k tournament tool on a 60"×44" board. An earlier attempt here was a map *generator*, and it
+was the wrong idea: a rolled layout matches nobody's actual table.
+
+- **Mirror is derived, never stored.** `mirror: boolean` plus `mirrorPiece()` at render time, drawn
+  `pointer-events: none` and fainter. So moving a piece always moves its twin, the toggle can never
+  leave orphans, and clicks always land on the real piece. Storing twins would mean keeping pairs in
+  sync on every drag.
+- **`markers` is a parallel array to `objectives`**, index-matched. `objectiveCount` is the only case
+  that can change their length, so it is the only place they could drift — and it is tested. The
+  Objectives panel stays the place you cycle a marker's holder; the board only holds positions.
+- **Clamping lives in the reducer** (`onBoard`, `fitPiece`), not the drag handler, so a hand-typed
+  number or a loaded save is bounded too.
+- **Drags dispatch on pointer-up only.** In-flight position sits in component state; a dispatch per
+  `pointermove` would rewrite localStorage and re-render 53 tokens sixty times a second.
+- **Pointer→board maths is `getScreenCTM().inverse()`**, the native answer, correct at any scale.
+- `Deploy` lays a side's undeployed survivors out in their drop zone in team order — 14 columns at 3"
+  across the 44" edge, rows 1.4" apart inside the 6" band. Slots resume past the already-placed, so a
+  second Deploy appends rather than stacking. Nobody drags 53 tokens on from nothing.
+- Tokens carry state: dashed ring = conceal, faded = expended, red ring = injured, dead leave the
+  board. The **outline is what makes them legible** — XV26 and Deathwatch are near-white fills.
+
+### Captured boards
+
+One live board is not enough: the evening has stages, and a mid-game save should be replayable, not
+just resumable. `Game.boards` is `Record<phaseId, BoardSnapshot>` over the fixed slots in
+`boardPhases(tpCount)` — `setup`, `deploy`, then `tp1…tpN`.
+
+- **A snapshot is positions only** — `{ terrain, markers, pos }`. Wounds, orders and the score are
+  what "Save match" already captures, and undo already covers a misclick. Restoring puts the models
+  back on the table; it does **not** rewind the game, and a test pins that.
+- **`nextTp` captures the turning point it is leaving** into `tp{g.tp}`, so the one snapshot nobody
+  would remember to take is free. Everything else is a click.
+- **The strip is the whole UI.** An empty slot shows `+` and captures on click; a full one opens
+  read-only. That is one row instead of a view row plus a capture row.
+- **Viewing is genuinely inert**, not just discouraged: `grab()` returns `undefined` when a snapshot
+  is showing, so no handler is attached at all, and the palette and inspector are unmounted.
+- Snapshot tokens render **plain** — no conceal dash, no expended fade, no injured ring. Those are
+  today's state and would be a lie on TP1's board.
+- **`fitMarkers` is the single home of the markers/objectives invariant.** Both `objectiveCount` and
+  `boardRestore` go through it, so a capture taken at 5 markers cannot leave a hole after the GM
+  drops to 3.
+- Snapshots share their arrays with live state by reference. Safe only because every reducer case
+  replaces rather than mutates — do not start mutating `terrain` in place.
+- Lowering `tpCount` orphans a `tp5` snapshot rather than deleting it; raise it again and it is back.
+
+### Undo
+
+`withHistory` wraps the reducer inside `useGame`: `{ past: Game[], now, last }`, depth 50, Ctrl/Cmd+Z
+or the header button. `reduce` itself is untouched and stays a pure `Game -> Game` — `undo` is a
+`UiAction`, never an `Action`, so the relay and the tests never see it. Snapshots are structurally
+shared, so 50 of them is cheap. Notes:
+
+- **History is memory-only.** It never reaches localStorage or the relay, and a reload clears it.
+- **`replace` clears history** rather than recording a step — a loaded save is a new starting point.
+- **`player` / `tacOp` coalesce**, or typing one name would eat the whole stack a character at a time.
+- The keyboard handler ignores `INPUT`/`TEXTAREA` so it never steals a text field's own undo, and is
+  not installed for viewers.
+
 ## Design
 
 The UI deliberately mirrors <https://tiltos.github.io/kill-team-critical-ops/> — light paper, charcoal
 `#282c34` chrome, Bebas Neue caps headings, and white cards with a coloured header band. Its
 archetype palette is reused verbatim (Seek & Destroy `#bd0003`, Security `#0b6be1`, Recon `#f05c22`,
 Infiltration `#5f5f5f`) and its player colours became the side colours (Imperium `#0066a5`, Xenos
-`#d1232a`).
+`#d1232a`). The board builder follows <https://labrador.dev/layout-builder> instead.
+
+Both are credited in a **footer in the app**, not just here — the borrowing is substantial enough to
+name on the page, alongside the Games Workshop trademark line.
 
 Conventions that exist for a reason:
 
@@ -196,8 +267,9 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` covers the reducer and selectors only — 56 tests. There is no React test harness and one
+`bun test` covers the reducer and selectors only — 80 tests. There is no React test harness and one
 was not added for a single component-state fix; UI behaviour is verified by driving a real browser.
+`withHistory` is exported purely so undo is testable without one.
 `tsconfig.app.json` excludes `*.test.ts` so `bun run build` doesn't need `@types/bun`.
 
 **Paired activations are on by default**, so any test of the official alternation must opt out with
@@ -208,38 +280,59 @@ Team order within `TEAMS` is `dw, aod, dw2, sct` for Imperium, which is the orde
 
 ## Deploy
 
-Two independent pipelines, because the console and the relay change at different rates. Both gate on
-lint and tests. **This replaced GitHub Pages** — the old `/kt-gm/` base path and the `VITE_BASE` /
-`isPreview` dance in `vite.config.ts` are gone, since both halves now sit at the root of their own
-subdomain.
+**No pipeline deploys anything.** The console is pulled by Cloudflare; the relay's only workflow
+publishes an image and stops. **This replaced GitHub Pages** — the old `/kt-gm/` base path and the
+`VITE_BASE` / `isPreview` dance in `vite.config.ts` are gone, since both halves now sit at the root
+of their own subdomain.
 
 | | Console | Relay |
 |---|---|---|
-| Trigger | **Cloudflare Workers Builds** — the Git integration, any push to `main`. There is no workflow file | `api.yml`, only when `server/**`, `Dockerfile`, or `docker-compose.yml` change |
+| Build | **Cloudflare Workers Builds** — the Git integration, any push to `main` | `api.yml` → `ghcr.io/junmaxwell/kt-gm-api:latest`, when `server/**` or `Dockerfile` change |
+| Deploy | same step | **by hand**: "Pull & redeploy" on the `kt-gm` stack in Dockhand |
 | Host | Cloudflare Workers, static assets only — no Worker script (`wrangler.jsonc`) | The VPS, as its **own Dockhand stack** |
 | URL | `kt.ydothien.work` | `kt-api.ydothien.work` → host `:3003` via a Pangolin resource |
-| Secrets | none — Cloudflare pulls the repo itself | `DOCKHAND_WEBHOOK_URL`, `PANGOLIN_ID`/`_SECRET`/`_ENDPOINT` |
+| Secrets | none — Cloudflare pulls the repo itself | none — `GITHUB_TOKEN` is automatic |
 
-There is deliberately **no `deploy.yml`**. Cloudflare's Git integration already builds on every push,
-so a `wrangler deploy` workflow would deploy the same commit a second time and need two secrets that
-the Git integration does not. It was deleted rather than kept alongside.
+**`api.yml` builds but never deploys, and that split is deliberate.** Dockhand git-pulls the repo and
+runs plain `docker compose up -d`; per green-orange's `DEPLOY.md`, *"the VPS never builds — it only
+pulls finished images"*. So `docker-compose.yml` must name a **registry image and never carry
+`build:`** — plain `up -d` builds only when the tag is absent, so `build:` would build once and then
+serve that stale image forever, and "Pull & redeploy" would hunt for a tag in no registry.
 
-Two settings live in the **Workers Builds dashboard**, and the console is broken without either:
+Two things were deleted rather than debugged, and both should stay deleted:
+
+- **`deploy.yml`** ran `wrangler deploy`. Redundant: Cloudflare's Git integration already builds on
+  every push, so it deployed the same commit twice and needed two secrets the integration does not.
+- **`api.yml`'s deploy half** tunnelled in over Pangolin's WireGuard to POST Dockhand's webhook so the
+  redeploy was automatic. The tunnel connected cleanly; the webhook answered **403** and kept
+  answering 403. For a relay that changes a few times a year, one click in Dockhand beats a
+  four-secret pipeline — so `PANGOLIN_ID`, `PANGOLIN_SECRET`, `PANGOLIN_ENDPOINT` and
+  `DOCKHAND_WEBHOOK_URL` are all unused and can be deleted from the repo's secrets.
+
+Note `docker-compose.yml` is **not** in `api.yml`'s path filter: a compose change alters the stack,
+not the image, and Dockhand picks it up from git on the next redeploy.
+
+**One** setting lives in the Workers Builds dashboard:
 
 | Setting | Value |
 |---|---|
 | Build command | `bun run ci` |
-| Build variable | `VITE_API_URL=https://kt-api.ydothien.work` |
 
 `bun run ci` is `lint && test && build` (`package.json`), so the gate itself stays version-controlled
 and only the *pointer* sits in a dashboard. A red build must not reach the table.
 
-**`VITE_API_URL` is baked in at build time** — a static SPA has no runtime config, so changing the
-API host means a rebuild, not an env edit. If it is missing, `API` falls back to `''` (`state.ts`)
-and the console POSTs `/rooms` to *its own origin*. That fails almost invisibly: with
-`not_found_handling: single-page-application` the asset Worker answers **`index.html` with HTTP
-200**, so `res.json()` throws on HTML and the UI just says "offline". This has happened once
-already. To check a deployment, grep the served bundle for the host:
+**There is deliberately no build variable.** `API` in `state.ts` defaults to
+`https://kt-api.ydothien.work` in code, and `VITE_API_URL` only *overrides* it for local dev. Two
+reasons. First, a Worker serving **only static assets cannot be given runtime variables at all** —
+the dashboard refuses with "Variables cannot be added to a Worker that only has static assets", and
+build variables live in a different, easily-missed section. Second, the old `''` fallback failed
+silently: the console POSTed `/rooms` to its own origin, where `not_found_handling:
+single-page-application` answers **`index.html` with HTTP 200**, so `res.json()` threw on HTML and
+the UI just said "offline". That cost two debugging rounds. A hard-coded default cannot regress that
+way, and the app is hard-wired to one match on one domain regardless.
+
+Either way the host is baked in at **build** time — a static SPA has no runtime config, so changing
+the API host is a code change and a rebuild. To check a deployment, grep the served bundle:
 
 ```
 curl -s https://kt.ydothien.work/assets/index-*.js | grep -c kt-api.ydothien.work
@@ -275,14 +368,29 @@ webhook, which is why `api.yml` carries that whole shell block verbatim from gre
 Neither workflow can do any of this, so it is recorded here rather than in a plan file. All of it is
 one-time; after this, both halves deploy on push.
 
-1. **Create the database.** The init script only runs on a fresh volume and prod's has existed for
-   a long time, so this will not happen on its own:
+1. **Create the database and its own role.** The init script only runs on a fresh volume and prod's
+   has existed for a long time, so this will not happen on its own:
    ```bash
    PG=$(docker ps -qf label=com.docker.compose.service=postgres)
    docker exec "$PG" psql -U postgres -c "CREATE DATABASE killteam"
+   docker exec "$PG" psql -U postgres -c "CREATE USER killteam WITH PASSWORD '<pick one>'"
+   docker exec "$PG" psql -U postgres -d killteam \
+     -c "ALTER DATABASE killteam OWNER TO killteam; ALTER SCHEMA public OWNER TO killteam"
    ```
    Match on the compose *service label*, not the container name — the project is `green-orange` in
-   prod but `yan-portf` in a local checkout. Local socket means trust auth, so no password.
+   prod but `yan-portf` in a local checkout. Local socket means trust auth, so no password. The
+   third command **must run with `-d killteam`**: `ALTER SCHEMA` is per-database, and without it the
+   role cannot create tables, because PG15+ no longer grants `CREATE` on `public` to non-owners.
+
+   green-orange runs everything as the single `postgres` superuser, and this is the one place that
+   diverges — for two reasons. You never have to go find the shared password (it lives only in
+   Dockhand's secret store, not in git or on any dev machine), and the relay is the only
+   *publicly reachable* thing on this box. A dedicated role can still `connect` to the other
+   databases — Postgres grants `CONNECT` to `PUBLIC` — but it is denied on every table and on
+   `public` in them, so a compromised relay cannot read the CRM or CMS. Verified, not assumed.
+
+   The stack env then uses `POSTGRES_USER=killteam` with that password. No compose change: the
+   variable *names* are shared, only the values differ per stack.
 2. **Add the Dockhand stack** pointing at this repo's `docker-compose.yml`, and set `CORS_ORIGINS`
    to the console's origin (`https://kt.ydothien.work`) — not the API's own.
 3. **Expose the relay.** Pangolin only fronts `dichvuyan.com` today, so `ydothien.work` has to be
@@ -295,21 +403,31 @@ one-time; after this, both halves deploy on push.
    green-orange repo — get them from Pangolin and Dockhand directly. No Cloudflare secrets are
    needed at all.
 
-**The WebSocket upgrade through Pangolin is the one unverified link** — the VPS ran no realtime
-anything before this, so it is greenfield at the edge. Test it first: open a room, join from a phone,
-change something. If the `Upgrade` header gets dropped, there are two outs. Either point a *proxied*
-Cloudflare DNS record straight at the VPS (Cloudflare terminates TLS and proxies WebSockets on the
-free plan, at the cost of a firewall rule and giving up the tunnel), or switch the transport to SSE —
-`text/event-stream` is plain HTTP and proxies everywhere, and it is *less* client code, since
-`EventSource` reconnects on its own and the retry loop in `useGame` disappears.
+**The WebSocket upgrade through Cloudflare + Pangolin is verified** — `wss://kt-api.ydothien.work`
+returns `101 Switching Protocols` with a valid `Sec-Websocket-Accept`, and a real client opens. This
+was the design's one unknown (the VPS ran no realtime anything before), so no SSE fallback and no
+proxied-DNS workaround are needed. Two traps found while testing it:
+
+- **The Pangolin resource must have authentication OFF.** With it on, *every* request — `/health`
+  included — 302s to `prp.hdc-cloud.org/auth/resource/…`, and a WebSocket upgrade cannot survive a
+  redirect. Symptom: spectators see a Pangolin login page.
+- **`curl` with `Upgrade:` headers is not a valid test.** curl negotiates HTTP/2, where `Upgrade` is
+  meaningless by spec, so the relay's own `426 expected a websocket` comes back and looks exactly
+  like a stripped header. Force `--http1.1`, or just use a real client:
+  ```
+  bun -e 'new WebSocket("wss://kt-api.ydothien.work/rooms/TEST/ws").onopen = () => console.log("open")'
+  ```
 
 ## Known gaps
 
 - Seven of the nine crit ops accumulate per-marker points, track a named marker, or count actions
   performed, none of which the marker chips model. Those show **"score by hand"** rather than a wrong
   suggestion; only Secure and Transmission are auto-derived. Adding per-marker counters would fix it.
-- No undo. Misclicking ☠ is corrected by clicking it again — or, since rooms landed, by saving
-  before something risky and loading back. A save history (one extra column) would give real undo.
+- **No redo.** Undo exists (below) but Ctrl+Shift+Z does not; the `future` array was skipped as
+  YAGNI. Undo is also memory-only, so a reload loses it — saves remain the durable escape hatch.
+- **Spectators cannot browse captured boards.** `<div inert>` blocks the phase strip along with
+  everything else, so they only ever see the live board. Fine for now — they are watching, not
+  reviewing.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.
   `teams[].player` is a free-text label, not an identity, so the server cannot tell who is who.
   Authentik OIDC is already running on the VPS if that ever changes.

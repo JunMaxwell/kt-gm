@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useState } from 'react'
 
 import {
+  BOARD,
   CRIT_CAP_PER_TP,
   CRIT_OPS,
   type CritOpId,
@@ -9,16 +10,29 @@ import {
   OP_CAP,
   type OpKind,
   type Operative,
+  type Piece,
+  type Point,
   STARTING_CP,
   type SideId,
   TEAMS,
   TURNING_POINTS,
+  defaultMarkers,
   killThresholds,
 } from './rules'
 
 export type Order = 'conceal' | 'engage'
-export type OpState = { hp: number; expended: boolean; dead: boolean; order: Order }
+export type OpState = {
+  hp: number
+  expended: boolean
+  dead: boolean
+  order: Order
+  pos?: Point // where it stands on the board; absent means not deployed
+}
 export type PlayerState = { player: string; cp: number; tacOp: string; tacVp: number }
+
+/** Positions only — the score, wounds and orders live in `Game` itself and are what a
+ *  "Save match" already captures. This is a record of where things stood. */
+export type BoardSnapshot = { terrain: Piece[]; markers: Point[]; pos: Record<string, Point> }
 
 export type Game = {
   tp: number
@@ -26,6 +40,10 @@ export type Game = {
   opCap: number // max VP per op type; official is 6 over 4 turning points
   critCap: number // max crit VP per turning point; the cards say 2, this homebrew defaults to 3
   objectives: (SideId | null)[] // one entry per marker, index 0 is the centre
+  markers: Point[] // board position of each marker, index-matched to `objectives`
+  terrain: Piece[] // the table as the GM laid it out
+  mirror: boolean // draw each piece's 180° twin, for a symmetric table
+  boards: Record<string, BoardSnapshot> // captured boards, keyed by `boardPhases` id
   finished: boolean
   critOp: CritOpId | null
   initiative: SideId
@@ -58,6 +76,10 @@ export const initialGame = (): Game => {
     opCap: OP_CAP,
     critCap: CRIT_CAP_PER_TP,
     objectives: Array(OBJECTIVE_MARKERS).fill(null),
+    markers: defaultMarkers(OBJECTIVE_MARKERS),
+    terrain: [],
+    mirror: true,
+    boards: {},
     finished: false,
     critOp: null,
     initiative: 'imperium',
@@ -93,6 +115,16 @@ export type Action =
   | { type: 'critCap'; value: number }
   | { type: 'objective'; index: number; value: SideId | null }
   | { type: 'objectiveCount'; value: number }
+  | { type: 'markerMove'; index: number; pos: Point }
+  | { type: 'terrainAdd'; piece: Omit<Piece, 'id'> }
+  | { type: 'terrainPatch'; id: string; patch: Partial<Omit<Piece, 'id'>> }
+  | { type: 'terrainRemove'; id: string }
+  | { type: 'terrainClear' }
+  | { type: 'mirror'; value: boolean }
+  | { type: 'place'; opId: string; pos: Point | null }
+  | { type: 'deploy'; side: SideId }
+  | { type: 'boardCapture'; phase: string }
+  | { type: 'boardRestore'; phase: string }
   | { type: 'thresholds'; side: SideId; value: number[] | null }
   | { type: 'wound'; opId: string; delta: number }
   | { type: 'dead'; opId: string; dead: boolean }
@@ -124,6 +156,46 @@ const findOp = (g: Game, opId: string) =>
 
 const teamIdOf = (g: Game, opId: string) =>
   Object.keys(g.roster).find((tid) => g.roster[tid].some((o) => o.id === opId))
+
+/* ---------- board geometry ---------- */
+
+// 14 columns at 3" span the 44" edge; three rows of them clear the 6" drop zone depth and
+// hold the biggest roster here (28) in two.
+const DEPLOY_COLS = 14
+
+const onBoard = (p: Point): Point => ({ x: clamp(p.x, 0, BOARD.w), y: clamp(p.y, 0, BOARD.h) })
+
+/** The one place that holds "markers is index-matched to objectives". Both the count
+ *  stepper and a restored snapshot go through it, so neither can leave a hole. */
+const fitMarkers = (src: Point[], n: number): Point[] => {
+  const def = defaultMarkers(n)
+  return Array.from({ length: n }, (_, i) => src[i] ?? def[i])
+}
+
+/** Arrays are shared by reference — safe, since every case replaces rather than mutates. */
+const captureBoard = (g: Game): BoardSnapshot => ({
+  terrain: g.terrain,
+  markers: g.markers,
+  pos: Object.fromEntries(Object.entries(g.ops).flatMap(([id, o]) => (o.pos ? [[id, o.pos] as const] : []))),
+})
+
+/** Keep a piece a sane size and wholly on the table. In the reducer rather than the drag
+ *  handler, so a hand-typed number or a loaded save is clamped too. */
+const fitPiece = (p: Piece): Piece => {
+  const w = clamp(p.w, 0.5, BOARD.w)
+  const h = clamp(p.h, 0.5, BOARD.h)
+  return {
+    ...p,
+    w,
+    h,
+    x: clamp(p.x, 0, BOARD.w - w),
+    y: clamp(p.y, 0, BOARD.h - h),
+    rot: ((Math.round(p.rot) % 360) + 360) % 360,
+  }
+}
+
+/** Ids only need to be unique within one game, and saves are whole snapshots. */
+const nextTerrainId = (g: Game) => g.terrain.reduce((n, p) => Math.max(n, Number(p.id.slice(1)) + 1 || 0), 1)
 
 export function reduce(g: Game, a: Action): Game {
   switch (a.type) {
@@ -178,7 +250,60 @@ export function reduce(g: Game, a: Action): Game {
     }
     case 'objectiveCount': {
       const n = clamp(a.value, 1, 9)
-      return { ...g, objectives: Array.from({ length: n }, (_, i) => g.objectives[i] ?? null) }
+      return {
+        ...g,
+        objectives: Array.from({ length: n }, (_, i) => g.objectives[i] ?? null),
+        markers: fitMarkers(g.markers, n),
+      }
+    }
+    case 'markerMove':
+      return { ...g, markers: g.markers.map((m, i) => (i === a.index ? onBoard(a.pos) : m)) }
+    case 'terrainAdd':
+      return { ...g, terrain: [...g.terrain, fitPiece({ ...a.piece, id: `t${nextTerrainId(g)}` })] }
+    case 'terrainPatch':
+      return { ...g, terrain: g.terrain.map((p) => (p.id === a.id ? fitPiece({ ...p, ...a.patch }) : p)) }
+    case 'terrainRemove':
+      return { ...g, terrain: g.terrain.filter((p) => p.id !== a.id) }
+    case 'terrainClear':
+      return { ...g, terrain: [] }
+    case 'mirror':
+      return { ...g, mirror: a.value }
+    case 'place': {
+      const st = g.ops[a.opId]
+      if (!st) return g
+      const { pos: _off, ...bare } = st
+      return { ...g, ops: { ...g.ops, [a.opId]: a.pos ? { ...st, pos: onBoard(a.pos) } : bare } }
+    }
+    case 'deploy': {
+      // Lay this side's undeployed survivors out in their drop zone in team order, so the
+      // GM starts dragging from somewhere sensible rather than from an empty board. Slots
+      // resume past the already-placed, so a second Deploy appends instead of stacking.
+      const ops = { ...g.ops }
+      const mine = sideOps(g, a.side).filter((o) => ops[o.id] && !ops[o.id].dead)
+      let slot = mine.filter((o) => ops[o.id].pos).length
+      for (const o of mine) {
+        if (ops[o.id].pos) continue
+        const y = 2.4 + (Math.floor(slot / DEPLOY_COLS) % 3) * 1.4
+        const x = 2 + (slot % DEPLOY_COLS) * 3
+        ops[o.id] = { ...ops[o.id], pos: { x, y: a.side === 'imperium' ? y : BOARD.h - y } }
+        slot++
+      }
+      return { ...g, ops }
+    }
+    case 'boardCapture':
+      return { ...g, boards: { ...g.boards, [a.phase]: captureBoard(g) } }
+    case 'boardRestore': {
+      const b = g.boards[a.phase]
+      if (!b) return g
+      // Positions only. Wounds, orders and the score stay where they are — this puts the
+      // models back on the table, it does not rewind the game.
+      const ops = Object.fromEntries(
+        Object.entries(g.ops).map(([id, o]) => {
+          const { pos: _off, ...bare } = o
+          return [id, b.pos[id] ? { ...o, pos: b.pos[id] } : bare]
+        }),
+      )
+      return { ...g, terrain: b.terrain, markers: fitMarkers(b.markers, g.objectives.length), ops }
     }
     case 'thresholds':
       return { ...g, killOverride: { ...g.killOverride, [a.side]: a.value } }
@@ -266,6 +391,8 @@ export function reduce(g: Game, a: Action): Game {
       return {
         ...g,
         tp: Math.min(g.tpCount, g.tp + 1),
+        // The board as it stood at the end of the turning point being left behind.
+        boards: { ...g.boards, [`tp${g.tp}`]: captureBoard(g) },
         ops,
         teams,
         turnIdx: 0,
@@ -465,12 +592,19 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v10' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v11' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */
 
-export const API = import.meta.env.VITE_API_URL ?? ''
+/**
+ * The relay. Hard-coded default rather than a required build variable, because this app is
+ * hard-wired to one match on one domain anyway — and because the old `''` fallback failed
+ * silently and expensively: it made the console POST `/rooms` to its own origin, where the
+ * asset Worker answers `index.html` with HTTP 200, so `res.json()` threw on HTML and the UI
+ * just said "offline". Twice. Local dev overrides it (see the command in CLAUDE.md).
+ */
+export const API = import.meta.env.VITE_API_URL ?? 'https://kt-api.ydothien.work'
 
 /** A GM has the write token. A viewer has only the code, off the URL. */
 export type Room = { code: string; token?: string }
@@ -513,11 +647,39 @@ export const saveMatch = (r: Room, label: string, game: Game) =>
 export const loadSave = async (r: Room, id: string): Promise<Game> =>
   await (await api(`/rooms/${r.code}/saves/${id}`, r.token!)).json()
 
+/* ---------- undo ---------- */
+
+const UNDO_DEPTH = 50
+
+/** `undo` never reaches `reduce` — the reducer stays a pure Game -> Game and the whole
+ *  history lives in the hook, out of localStorage and out of the relay. */
+export type UiAction = Action | { type: 'undo' }
+
+export type History = { past: Game[]; now: Game; last?: string }
+
+/** Keystroke-level actions coalesce, or typing one player name eats the whole stack. */
+const COALESCE = new Set(['player', 'tacOp'])
+const stepKey = (a: Action) => ('teamId' in a ? `${a.type}:${a.teamId}` : a.type)
+
+export const withHistory = (h: History, a: UiAction): History => {
+  if (a.type === 'undo') return h.past.length ? { past: h.past.slice(0, -1), now: h.past[h.past.length - 1] } : h
+
+  const now = reduce(h.now, a)
+  if (now === h.now) return h
+  // A loaded save (or a viewer's relay message) is a new starting point, not a step back to.
+  if (a.type === 'replace') return { past: [], now }
+
+  const key = stepKey(a)
+  const merge = COALESCE.has(a.type) && h.last === key
+  return { past: merge ? h.past : [...h.past, h.now].slice(-UNDO_DEPTH), now, last: key }
+}
+
 export function useGame() {
-  const [game, dispatch] = useReducer(reduce, null, () => {
+  const [hist, dispatch] = useReducer(withHistory, null, () => {
     const saved = read<Game>(KEY)
-    return saved ? { ...initialGame(), ...saved } : initialGame()
+    return { past: [], now: saved ? { ...initialGame(), ...saved } : initialGame() }
   })
+  const game = hist.now
   const [room, setRoom] = useState(readRoom)
   const viewer = !!room && !room.token
 
@@ -559,5 +721,18 @@ export function useGame() {
     }
   }, [viewer, room])
 
-  return [game, dispatch, { room, viewer, setRoom }] as const
+  // Ctrl/Cmd+Z, except while a text field has focus — the browser's own undo belongs there.
+  useEffect(() => {
+    if (viewer) return
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'z' || tag === 'INPUT' || tag === 'TEXTAREA') return
+      e.preventDefault()
+      dispatch({ type: 'undo' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewer])
+
+  return [game, dispatch, { room, viewer, setRoom }, hist.past.length > 0] as const
 }

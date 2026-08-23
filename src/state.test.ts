@@ -2,11 +2,14 @@ import { expect, test } from 'bun:test'
 
 import {
   ARCHETYPES,
+  BOARD,
   CATALOGUE,
   CRIT_OPS,
   TAC_OPS,
   TEAMS,
   blankOperative,
+  boardPhases,
+  defaultMarkers,
   fromCatalogue,
   killThresholds,
   tacOp,
@@ -32,6 +35,7 @@ import {
   suggestedCrit,
   teamOps,
   teamsOf,
+  withHistory,
 } from './state'
 
 const ids = (g: Game, teamId: string) => teamOps(g, teamId).map((o) => o.id)
@@ -642,4 +646,228 @@ test('replace does not read the previous game, so viewers cannot drift', () => {
   expect(reduce(diverged, { type: 'replace', game: fresh })).toEqual(
     reduce(fresh, { type: 'replace', game: fresh }),
   )
+})
+
+/* ---------- the board ---------- */
+
+test('default markers obey the homebrew placement rule', () => {
+  const m = defaultMarkers(5)
+  expect(m).toHaveLength(5)
+  for (const a of m) {
+    expect(Math.min(a.x, BOARD.w - a.x, a.y, BOARD.h - a.y)).toBeGreaterThanOrEqual(3)
+    expect(Math.abs(a.y - BOARD.h / 2)).toBeLessThanOrEqual(4)
+    // rotationally symmetric — neither alliance gets the friendlier half
+    expect(m.some((b) => b.x === BOARD.w - a.x && b.y === BOARD.h - a.y)).toBe(true)
+  }
+  for (const [i, a] of m.entries())
+    for (const b of m.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(6)
+})
+
+test('default markers always return the count asked for', () => {
+  for (const n of [1, 2, 3, 5, 6, 9]) expect(defaultMarkers(n)).toHaveLength(n)
+})
+
+test('terrain is added with an id and clamped onto the table', () => {
+  const g = reduce(initialGame(), { type: 'terrainAdd', piece: { x: 40, y: 28, w: 8, h: 6, rot: -90, kind: 'heavy' } })
+  expect(g.terrain).toHaveLength(1)
+  const [p] = g.terrain
+  expect(p.id).toBeTruthy()
+  expect(p.x + p.w).toBeLessThanOrEqual(BOARD.w)
+  expect(p.y + p.h).toBeLessThanOrEqual(BOARD.h)
+  expect(p.rot).toBe(270) // normalised into 0–359
+})
+
+test('terrain ids stay unique as pieces come and go', () => {
+  const add = { type: 'terrainAdd', piece: { x: 2, y: 2, w: 4, h: 3, rot: 0, kind: 'heavy' } } as const
+  let g = reduce(reduce(reduce(initialGame(), add), add), add)
+  g = reduce(g, { type: 'terrainRemove', id: g.terrain[1].id })
+  g = reduce(g, add)
+  expect(new Set(g.terrain.map((p) => p.id)).size).toBe(g.terrain.length)
+})
+
+test('a patch moves, resizes and retypes one piece, and misses are no-ops', () => {
+  const add = reduce(initialGame(), { type: 'terrainAdd', piece: { x: 2, y: 2, w: 4, h: 3, rot: 0, kind: 'heavy' } })
+  const id = add.terrain[0].id
+  const moved = reduce(add, { type: 'terrainPatch', id, patch: { x: 10, y: 5, kind: 'vantage' } })
+  expect(moved.terrain[0]).toMatchObject({ x: 10, y: 5, w: 4, h: 3, kind: 'vantage' })
+  // a size that would hang off the edge pulls the piece back on
+  expect(reduce(moved, { type: 'terrainPatch', id, patch: { w: 99 } }).terrain[0]).toMatchObject({ w: 44, x: 0 })
+  expect(reduce(moved, { type: 'terrainPatch', id: 'nope', patch: { x: 1 } }).terrain).toEqual(moved.terrain)
+  expect(reduce(moved, { type: 'terrainClear' }).terrain).toEqual([])
+})
+
+test('markers move, and stay on the table', () => {
+  const g = reduce(initialGame(), { type: 'markerMove', index: 2, pos: { x: 99, y: -4 } })
+  expect(g.markers[2]).toEqual({ x: BOARD.w, y: 0 })
+  expect(g.markers[0]).toEqual(initialGame().markers[0])
+})
+
+test('marker positions stay index-matched to objectives in both directions', () => {
+  let g = reduce(initialGame(), { type: 'markerMove', index: 1, pos: { x: 20, y: 12 } })
+  for (const value of [3, 7, 5, 1, 9]) {
+    g = reduce(g, { type: 'objectiveCount', value })
+    expect(g.markers).toHaveLength(g.objectives.length)
+    expect(g.markers.every((m) => m !== undefined)).toBe(true)
+  }
+})
+
+test('deploy places living undeployed operatives in their own drop zone', () => {
+  const g = reduce(initialGame(), { type: 'deploy', side: 'imperium' })
+  const imp = sideOps(g, 'imperium')
+  expect(imp.every((o) => g.ops[o.id].pos!.y <= BOARD.drop)).toBe(true)
+  // the other side is untouched
+  expect(sideOps(g, 'xenos').every((o) => !g.ops[o.id].pos)).toBe(true)
+
+  const both = reduce(g, { type: 'deploy', side: 'xenos' })
+  expect(sideOps(both, 'xenos').every((o) => both.ops[o.id].pos!.y >= BOARD.h - BOARD.drop)).toBe(true)
+})
+
+test('deploy skips the dead and never moves an operative already on the board', () => {
+  const [first, second] = sideOps(initialGame(), 'imperium')
+  let g = reduce(initialGame(), { type: 'dead', opId: first.id, dead: true })
+  g = reduce(g, { type: 'place', opId: second.id, pos: { x: 22, y: 14 } })
+  g = reduce(g, { type: 'deploy', side: 'imperium' })
+
+  expect(g.ops[first.id].pos).toBeUndefined()
+  expect(g.ops[second.id].pos).toEqual({ x: 22, y: 14 })
+  // everyone else got a distinct slot
+  const placed = sideOps(g, 'imperium').filter((o) => g.ops[o.id].pos)
+  expect(new Set(placed.map((o) => JSON.stringify(g.ops[o.id].pos))).size).toBe(placed.length)
+})
+
+test('placing clamps onto the table, and a null position takes an operative off it', () => {
+  const [op] = sideOps(initialGame(), 'xenos')
+  const on = reduce(initialGame(), { type: 'place', opId: op.id, pos: { x: -3, y: 99 } })
+  expect(on.ops[op.id].pos).toEqual({ x: 0, y: BOARD.h })
+  expect(reduce(on, { type: 'place', opId: op.id, pos: null }).ops[op.id]).not.toHaveProperty('pos')
+  expect(reduce(on, { type: 'place', opId: 'ghost', pos: null })).toBe(on)
+})
+
+/* ---------- undo ---------- */
+
+const hist0 = () => ({ past: [], now: initialGame() })
+
+test('undo steps back through changes and stops at the bottom', () => {
+  const start = hist0()
+  const a = withHistory(start, { type: 'cp', teamId: 'dw', delta: 1 })
+  const b = withHistory(a, { type: 'cp', teamId: 'dw', delta: 1 })
+  expect(b.now.teams.dw.cp).toBe(start.now.teams.dw.cp + 2)
+
+  const back = withHistory(withHistory(b, { type: 'undo' }), { type: 'undo' })
+  expect(back.now).toEqual(start.now)
+  expect(withHistory(back, { type: 'undo' })).toBe(back) // nothing left to undo
+})
+
+test('typing a player name coalesces into a single undo step', () => {
+  let h = hist0()
+  for (const name of ['A', 'An', 'Ann']) h = withHistory(h, { type: 'player', teamId: 'aod', name })
+  expect(h.past).toHaveLength(1)
+  expect(withHistory(h, { type: 'undo' }).now.teams.aod.player).toBe(initialGame().teams.aod.player)
+
+  // a different field in between breaks the run, so both are separately undoable
+  const split = withHistory(withHistory(h, { type: 'cp', teamId: 'aod', delta: 1 }), {
+    type: 'player',
+    teamId: 'aod',
+    name: 'Anna',
+  })
+  expect(split.past).toHaveLength(3)
+})
+
+test('history is bounded, and a loaded save starts a fresh one', () => {
+  let h = hist0()
+  for (let i = 0; i < 80; i++) h = withHistory(h, { type: 'cp', teamId: 'dw', delta: 1 })
+  expect(h.past).toHaveLength(50)
+
+  const loaded = withHistory(h, { type: 'replace', game: initialGame() })
+  expect(loaded.past).toEqual([])
+})
+
+test('undo restores the board, not just the score', () => {
+  const built = withHistory(hist0(), { type: 'terrainAdd', piece: { x: 4, y: 4, w: 6, h: 4, rot: 0, kind: 'heavy' } })
+  expect(built.now.terrain).toHaveLength(1)
+  expect(withHistory(built, { type: 'undo' }).now.terrain).toEqual([])
+})
+
+/* ---------- captured boards ---------- */
+
+const built = () => {
+  let g = reduce(initialGame(), { type: 'terrainAdd', piece: { x: 4, y: 4, w: 6, h: 4, rot: 0, kind: 'heavy' } })
+  g = reduce(g, { type: 'deploy', side: 'imperium' })
+  return reduce(g, { type: 'markerMove', index: 1, pos: { x: 12, y: 13 } })
+}
+
+test('phase slots are setup, deployment and one per turning point', () => {
+  expect(boardPhases(4).map((p) => p.id)).toEqual(['setup', 'deploy', 'tp1', 'tp2', 'tp3', 'tp4'])
+  expect(boardPhases(6)).toHaveLength(8)
+})
+
+test('a capture keeps terrain, markers and positions, and later edits do not reach it', () => {
+  const g = reduce(built(), { type: 'boardCapture', phase: 'deploy' })
+  const shot = g.boards.deploy
+  expect(shot.terrain).toHaveLength(1)
+  expect(shot.markers[1]).toEqual({ x: 12, y: 13 })
+  expect(Object.keys(shot.pos)).toHaveLength(sideOps(g, 'imperium').length)
+  // xenos were never deployed, so they are absent rather than present-and-undefined
+  expect(sideOps(g, 'xenos').every((o) => !(o.id in shot.pos))).toBe(true)
+
+  const later = reduce(reduce(g, { type: 'terrainClear' }), { type: 'markerMove', index: 1, pos: { x: 30, y: 17 } })
+  expect(later.terrain).toEqual([])
+  expect(later.boards.deploy.terrain).toHaveLength(1)
+  expect(later.boards.deploy.markers[1]).toEqual({ x: 12, y: 13 })
+})
+
+test('restoring puts the board back without rewinding the game', () => {
+  const [a, b] = sideOps(initialGame(), 'imperium')
+  let g = reduce(built(), { type: 'boardCapture', phase: 'deploy' })
+
+  // play on: move one operative, take another off, wound it, clear the terrain
+  g = reduce(g, { type: 'place', opId: a.id, pos: { x: 22, y: 15 } })
+  g = reduce(g, { type: 'place', opId: b.id, pos: null })
+  g = reduce(g, { type: 'wound', opId: a.id, delta: -2 })
+  g = reduce(g, { type: 'cp', teamId: 'dw', delta: 3 })
+  g = reduce(g, { type: 'terrainClear' })
+
+  const back = reduce(g, { type: 'boardRestore', phase: 'deploy' })
+  expect(back.ops[a.id].pos).toEqual(g.boards.deploy.pos[a.id])
+  expect(back.ops[b.id].pos).toEqual(g.boards.deploy.pos[b.id])
+  expect(back.terrain).toHaveLength(1)
+  // positions only — wounds and CP stay where the game left them
+  expect(back.ops[a.id].hp).toBe(g.ops[a.id].hp)
+  expect(back.teams.dw.cp).toBe(g.teams.dw.cp)
+})
+
+test('restoring takes operatives off the board if the capture had none there', () => {
+  const [a] = sideOps(initialGame(), 'imperium')
+  let g = reduce(initialGame(), { type: 'boardCapture', phase: 'setup' }) // nobody deployed yet
+  g = reduce(g, { type: 'deploy', side: 'imperium' })
+  expect(g.ops[a.id].pos).toBeDefined()
+  expect(reduce(g, { type: 'boardRestore', phase: 'setup' }).ops[a.id]).not.toHaveProperty('pos')
+})
+
+test('a restored capture is refitted to the current marker count', () => {
+  let g = reduce(built(), { type: 'boardCapture', phase: 'setup' }) // captured with 5
+  g = reduce(g, { type: 'objectiveCount', value: 3 })
+  const back = reduce(g, { type: 'boardRestore', phase: 'setup' })
+  expect(back.markers).toHaveLength(3)
+  expect(back.objectives).toHaveLength(3)
+
+  const wider = reduce(reduce(back, { type: 'objectiveCount', value: 7 }), { type: 'boardRestore', phase: 'setup' })
+  expect(wider.markers).toHaveLength(7)
+  expect(wider.markers.every((m) => m !== undefined)).toBe(true)
+})
+
+test('restoring a phase that was never captured changes nothing', () => {
+  const g = built()
+  expect(reduce(g, { type: 'boardRestore', phase: 'tp3' })).toBe(g)
+})
+
+test('next turning point captures the board it is leaving behind', () => {
+  const g = reduce(built(), { type: 'nextTp' })
+  expect(g.tp).toBe(2)
+  expect(g.boards.tp1).toBeDefined()
+  expect(g.boards.tp1.terrain).toHaveLength(1)
+  expect(g.boards.tp2).toBeUndefined()
+
+  const g2 = reduce(g, { type: 'nextTp' })
+  expect(Object.keys(g2.boards).sort()).toEqual(['tp1', 'tp2'])
 })

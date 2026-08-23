@@ -551,3 +551,90 @@ export const CHEAT_SHEET: { title: string; lines: string[] }[] = [
     ],
   },
 ]
+
+/* ---------- the board ----------
+ * A record of the physical table: terrain as the GM laid it out, where the
+ * objective markers ended up, and where every operative is standing. It rides
+ * along inside the same Game object, so a mid-game save restores the board and
+ * not just the score. All measurements are inches, origin top-left, the 44"
+ * edges running left-right.
+ */
+
+export const BOARD = {
+  w: 44,
+  h: 30,
+  drop: 6, // drop zone depth on each long edge
+  snap: 0.5, // drag granularity — finer than anyone measures at a table
+  token: 0.6, // operative token radius; a 32mm base is ~0.63"
+} as const
+
+export type Point = { x: number; y: number }
+/** Heavy blocks line of sight, Light only gives cover, Vantage can be climbed —
+ *  the three distinctions that change how a shot resolves. */
+export type TerrainKind = 'heavy' | 'light' | 'vantage'
+export type Piece = { id: string; x: number; y: number; w: number; h: number; rot: number; kind: TerrainKind }
+
+export const TERRAIN_KIND: Record<TerrainKind, { label: string; fill: string; opacity: number }> = {
+  heavy: { label: 'Heavy', fill: '#5f5f5f', opacity: 0.85 },
+  light: { label: 'Light', fill: '#282c34', opacity: 0.5 },
+  vantage: { label: 'Vantage', fill: '#f05c22', opacity: 0.4 },
+}
+
+/** Footprints to click onto the board, sized for the terrain this match uses.
+ *  Anything else is the nearest preset plus the width/height boxes. */
+export const TERRAIN_PALETTE: { label: string; w: number; h: number; kind: TerrainKind }[] = [
+  { label: 'Ruin 6×4', w: 6, h: 4, kind: 'heavy' },
+  { label: 'Ruin 4×3', w: 4, h: 3, kind: 'heavy' },
+  { label: 'Container 6×2.5', w: 6, h: 2.5, kind: 'heavy' },
+  { label: 'Wall 6"', w: 6, h: 0.5, kind: 'light' },
+  { label: 'Barricade 3"', w: 3, h: 0.5, kind: 'light' },
+  { label: 'Crates 2×2', w: 2, h: 2, kind: 'light' },
+  { label: 'Rubble 1.5', w: 1.5, h: 1.5, kind: 'light' },
+  { label: 'Platform 4×4', w: 4, h: 4, kind: 'vantage' },
+  { label: 'Gantry 8×2', w: 8, h: 2, kind: 'vantage' },
+]
+
+/**
+ * Where markers start, per the homebrew rule: one centre, the rest paired off
+ * within 4" of the centreline, 6"+ apart and 3"+ from any edge. Rotationally
+ * symmetric so neither alliance gets the friendlier half. The GM drags them to
+ * match the real table — this is only the opening position.
+ *
+ * Above 5 markers the 6" spacing stops being satisfiable in a 38"x8" band, and
+ * the pairs simply stack closer. Still a legal start for the 5 this match uses.
+ */
+export const defaultMarkers = (n: number): Point[] => {
+  const mid = { x: BOARD.w / 2, y: BOARD.h / 2 }
+  const out: Point[] = n % 2 ? [mid] : []
+  for (let i = 0; out.length < n; i++) {
+    const x = 9 + (i % 2) * 26
+    const y = mid.y - 3.5 + Math.floor(i / 2) * 1.5
+    out.push({ x, y }, { x: BOARD.w - x, y: BOARD.h - y })
+  }
+  return out.slice(0, n)
+}
+
+/** A piece's 180° twin. Derived at render time, never stored, so moving a piece
+ *  always moves its mirror and the toggle can never leave orphans behind. */
+export const mirrorPiece = (p: Piece): Piece => ({
+  ...p,
+  id: `${p.id}~m`,
+  x: BOARD.w - p.x - p.w,
+  y: BOARD.h - p.y - p.h,
+  rot: -p.rot,
+})
+
+/**
+ * The board gets captured at each stage of the evening, so a mid-game save can be
+ * replayed rather than just resumed. Slots are fixed: the table before anyone deploys,
+ * the deployment itself, then one per turning point (auto-captured by `nextTp`).
+ */
+export const boardPhases = (tpCount: number) => [
+  { id: 'setup', label: 'Setup', hint: 'Terrain and objective markers, before anyone deploys' },
+  { id: 'deploy', label: 'Deployment', hint: 'Starting positions, before the first turning point' },
+  ...Array.from({ length: tpCount }, (_, i) => ({
+    id: `tp${i + 1}`,
+    label: `TP${i + 1}`,
+    hint: `The board at the end of turning point ${i + 1}`,
+  })),
+]
