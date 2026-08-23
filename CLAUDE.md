@@ -215,13 +215,35 @@ subdomain.
 
 | | Console | Relay |
 |---|---|---|
-| Workflow | `deploy.yml`, any push to `main` | `api.yml`, only when `server/**`, `Dockerfile`, or `docker-compose.yml` change |
+| Trigger | **Cloudflare Workers Builds** — the Git integration, any push to `main`. There is no workflow file | `api.yml`, only when `server/**`, `Dockerfile`, or `docker-compose.yml` change |
 | Host | Cloudflare Workers, static assets only — no Worker script (`wrangler.jsonc`) | The VPS, as its **own Dockhand stack** |
 | URL | `kt.ydothien.work` | `kt-api.ydothien.work` → host `:3003` via a Pangolin resource |
-| Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | `DOCKHAND_WEBHOOK_URL`, `PANGOLIN_ID`/`_SECRET`/`_ENDPOINT` |
+| Secrets | none — Cloudflare pulls the repo itself | `DOCKHAND_WEBHOOK_URL`, `PANGOLIN_ID`/`_SECRET`/`_ENDPOINT` |
 
-`VITE_API_URL` is baked in at build time — a static SPA has no runtime config, so changing the API
-host means a rebuild.
+There is deliberately **no `deploy.yml`**. Cloudflare's Git integration already builds on every push,
+so a `wrangler deploy` workflow would deploy the same commit a second time and need two secrets that
+the Git integration does not. It was deleted rather than kept alongside.
+
+Two settings live in the **Workers Builds dashboard**, and the console is broken without either:
+
+| Setting | Value |
+|---|---|
+| Build command | `bun run ci` |
+| Build variable | `VITE_API_URL=https://kt-api.ydothien.work` |
+
+`bun run ci` is `lint && test && build` (`package.json`), so the gate itself stays version-controlled
+and only the *pointer* sits in a dashboard. A red build must not reach the table.
+
+**`VITE_API_URL` is baked in at build time** — a static SPA has no runtime config, so changing the
+API host means a rebuild, not an env edit. If it is missing, `API` falls back to `''` (`state.ts`)
+and the console POSTs `/rooms` to *its own origin*. That fails almost invisibly: with
+`not_found_handling: single-page-application` the asset Worker answers **`index.html` with HTTP
+200**, so `res.json()` throws on HTML and the UI just says "offline". This has happened once
+already. To check a deployment, grep the served bundle for the host:
+
+```
+curl -s https://kt.ydothien.work/assets/index-*.js | grep -c kt-api.ydothien.work
+```
 
 The relay reuses the VPS's Postgres but touches **nothing** in the `green-orange` repo. That works
 because of two lines in `docker-compose.yml`: `networks.internal` is declared
@@ -255,10 +277,12 @@ one-time; after this, both halves deploy on push.
 3. **Expose the relay.** Pangolin only fronts `dichvuyan.com` today, so `ydothien.work` has to be
    added there as a second domain, then a resource → `<vps>:3003`, then the DNS record. Check
    nothing else on the host already holds 3003.
-4. **Cloudflare:** attach `kt.ydothien.work` to the Worker as a custom domain.
-5. **Repo secrets:** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, plus
-   `DOCKHAND_WEBHOOK_URL` / `PANGOLIN_ID` / `PANGOLIN_SECRET` / `PANGOLIN_ENDPOINT` copied from
-   green-orange.
+4. **Cloudflare:** the Worker, its custom domain, and the Git integration were all set up in the
+   dashboard. Set the build command and `VITE_API_URL` build variable per the table above.
+5. **Repo secrets:** `DOCKHAND_WEBHOOK_URL` / `PANGOLIN_ID` / `PANGOLIN_SECRET` /
+   `PANGOLIN_ENDPOINT`. Note GitHub secrets are write-only, so these cannot be copied out of the
+   green-orange repo — get them from Pangolin and Dockhand directly. No Cloudflare secrets are
+   needed at all.
 
 **The WebSocket upgrade through Pangolin is the one unverified link** — the VPS ran no realtime
 anything before this, so it is greenfield at the edge. Test it first: open a room, join from a phone,

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "ci": "bun run lint && bun test && bun run build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
