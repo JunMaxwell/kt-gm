@@ -1,9 +1,17 @@
-# Builds the room relay image and tells Dockhand to redeploy the kt-gm stack.
+# Publishes the relay image. It does NOT deploy.
 #
-# Only runs when the server actually changes — the SPA deploys on its own (deploy.yml)
-# and the two are independent. The image tag stays `latest` because Dockhand pulls on
-# redeploy; the webhook below is what makes a new image go live.
-name: Deploy relay API
+# Dockhand git-pulls this repo and runs plain `docker compose up -d`, which only ever
+# pulls finished images — the VPS never builds. So this workflow's whole job is to keep
+# ghcr.io/junmaxwell/kt-gm-api:latest current; you then hit "Pull & redeploy" on the
+# kt-gm stack in Dockhand.
+#
+# An earlier version of this file also tunnelled in over Pangolin's WireGuard to POST
+# Dockhand's webhook so the redeploy was automatic. The tunnel connected fine but the
+# webhook answered 403 and kept answering 403, so that half was deleted rather than
+# debugged — a relay that changes a few times a year is not worth a four-secret
+# pipeline. What is left needs **no secrets at all**: GITHUB_TOKEN is automatic, and
+# the package is public because the repo is.
+name: Build relay image
 
 on:
   push:
@@ -11,7 +19,6 @@ on:
     paths:
       - 'server/**'
       - 'Dockerfile'
-      - 'docker-compose.yml'
       - '.github/workflows/api.yml'
   workflow_dispatch:
 
@@ -24,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +42,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The VPS is amd64; the runner is too, so no buildx emulation needed.
+      # The VPS is amd64 and so is the runner, so no buildx emulation is needed — which
+      # is the main reason to build here rather than by hand on an arm64 Mac.
       # No layer cache on purpose: the image is a base image plus one COPY of a
       # dependency-free directory, and `type=gha` would need the docker-container
       # buildx driver set up just to cache a three-second build.
@@ -45,38 +53,4 @@ jobs:
           push: true
           tags: ghcr.io/junmaxwell/kt-gm-api:latest
 
-      # The VPS has no public SSH. The only way in is Pangolin's WireGuard tunnel,
-      # then Dockhand's webhook. Lifted verbatim from the green-orange pipeline.
-      - name: Connect to Pangolin and trigger Dockhand
-        run: |
-          set -euo pipefail
-
-          curl -fsSL https://static.pangolin.net/get-cli.sh | sed "s|curl -fsSL \\\"\$GITHUB_API_URL\\\"|curl -fsSL -H \\\"Authorization: Bearer ${{ github.token }}\\\" \\\"\$GITHUB_API_URL\\\"|g" | sudo bash
-
-          sudo pangolin up \
-            --id "${{ secrets.PANGOLIN_ID }}" \
-            --secret "${{ secrets.PANGOLIN_SECRET }}" \
-            --endpoint "${{ secrets.PANGOLIN_ENDPOINT }}" \
-            --override-dns \
-            --attach > /tmp/pangolin.log 2>&1 &
-
-          echo "Waiting for WireGuard tunnel…"
-          for i in $(seq 1 40); do
-            grep -q "WireGuard device created" /tmp/pangolin.log && break
-            sleep 2
-          done
-          grep -q "WireGuard device created" /tmp/pangolin.log \
-            || { echo "Tunnel did not come up:"; cat /tmp/pangolin.log; exit 1; }
-
-          # Holepunch fails behind GitHub's NAT, so wait for the relay path too.
-          echo "Waiting for peer path…"
-          for i in $(seq 1 20); do
-            grep -qE "holepunch (succeeded|connected)|point to relay" /tmp/pangolin.log 2>/dev/null && break
-            sleep 2
-          done
-          sleep 3
-
-          echo "Triggering Dockhand webhook…"
-          curl -fsS -X POST "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
-            --retry 8 --retry-all-errors --retry-connrefused --max-time 90 \
-            || { echo "Webhook call failed:"; cat /tmp/pangolin.log; exit 1; }
+      - run: echo "Image pushed. Now hit **Pull & redeploy** on the kt-gm stack in Dockhand." >> $GITHUB_STEP_SUMMARY

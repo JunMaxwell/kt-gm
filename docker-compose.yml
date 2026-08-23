@@ -1,5 +1,10 @@
 # Room relay, deployed as its own Dockhand stack on the VPS.
 #
+# Deployed by Dockhand's git sync — it pulls this repo and builds. There is no CI for the
+# relay at all: an earlier GitHub Actions workflow tunnelled in over Pangolin to POST
+# Dockhand's webhook, and it was deleted rather than debugged. Hand-syncing a hobby relay
+# beats a four-secret pipeline that answers 403.
+#
 # It touches the green-orange stack in exactly one place: it joins that stack's existing
 # `internal` network to reach the Postgres container. No changes to green-orange's compose,
 # Caddyfile, or deploy.env — the port is published straight to the host and a Pangolin
@@ -8,6 +13,10 @@ name: kt-gm
 
 services:
   api:
+    # A prebuilt image, never `build:` — Dockhand git-pulls and runs plain
+    # `docker compose up -d`, which only builds when the tag is missing locally. It
+    # would build once and then serve that stale image forever, and "Pull & redeploy"
+    # would look for a tag that exists in no registry. The VPS never builds.
     image: ghcr.io/junmaxwell/kt-gm-api:latest
     restart: unless-stopped
     environment:
