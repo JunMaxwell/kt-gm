@@ -16,6 +16,7 @@ import {
   teamTacOps,
   teamsWithArchetype,
 } from './rules'
+import { CARDS, PHASES, type RefKind, phaseCards, phaseMeta } from './compendium'
 import {
   canMove,
   counteract,
@@ -870,4 +871,80 @@ test('next turning point captures the board it is leaving behind', () => {
 
   const g2 = reduce(g, { type: 'nextTp' })
   expect(Object.keys(g2.boards).sort()).toEqual(['tp1', 'tp2'])
+})
+
+/* ---------- phases and the compendium ---------- */
+
+test('a battle opens in the initiative phase', () => {
+  expect(initialGame().phase).toBe('initiative')
+})
+
+test('the GM can name the phase', () => {
+  expect(reduce(initialGame(), { type: 'phase', value: 'strategy' }).phase).toBe('strategy')
+})
+
+test('activating an operative is itself the firefight phase', () => {
+  const g = reduce(initialGame(), { type: 'phase', value: 'strategy' })
+  const op = teamOps(g, 'dw')[0]
+  expect(reduce(g, { type: 'activate', opId: op.id }).phase).toBe('firefight')
+})
+
+test('readying an operative back up is a correction, not a phase change', () => {
+  const g = reduce(initialGame(), { type: 'phase', value: 'strategy' })
+  const op = teamOps(g, 'dw')[0]
+  const spent = reduce(g, { type: 'activate', opId: op.id })
+  const undone = reduce(reduce(spent, { type: 'phase', value: 'strategy' }), { type: 'activate', opId: op.id })
+  expect(undone.phase).toBe('strategy')
+})
+
+test('the next turning point starts over at initiative', () => {
+  const g = reduce(initialGame(), { type: 'phase', value: 'firefight' })
+  expect(reduce(g, { type: 'nextTp' }).phase).toBe('initiative')
+})
+
+test('every phase names the card kinds it puts in play', () => {
+  expect(PHASES.map((p) => p.id)).toEqual(['initiative', 'strategy', 'firefight'])
+  expect(phaseMeta('strategy').use).toEqual(['strategy'])
+  expect(phaseMeta('initiative').use).toEqual([]) // nothing to spend before initiative is settled
+})
+
+// Guards the transcription: a typo'd team id or card kind would silently show a player nothing.
+test('every team has a compendium entry and every card is well formed', () => {
+  const kinds: RefKind[] = ['faction', 'strategy', 'firefight', 'equipment']
+  for (const t of TEAMS) {
+    expect(CARDS[t.id]).toBeDefined()
+    for (const c of CARDS[t.id]) {
+      expect(kinds).toContain(c.kind)
+      expect(c.name.length).toBeGreaterThan(0)
+      expect(c.text.length).toBeGreaterThan(0)
+    }
+  }
+  expect(Object.keys(CARDS).sort()).toEqual(TEAMS.map((t) => t.id).sort())
+})
+
+test('the two Deathwatch teams share one datacard', () => {
+  expect(CARDS.dw).toBe(CARDS.dw2)
+})
+
+test('phaseCards returns only what that phase unlocks', () => {
+  for (const t of TEAMS) {
+    expect(phaseCards(t.id, 'initiative')).toEqual([])
+    expect(phaseCards(t.id, 'strategy').every((c) => c.kind === 'strategy')).toBe(true)
+    expect(phaseCards(t.id, 'firefight').every((c) => c.kind === 'firefight')).toBe(true)
+  }
+})
+
+test('a team sees all six tac ops its archetypes allow, chosen one first', () => {
+  // What the player view offers in its Tac op deck: every eligible op, not just the picked one.
+  for (const t of TEAMS) {
+    const six = teamTacOps(t.id)
+    expect(six).toHaveLength(6)
+    expect(six.every((o) => t.archetypes.includes(o.archetype))).toBe(true)
+  }
+  const g = reduce(initialGame(), { type: 'tacOp', teamId: 'dw', value: 'Rout' })
+  const sorted = [...teamTacOps('dw')].sort(
+    (a, b) => Number(b.name === g.teams.dw.tacOp) - Number(a.name === g.teams.dw.tacOp),
+  )
+  expect(sorted[0].name).toBe('Rout')
+  expect(sorted).toHaveLength(6)
 })

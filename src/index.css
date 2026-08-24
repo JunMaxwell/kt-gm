@@ -4,9 +4,15 @@
 @theme {
   /* chrome */
   --color-ink: #282c34;
-  --color-paper: #ffffff;
-  --color-wash: #eef0f3;
-  --color-rule: #d8dbe0;
+  --color-paper: #f4f2ef;
+  --color-wash: #dedbd6;
+  --color-rule: #c9c5be;
+
+  /* the official card palette, sampled from the Warhammer Community team rules PDFs */
+  --color-card: #101010; /* the black header block */
+  --color-flare: #e8452a; /* GW's accent orange-red: keywords, kickers, rules under headings */
+  --color-stone: #e6e4e0; /* card body paper */
+  --color-fade: #6d6a66; /* flavour and secondary text */
 
   /* sides */
   --color-imperium: #0066a5;
@@ -28,6 +34,8 @@ html {
 body {
   margin: 0;
   background: var(--color-wash);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='27.71' viewBox='0 0 48 27.71'%3E%3Cpath d='M16.00 0.00L8.00 13.86L-8.00 13.86L-16.00 0.00L-8.00 -13.86L8.00 -13.86ZM16.00 27.71L8.00 41.57L-8.00 41.57L-16.00 27.71L-8.00 13.86L8.00 13.86ZM40.00 13.86L32.00 27.71L16.00 27.71L8.00 13.86L16.00 0.00L32.00 0.00ZM64.00 0.00L56.00 13.86L40.00 13.86L32.00 0.00L40.00 -13.86L56.00 -13.86ZM64.00 27.71L56.00 41.57L40.00 41.57L32.00 27.71L40.00 13.86L56.00 13.86Z' fill='none' stroke='%23000' stroke-opacity='0.03' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 48px 27.71px;
   color: var(--color-ink);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
@@ -40,9 +48,42 @@ body {
   line-height: 1;
 }
 
-/* the reference's op names: letterspaced monospace caps under a rule */
+/* the official cards' name strip: letterspaced monospace caps */
 .opname {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* ---------- the official card look ---------- */
+
+/* The hex lattice printed faintly under every card and page on the real sheets. */
+.kt-hex {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='27.71' viewBox='0 0 48 27.71'%3E%3Cpath d='M16.00 0.00L8.00 13.86L-8.00 13.86L-16.00 0.00L-8.00 -13.86L8.00 -13.86ZM16.00 27.71L8.00 41.57L-8.00 41.57L-16.00 27.71L-8.00 13.86L8.00 13.86ZM40.00 13.86L32.00 27.71L16.00 27.71L8.00 13.86L16.00 0.00L32.00 0.00ZM64.00 0.00L56.00 13.86L40.00 13.86L32.00 0.00L40.00 -13.86L56.00 -13.86ZM64.00 27.71L56.00 41.57L40.00 41.57L32.00 27.71L40.00 13.86L56.00 13.86Z' fill='none' stroke='%23000' stroke-opacity='0.06' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 48px 27.71px;
+}
+
+/* The black title block. Its bottom corners are notched on the printed cards. */
+.kt-band {
+  background: var(--color-card);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px));
+}
+
+/* The boxed card name under the black block. */
+.kt-strip {
+  border: 1px solid #2a2a2a;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+/* A heading with the accent rule under it, as on "RULES COMMENTARY". */
+.kt-rule {
+  border-bottom: 2px solid var(--color-flare);
+}
+
+/* The carousel rail scrolls but must never show a bar — it's a swipe surface. */
+.no-bar {
+  scrollbar-width: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
 }

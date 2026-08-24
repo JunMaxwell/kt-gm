@@ -19,6 +19,7 @@ import {
   defaultMarkers,
   killThresholds,
 } from './rules'
+import type { PhaseId } from './compendium'
 
 export type Order = 'conceal' | 'engage'
 export type OpState = {
@@ -45,6 +46,7 @@ export type Game = {
   mirror: boolean // draw each piece's 180° twin, for a symmetric table
   boards: Record<string, BoardSnapshot> // captured boards, keyed by `boardPhases` id
   finished: boolean
+  phase: PhaseId // which phase of the turning point the table is in; announced to every viewer
   critOp: CritOpId | null
   initiative: SideId
   primary: Record<SideId, OpKind | null>
@@ -81,6 +83,7 @@ export const initialGame = (): Game => {
     mirror: true,
     boards: {},
     finished: false,
+    phase: 'initiative',
     critOp: null,
     initiative: 'imperium',
     primary: { imperium: null, xenos: null },
@@ -105,6 +108,7 @@ export type Action =
   | { type: 'reset' }
   | { type: 'replace'; game: Game } // a whole snapshot: from the relay, or a loaded save
   | { type: 'critOp'; id: CritOpId }
+  | { type: 'phase'; value: PhaseId }
   | { type: 'initiative'; side: SideId }
   | { type: 'primary'; side: SideId; op: OpKind | null }
   | { type: 'critVp'; side: SideId; tp: number; delta: number }
@@ -207,6 +211,8 @@ export function reduce(g: Game, a: Action): Game {
       return { ...initialGame(), ...a.game }
     case 'critOp':
       return { ...g, critOp: a.id }
+    case 'phase':
+      return { ...g, phase: a.value }
     case 'initiative':
       return { ...g, initiative: a.side, sideTurn: a.side, pairUsed: [], turnIdx: 0 }
     case 'paired':
@@ -321,7 +327,13 @@ export function reduce(g: Game, a: Action): Game {
       const o = g.ops[a.opId]
       const teamId = teamIdOf(g, a.opId)
       const spending = !o.expended // readying an operative again is a correction, not an activation
-      const next = { ...g, ops: { ...g.ops, [a.opId]: { ...o, expended: spending } } }
+      // Activating *is* the Firefight phase, so the GM never has to announce that one by hand.
+      // Every path below spreads `next`, so setting it here covers all of them.
+      const next = {
+        ...g,
+        phase: spending ? ('firefight' as const) : g.phase,
+        ops: { ...g.ops, [a.opId]: { ...o, expended: spending } },
+      }
 
       if (!g.paired) {
         const isCurrent = currentTeamId(g) === teamId
@@ -396,6 +408,7 @@ export function reduce(g: Game, a: Action): Game {
         ops,
         teams,
         turnIdx: 0,
+        phase: 'initiative',
         sideTurn: g.initiative,
         pairUsed: [],
         counteracts: { imperium: 0, xenos: 0 }, // a Counteract is a this-turn opportunity
@@ -592,7 +605,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v11' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v12' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */

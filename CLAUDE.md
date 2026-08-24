@@ -29,7 +29,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 80 reducer tests, the only automated suite
+bun test           # 90 reducer tests, the only automated suite
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -49,19 +49,49 @@ VITE_API_URL=http://localhost:3003 bun x vite --port 5199
 ## Stack and layout
 
 Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no component library, and
-**no dependencies on the server side either**. Five files:
+**no dependencies on the server side either**.
 
 | File | Holds |
 |---|---|
 | `src/rules.ts` | All static data and every tunable: teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board constants and terrain palette |
+| `src/compendium.ts` | The three turning-point phases and all 97 ploy / equipment / faction-rule cards, transcribed from the official team rules PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
-| `src/App.tsx` | The whole UI |
+| `src/App.tsx` | The page shell only: `App`, the spectator `Viewer`, and `Console`'s layout |
+| `src/ui/*` | One file per panel — see below |
 | `server/index.ts` | The room relay. Not part of the SPA's tsconfig, so `tsc -b` never sees it |
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v11`). Any change to
+### `src/ui`
+
+`App.tsx` was one 2,000-line file. It is now a 198-line shell over one file per panel, cut along
+the section markers that were already in it:
+
+| File | Holds |
+|---|---|
+| `ui/shared.ts` | `Dispatch` / `Game` / `Net`, `SIDE_IDS`, `ROW`, `onInt`, `onNum` |
+| `ui/kit.tsx` | `Btn`, `DarkBtn`, `BufferedInput`, `Stepper`, `Card`, `TeamPill`, `Label` |
+| `ui/TurnBar.tsx` | The sticky header, plus `SingleTurn` / `PairedTurn` |
+| `ui/Scoreboard.tsx`, `ui/Objectives.tsx`, `ui/ActivationOrder.tsx` | The three left-column panels |
+| `ui/TacOpCard.tsx` | One tac op card. Its own file because three panels use it |
+| `ui/OpsBrowser.tsx` | The crit op / tac op catalogue |
+| `ui/MapBuilder.tsx` | The board: phase strip, SVG table, inspector rail |
+| `ui/TeamCard.tsx` | A player's card, plus `EditRow` / `PlayRow` |
+| `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
+| `ui/RoomBar.tsx` | Share / save / load |
+
+Two conventions the split rests on:
+
+- **The import graph is acyclic and shallow.** Leaves (`shared`, `kit`, `TacOpCard`) know nothing
+  about panels; panels import leaves; `App.tsx` imports panels. `TurnBar` → `RoomBar` is the only
+  panel-to-panel edge. Do not let a leaf import a panel.
+- **`shared.ts` is `.ts`, not `.tsx`, and holds every non-component export.** A `.tsx` that
+  exports a constant or a helper beside its components loses React Fast Refresh for the whole
+  file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`/`onNum`
+  and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
+
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v12`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-eleven times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+twelve times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -238,20 +268,47 @@ shared, so 50 of them is cheap. Notes:
 
 ## Design
 
-The UI deliberately mirrors <https://tiltos.github.io/kill-team-critical-ops/> — light paper, charcoal
-`#282c34` chrome, Bebas Neue caps headings, and white cards with a coloured header band. Its
-archetype palette is reused verbatim (Seek & Destroy `#bd0003`, Security `#0b6be1`, Recon `#f05c22`,
-Infiltration `#5f5f5f`) and its player colours became the side colours (Imperium `#0066a5`, Xenos
-`#d1232a`). The board builder follows <https://labrador.dev/layout-builder> instead.
+The cards are styled after **the official Kill Team rules cards** — the same six Warhammer
+Community PDFs the compendium text came from. Card anatomy, top to bottom:
 
-Both are credited in a **footer in the app**, not just here — the borrowing is substantial enough to
-name on the page, alongside the Games Workshop trademark line.
+| Part | How |
+|---|---|
+| Black title block | `.kt-band`, with the bottom corners notched by `clip-path`, as printed |
+| Kicker | small letterspaced caps in the accent orange — the faction keyword |
+| Title | big white Bebas caps — the *card type* ("Firefight Ploy"), never the card's name |
+| Name | `.kt-strip` + `.opname`: letterspaced monospace caps in a thin bordered box |
+| Body | rules text over `.kt-hex`, a faint hex lattice |
+
+`KtCard` in `ui/kit.tsx` is the single implementation; the compendium, tac op and crit op cards
+all go through it. **The three text slots are not interchangeable** — kicker is *who*, title is
+*what kind*, name is *which one*. Getting them muddled is the one way to make it stop looking
+like a real card.
+
+Palette, sampled from the PDFs: `--color-card` `#101010` (title blocks *and* all app chrome —
+one black, never two), `--color-flare` `#e8452a` (kickers, keywords, the rule under every panel
+header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--color-ink`
+`#282c34` survives as a **text** colour only.
+
+- **Keywords are highlighted by heuristic**, not by hand: `Rules` in `ui/kit.tsx` oranges any
+  run of 3+ capitals, minus a `NOISE` stop-list (`APL`, `ATK`, `HIT`, `DMG`, `NAME`). Tagging
+  97 cards by hand was not worth it. If a word highlights wrongly, add it to `NOISE`.
+- **Panels are square-cornered**, controls stay rounded. The printed cards have no radius.
+- **The live card outline is the accent orange**, not a per-kind colour. The printed cards carry
+  no coloured outline at all, so an invented palette read as off-brand; orange already means
+  "this one, now" on these sheets.
+- The page lattice is stroked at 0.03 and the card lattice at 0.06 — the page one sits under
+  everything, so it has to be fainter or it reads as noise.
+
+The board builder still follows <https://labrador.dev/layout-builder>, and the side and
+archetype colours are still <https://tiltos.github.io/kill-team-critical-ops/>'s. Both are
+credited in the **in-app footer** alongside the Games Workshop trademark line.
 
 Conventions that exist for a reason:
 
 - **Team colours are hex values with an `ink` flag**, not Tailwind classes, because they are used as
   inline band backgrounds. `ink: true` means the band is light enough to need dark text (Deathwatch
-  silver, XV26 white).
+  silver, XV26 white). Team colour is still how a *team* is identified — the card chrome is
+  black and orange regardless.
 - **Those same light colours are illegible as text on white**, so team identity is always rendered
   through `TeamPill` — a filled pill — never as coloured text.
 - **`BufferedInput` for every numeric field.** A controlled input reading a reducer-clamped number
@@ -267,7 +324,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` covers the reducer and selectors only — 80 tests. There is no React test harness and one
+`bun test` covers the reducer and selectors only — 90 tests. There is no React test harness and one
 was not added for a single component-state fix; UI behaviour is verified by driving a real browser.
 `withHistory` is exported purely so undo is testable without one.
 `tsconfig.app.json` excludes `*.test.ts` so `bun run build` doesn't need `@types/bun`.
@@ -418,6 +475,115 @@ proxied-DNS workaround are needed. Two traps found while testing it:
   bun -e 'new WebSocket("wss://kt-api.ydothien.work/rooms/TEST/ws").onopen = () => console.log("open")'
   ```
 
+## Phases and the compendium
+
+Five of seven players have never played. They do not know which phase they are in, and they do
+not know which cards that phase lets them use. Rooms shipped the *score* to their phones; this
+ships the *rules*.
+
+- **`Game.phase` is `'initiative' | 'strategy' | 'firefight'`** — the three phases of a 2024
+  turning point. `nextTp` resets it to `initiative`; **`activate` sets it to `firefight`**,
+  since activating *is* that phase and the GM should never have to announce it by hand. Only
+  the Initiative → Strategy step is a tap, because that is the moment worth announcing.
+- **Zero server change, again.** The phase is one more field on a snapshot the relay treats as
+  an opaque blob. Same free ride the board got.
+- **`compendium.ts` holds the cards, `rules.ts` holds the tunables.** That is the split; ~97
+  cards of rules prose would have doubled `rules.ts` and buried the dials.
+- **Every ploy costs 1CP flat in 2024**, which is why the printed cards carry no cost and
+  `RefCard` stores none. `PLOY_CP` is the single constant. Equipment that grants a ploy "for
+  0CP" says so in its own text.
+- **`PHASES[].use` is the only phase → card-kind mapping.** Add a phase or move a card kind
+  there, not in the UI.
+- Flavour paragraphs are dropped on transcription. Nobody reads flavour while six people wait.
+
+### Where the card data came from
+
+The six official Warhammer Community team rules PDFs, extracted with `pdftotext -layout`:
+
+| Team | PDF slug |
+|---|---|
+| Deathwatch (`dw` + `dw2`) | `eng_28-01_kill_team_team_rules_deathwatch-wngg7m6abd-uc8ksrsq97` |
+| Angels of Death | `eng_28-01_kill_team_team_rules_angels_of_death-g1xsdrmgpd-t1j6hagnfi` |
+| Scout Squad | `eng_29-04_kt_teamrules_scout_squad-gsh9kmjzgi-cx2xtxmp8b` |
+| Raveners | `eng_17-12_kt_raveners_online_rules-essk6jkv2r-uoltqtiunq` |
+| T'au XV26 | `eng_17-06_kill_team_team_rules_xv26_stealth_battlesuits_online_rules-ee27yjjgg3-mpri6mnolp` |
+| Ork Kommandos | `eng_17-06_kill_team_team_rules_kommandos_online_rules-ova8v1kjds-ds3ouz4k04` |
+
+All under `https://assets.warhammer-community.com/`. Two things that matter if this is ever
+redone:
+
+- **Errata are already folded into the card text.** Each PDF says so: *"Rules changes will be
+  updated directly into online documents and then listed below."* Transcribe the cards, ignore
+  the update log at the end.
+- **Neither wiki is usable for this.** Wahapedia 403s automated fetches and KTDash is now a JS
+  app with no public API. The PDFs are the primary source and strictly better than both.
+
+Every team landed on exactly **4 strategy ploys, 4 firefight ploys and 4 faction equipment** —
+the 2024 format — which is the completeness check. Faction rules vary (1 for Scouts and
+Kommandos, 3 for Raveners). `UNIVERSAL_EQUIPMENT` is still **empty**: it lives in the core
+rules, not any team's card, so it was not in these six PDFs. The Equipment panel says so
+rather than pretending the list is complete.
+
+### The player's phone
+
+**The player view is not a small GM console.** It shows one thing: that player's cards. An
+earlier cut gave spectators a "Score" tab holding the whole `Console`, which made the two views
+identical — that is gone, and `Console` is now GM-only.
+
+```
+Room ABCD — read only        [ Deathwatch — Player 1 ▾ ]
+STRATEGY   TP1/4 · 2CP                    IMP 0 · XEN 0
+Gain CP, then alternate Strategy Ploys, initiative side first.
+[ CARDS ][ BOARD ]
+┌──────────────────────────────┐
+│   ██ DEATHWATCH · 1CP ██     │   ← one card, swipe for the next
+│      STRATEGY PLOY           │
+│   ┌────────────────────────┐ │
+│   │ THE LONG VIGIL         │ │
+│   └────────────────────────┘ │
+│   Whenever an operative is…  │
+└──────────────────────────────┘
+          ○ ▬ ○ ○   2/4
+ NOW   STRAT  FIRE  GEAR  RULES  TAC OP    ← bottom navigation
+  4      4     4     4      2      1
+```
+
+- **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`). The page itself never
+  scrolls on a phone — verified at 390×664.
+- **The carousel is CSS scroll-snap, not a library and not touch handlers.** `snap-x
+  snap-mandatory` on the rail, `w-full shrink-0 snap-center` on each slide. That buys real
+  momentum swiping on a phone, trackpad swiping on a laptop and keyboard scrolling for free. The
+  only JS is `Math.round(scrollLeft / clientWidth)` in `onScroll` to light the right dot — do
+  not replace this with a JS carousel.
+- **Slides are laid out side by side, so every card in the deck is mounted.** A deck is at most
+  four cards, so this is cheaper than the remounting a windowed carousel would cost.
+- **Categories live in a bottom bar**, under the thumb, the way a native app puts primary
+  navigation. Active item is the accent orange with a bar above it; each carries its card count.
+- **Tabs are only offered for decks that have cards.** `Now` disappears in the Initiative phase
+  rather than sitting there dead; `live` falls back to the first surviving deck.
+- **The `Tac op` deck holds all six the team's archetypes allow, not just the chosen one**, with
+  the chosen one sorted first and badged "Yours". An earlier cut showed only the picked op, so
+  the tab vanished entirely when none was set — meaning a first-time player was never told they
+  *had* a tac op. When none is picked the deck still shows the six and says so.
+- **Cards stretch to fill the slide** (`className="flex-1"`), so the hex lattice fills the card
+  the way the printed art does instead of the card floating in the middle of the screen.
+- **Switching deck resets the rail to card 1** — `pick()` does both, or the new deck would open
+  at whatever scroll offset the last one ended on.
+- **Board** is `<MapBuilder bare />`, inert — `bare` drops the phase strip, palette and
+  inspector rail, which are inert anyway and on a phone are dead controls.
+- **Cards is the one interactive island**, outside `<div inert>`. That is what makes the rail
+  and the bottom bar work at all; `inert` blocks pointer *and* keyboard. The server rejects
+  writes without the token, so a stray click can do no damage.
+
+**Which team you are playing is a per-device choice**, stored under `killteam-gm/me` and never
+in `Game`. `teams[].player` is a free-text label, not an identity — putting the selection in the
+snapshot would mean seven players fighting over one field through the relay.
+
+The GM reaches the same decks through `CompendiumBrowser`: one collapsible in the console with a
+team chip row above the same `Compendium`, **wrapped in a fixed `h-[26rem]`** because the
+carousel is `flex-1` and needs a height to fill inside a collapsible. Shared component,
+different frame — the GM is looking things up for other people, not playing a hand.
+
 ## Known gaps
 
 - Seven of the nine crit ops accumulate per-marker points, track a named marker, or count actions
@@ -425,9 +591,12 @@ proxied-DNS workaround are needed. Two traps found while testing it:
   suggestion; only Secure and Transmission are auto-derived. Adding per-marker counters would fix it.
 - **No redo.** Undo exists (below) but Ctrl+Shift+Z does not; the `future` array was skipped as
   YAGNI. Undo is also memory-only, so a reload loses it — saves remain the durable escape hatch.
-- **Spectators cannot browse captured boards.** `<div inert>` blocks the phase strip along with
-  everything else, so they only ever see the live board. Fine for now — they are watching, not
-  reviewing.
+- **Spectators cannot browse captured boards.** Their Board tab renders `<MapBuilder bare />`,
+  which drops the phase strip on purpose, and `inert` would freeze it anyway. Fine for now —
+  they are watching, not reviewing.
+- **`UNIVERSAL_EQUIPMENT` is empty.** The universal equipment list is in the core rules, not the
+  six team PDFs, so it was never transcribed. Each team's own equipment is complete, and the
+  Equipment panel says which half is missing.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.
   `teams[].player` is a free-text label, not an identity, so the server cannot tell who is who.
   Authentik OIDC is already running on the VPS if that ever changes.
