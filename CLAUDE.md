@@ -29,7 +29,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 90 reducer tests, the only automated suite
+bun test           # 91 reducer tests, the only automated suite
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -115,11 +115,24 @@ Non-negotiables that this design rests on:
   merges over `initialGame()` exactly like a localStorage load does.
 - **The server never imports `rules.ts`** and never runs the reducer. A snapshot is an opaque blob.
   Viewers run the same selectors on the same state, so scores can't disagree.
-- **Read-only is `<div inert>`**, one native attribute over the whole console. It blocks real pointer
-  events and keyboard focus and drops the subtree from the a11y tree — no `disabled` threaded through
-  36 dispatch sites, and not `pointer-events-none`, which leaves everything tab-focusable. Note a
-  programmatic `el.click()` still gets through `inert`; that is fine, since the server rejects writes
-  without the token and the next relay message overwrites any local divergence.
+- **Read-only is structural, and `inert` is gone.** It used to be one `<div inert>` over the whole
+  console. That worked while the player view *was* a small console, and stopped working the moment
+  it wasn't: `inert` blocks pointer **and** keyboard, so inside it a card carousel cannot be swiped
+  and a board token cannot be tapped. There is now no `inert` anywhere in `src/`.
+
+  What replaces it is that the player view only renders things that *cannot* write:
+  - `Compendium` takes no `dispatch` prop at all — it is incapable of writing.
+  - `MapBuilder bare` selects but never drags: `grab` skips `setDrag`, and `onUp` opens with
+    `if (!drag) return`, so its three dispatches are dead. Its other dispatches live inside
+    `{!bare && …}` (the phase strip and the whole inspector rail), and `patch` needs a selected
+    *terrain piece*, which `bare` refuses to select.
+  - The one indirect case: the captured-board banner dispatches `boardRestore`/`boardCapture`, and
+    is gated on `shot` rather than on `bare`. It is unreachable only because `view` is set solely
+    by the phase strip, which `bare` hides. **If you ever let `view` be set under `bare`, that
+    banner becomes live** — gate it explicitly at that point.
+
+  The server still rejects writes without the token and the next relay message overwrites any local
+  divergence, so a stray click is harmless regardless. That is the backstop, not the mechanism.
 - **Role comes from the URL.** `#/r/ABCD` means spectator; otherwise the stored `killteam-gm/room`
   `{ code, token }` means GM. Hash matching, so still no router.
 - Room codes drop `I O 0 1` — they get read aloud across a table.
@@ -228,6 +241,14 @@ was the wrong idea: a rolled layout matches nobody's actual table.
   second Deploy appends rather than stacking. Nobody drags 53 tokens on from nothing.
 - Tokens carry state: dashed ring = conceal, faded = expended, red ring = injured, dead leave the
   board. The **outline is what makes them legible** — XV26 and Deathwatch are near-white fills.
+- **`mine` rings the tokens of one team** — the team the viewing device is playing. It is drawn as
+  a *separate circle outside the token*, never as a fourth meaning on `stroke`: that attribute
+  already carries injured and selected, and `strokeDasharray` carries conceal, so overloading it
+  would make "mine" and "injured" mutually exclusive exactly when you want both.
+- **`bare` means read-only, not just chrome-free.** Under it `grab` sets `sel` but never `drag`,
+  and `onUp` opens with `if (!drag) return` — so a spectator's board cannot dispatch at all. That
+  is a structural guarantee from a guard that already existed, not a `disabled` flag to remember.
+  `bare` also restricts selection to operatives; selecting terrain would open a hidden rail.
 
 ### Captured boards
 
@@ -324,7 +345,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` covers the reducer and selectors only — 90 tests. There is no React test harness and one
+`bun test` covers the reducer and selectors only — 91 tests. There is no React test harness and one
 was not added for a single component-state fix; UI behaviour is verified by driving a real browser.
 `withHistory` is exported purely so undo is testable without one.
 `tsconfig.app.json` excludes `*.test.ts` so `bun run build` doesn't need `@types/bun`.
@@ -569,11 +590,14 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
   the way the printed art does instead of the card floating in the middle of the screen.
 - **Switching deck resets the rail to card 1** — `pick()` does both, or the new deck would open
   at whatever scroll offset the last one ended on.
-- **Board** is `<MapBuilder bare />`, inert — `bare` drops the phase strip, palette and
-  inspector rail, which are inert anyway and on a phone are dead controls.
-- **Cards is the one interactive island**, outside `<div inert>`. That is what makes the rail
-  and the bottom bar work at all; `inert` blocks pointer *and* keyboard. The server rejects
-  writes without the token, so a stray click can do no damage.
+- **Board** is `<MapBuilder bare mine={me} />`. `bare` drops the phase strip, palette and
+  inspector rail, and makes the board select-only. Your team's operatives are ringed in the
+  accent orange; tapping any operative — yours or an enemy's — opens a read-only `KtCard` naming
+  it with APL / Move / Save / Wounds and its conceal, injured and expended state. There is no
+  weapon data in the app, so that is everything it can say.
+- **Both tabs are fully interactive** — there is no `inert` wrapper any more. Neither can mutate:
+  `Compendium` has no `dispatch` prop, and `bare` makes the board select-only. See the read-only
+  note in **Rooms** for why that is a structural guarantee rather than a convention.
 
 **Which team you are playing is a per-device choice**, stored under `killteam-gm/me` and never
 in `Game`. `teams[].player` is a free-text label, not an identity — putting the selection in the
@@ -591,9 +615,9 @@ different frame — the GM is looking things up for other people, not playing a 
   suggestion; only Secure and Transmission are auto-derived. Adding per-marker counters would fix it.
 - **No redo.** Undo exists (below) but Ctrl+Shift+Z does not; the `future` array was skipped as
   YAGNI. Undo is also memory-only, so a reload loses it — saves remain the durable escape hatch.
-- **Spectators cannot browse captured boards.** Their Board tab renders `<MapBuilder bare />`,
-  which drops the phase strip on purpose, and `inert` would freeze it anyway. Fine for now —
-  they are watching, not reviewing.
+- **Spectators cannot browse captured boards.** Their Board tab drops the phase strip on purpose,
+  so `view` is never set. Fine for now — they are watching, not reviewing. See the read-only note
+  above before changing this: the phase strip is what keeps the capture banner's dispatches dead.
 - **`UNIVERSAL_EQUIPMENT` is empty.** The universal equipment list is in the core rules, not the
   six team PDFs, so it was never transcribed. Each team's own equipment is complete, and the
   Equipment panel says which half is missing.

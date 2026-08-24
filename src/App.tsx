@@ -23,11 +23,11 @@ type Tab = 'cards' | 'board'
  * The spectator's phone. Five of seven players watch on one of these, so the console's three
  * columns are the wrong shape — they get their own cards first and the rest behind a tab.
  *
- * The Cards tab is deliberately OUTSIDE `inert`: `inert` blocks keyboard and pointer alike, so
- * a `<details>` inside it can never be opened and the whole panel would be dead weight. The
- * two read-only tabs keep the wrapper. A stray programmatic click still can't do damage — the
- * server rejects writes without the token, and the next relay message overwrites any local
- * divergence.
+ * Both tabs are OUTSIDE `inert`: it blocks keyboard and pointer alike, so a `<details>` inside
+ * it can never be opened and a token inside it can never be tapped — the panels would be dead
+ * weight. Neither tab can mutate anyway: the Cards deck only reads, and `bare` makes the board
+ * select-only (see MapBuilder). A stray click still can't do damage — the server rejects writes
+ * without the token, and the next relay message overwrites any local divergence.
  */
 function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: Net }) {
   const [tab, setTab] = useState<Tab>('cards')
@@ -98,8 +98,8 @@ function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: 
         </div>
       )}
       {tab === 'board' && (
-        <div inert className="min-h-0 flex-1 overflow-auto">
-          <MapBuilder game={game} dispatch={dispatch} bare />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <MapBuilder game={game} dispatch={dispatch} bare mine={me} />
         </div>
       )}
     </div>

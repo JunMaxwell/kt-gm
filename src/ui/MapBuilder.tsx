@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 
-import { BOARD, boardPhases, mirrorPiece, type Piece, type Point, SIDE_COLOR, SIDES, TEAMS, TERRAIN_KIND, TERRAIN_PALETTE, type TerrainKind } from '../rules'
-import { Btn, BufferedInput, Label } from './kit'
+import { BOARD, boardPhases, mirrorPiece, type Operative, type Piece, type Point, SIDE_COLOR, SIDES, TEAMS, TERRAIN_KIND, TERRAIN_PALETTE, type TerrainKind } from '../rules'
+import { type OpState, teamIdOf } from '../state'
+import { Btn, BufferedInput, KtCard, Label } from './kit'
 import { type Dispatch, type Game, onNum, SIDE_IDS } from './shared'
 
 /* ---------- the board ---------- */
@@ -18,9 +19,21 @@ export type Drag = { kind: 'piece' | 'op' | 'marker'; id: string; x: number; y: 
  * A drag keeps its position in local state and only dispatches on pointer-up. Dispatching
  * per `pointermove` would rewrite localStorage and re-render 53 tokens sixty times a second.
  */
-export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dispatch; bare?: boolean }) {
-  // `bare` is the spectator's board: no phase strip, no palette, no inspector. Those are
-  // inert on a viewer anyway, and on a phone they are three screens of dead controls.
+export function MapBuilder({
+  game,
+  dispatch,
+  bare,
+  mine,
+}: {
+  game: Game
+  dispatch: Dispatch
+  bare?: boolean
+  /** Team id to ring on the board — the team this device is playing. */
+  mine?: string
+}) {
+  // `bare` is the spectator's board: no phase strip, no palette, no inspector, and **nothing
+  // that mutates**. It selects but never drags, so `onUp`'s `if (!drag) return` makes a
+  // dispatch structurally impossible rather than merely discouraged.
   const svgRef = useRef<SVGSVGElement>(null)
   const [sel, setSel] = useState<Sel>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -42,7 +55,16 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
   const grab = (kind: Drag['kind'], id: string, ax: number, ay: number) =>
     shot
       ? undefined
-      : (e: React.PointerEvent) => {
+      : bare
+        ? // Spectators tap to inspect. `drag` is never set, so nothing can be dispatched.
+          // Operatives only: selecting terrain would open a rail that is hidden here anyway.
+          kind === 'op'
+          ? (e: React.PointerEvent) => {
+              e.stopPropagation()
+              setSel({ kind, id })
+            }
+          : undefined
+        : (e: React.PointerEvent) => {
           e.preventDefault()
           e.stopPropagation()
           const p = at(e)
@@ -75,9 +97,10 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
     selPiece && dispatch({ type: 'terrainPatch', id: selPiece.id, patch: p })
   const selOp =
     !shot && sel?.kind === 'op' ? Object.values(game.roster).flat().find((o) => o.id === sel.id) : undefined
+  const selTeam = selOp ? TEAMS.find((t) => t.id === teamIdOf(game, selOp.id)) : undefined
 
   const label = (i: number) => (i === 0 && markers.length % 2 ? 'C' : String(i + 1))
-  const grabbable = shot ? '' : 'cursor-move'
+  const grabbable = shot || bare ? '' : 'cursor-move'
 
   const piece = (p: Piece, ghost?: boolean) => (
     <rect
@@ -101,10 +124,12 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
     />
   )
 
-  return (
-    <details open className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
-      <summary className="display cursor-pointer kt-rule bg-card px-3 py-2 text-xl text-white">Board</summary>
-
+  // On a player's phone the tab is already called Board, so a collapsible titled "Board" is a
+  // wasted row. The GM keeps it — the console stacks several of these and needs them foldable.
+  // A plain element, never a component defined here: that would remount on every render and
+  // drop `sel` (and any in-flight drag) with it.
+  const inner = (
+    <>
       {/* Each phase is a captured copy of the board. Empty slots capture on click; full
           ones open read-only, so looking back at TP2 can never disturb the live table. */}
       {!bare && (
@@ -220,6 +245,19 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
                         ? `${o.name} (${t.short})`
                         : `${o.name} (${t.short}) — ${st!.hp}/${o.w}W, ${st!.order}${st!.expended ? ', expended' : ''}`}
                     </title>
+                    {/* Yours, ringed. Separate geometry, not a fourth meaning on `stroke` —
+                        that attribute already carries injured/selected and the dasharray
+                        carries conceal, and you most want the ring when one of those is on. */}
+                    {mine === t.id && (
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={token + 0.2}
+                        fill="none"
+                        stroke="var(--color-flare)"
+                        strokeWidth={0.14}
+                      />
+                    )}
                     <circle
                       cx={p.x}
                       cy={p.y}
@@ -239,11 +277,22 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
           </svg>
 
           <p className="mt-2 text-xs text-ink/50">
-            44"×30", 2" grid, drags snap to {step}".{' '}
-            {shot
-              ? 'A capture records terrain, markers and positions only — tokens are drawn plain because wounds and orders belong to the live board.'
-              : 'Tokens are numbered by their place in the team list — dashed ring = conceal, faded = expended, red ring = injured. Incapacitated operatives leave the board.'}
+            {bare ? (
+              <>Tap an operative to see what it is. Orange ring = yours, dashed = conceal, faded = expended, red = injured.</>
+            ) : (
+              <>
+                44"×30", 2" grid, drags snap to {step}".{' '}
+                {shot
+                  ? 'A capture records terrain, markers and positions only — tokens are drawn plain because wounds and orders belong to the live board.'
+                  : 'Tokens are numbered by their place in the team list — dashed ring = conceal, faded = expended, red ring = injured. Incapacitated operatives leave the board.'}
+              </>
+            )}
           </p>
+
+          {/* The spectator's inspector. The rail is hidden under `bare`, so the card lives here. */}
+          {bare && selOp && selTeam && (
+            <OpCard op={selOp} team={selTeam} st={game.ops[selOp.id]} onClose={() => setSel(null)} />
+          )}
         </div>
 
         {!bare && (
@@ -386,6 +435,78 @@ export function MapBuilder({ game, dispatch, bare }: { game: Game; dispatch: Dis
         </div>
         )}
       </div>
+    </>
+  )
+
+  return bare ? (
+    <div className="flex min-h-0 flex-1 flex-col p-2">{inner}</div>
+  ) : (
+    <details open className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
+      <summary className="display cursor-pointer kt-rule bg-card px-3 py-2 text-xl text-white">Board</summary>
+      {inner}
     </details>
+  )
+}
+
+/**
+ * What that token is — the spectator's answer to "what is about to charge me?".
+ *
+ * Read-only by construction: no dispatch, no controls but Close. `PlayRow` in `TeamCard` shows
+ * the same operative to the GM, but it is all buttons and hides APL and Wounds in a `title`
+ * tooltip, which is invisible on a phone. Same vocabulary, opposite job.
+ */
+function OpCard({
+  op,
+  team,
+  st,
+  onClose,
+}: {
+  op: Operative
+  team: (typeof TEAMS)[number]
+  st?: OpState
+  onClose: () => void
+}) {
+  const injured = st && !st.dead && st.hp * 2 < op.w
+  const stat = (k: string, v: React.ReactNode) => (
+    <div className="min-w-0">
+      <Label>{k}</Label>
+      <p className="display text-lg leading-none text-card">{v}</p>
+    </div>
+  )
+
+  return (
+    <KtCard
+      kicker={team.name}
+      title="Operative"
+      name={op.name}
+      outline="var(--color-flare)"
+      aside={
+        <button onClick={onClose} className="text-white/60 hover:text-white" aria-label="Close">
+          ✕
+        </button>
+      }
+      className="mt-2"
+    >
+      <div className="grid grid-cols-4 gap-2">
+        {stat('APL', op.apl)}
+        {stat('Move', op.move)}
+        {stat('Save', op.save)}
+        {stat('Wounds', st ? `${st.hp}/${op.w}` : op.w)}
+      </div>
+
+      {st && (
+        <p className="mt-2 flex flex-wrap items-center gap-1">
+          <span
+            className="display rounded px-1.5 text-xs text-white"
+            style={{ background: st.order === 'conceal' ? '#0b6be1' : '#f05c22' }}
+          >
+            {st.order === 'conceal' ? 'Conceal' : 'Engage'}
+          </span>
+          {injured && <span className="display rounded bg-recon px-1.5 text-xs text-white">Injured</span>}
+          {st.expended && <span className="display rounded bg-black/15 px-1.5 text-xs text-card">Expended</span>}
+          {st.dead && <span className="display rounded bg-xenos px-1.5 text-xs text-white">Incapacitated</span>}
+        </p>
+      )}
+    </KtCard>
   )
 }

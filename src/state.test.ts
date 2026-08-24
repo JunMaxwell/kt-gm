@@ -34,6 +34,7 @@ import {
   scores,
   sideOps,
   suggestedCrit,
+  teamIdOf,
   teamOps,
   teamsOf,
   withHistory,
@@ -947,4 +948,13 @@ test('a team sees all six tac ops its archetypes allow, chosen one first', () =>
   )
   expect(sorted[0].name).toBe('Rout')
   expect(sorted).toHaveLength(6)
+})
+
+test('teamIdOf resolves an operative back to its team, prefixes and all', () => {
+  const g = initialGame()
+  for (const t of TEAMS) for (const o of teamOps(g, t.id)) expect(teamIdOf(g, o.id)).toBe(t.id)
+
+  // `dw` is a prefix of `dw2`, which is exactly why this is a lookup and not startsWith.
+  expect(teamIdOf(g, teamOps(g, 'dw2')[0].id)).toBe('dw2')
+  expect(teamIdOf(g, 'nobody')).toBeUndefined()
 })

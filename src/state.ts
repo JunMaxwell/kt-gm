@@ -158,7 +158,9 @@ const findOp = (g: Game, opId: string) =>
     .flat()
     .find((o) => o.id === opId)
 
-const teamIdOf = (g: Game, opId: string) =>
+/** Which team owns an operative. A real lookup, because op ids come in four shapes and `dw` is
+ *  a prefix of `dw2` — `id.startsWith(teamId)` is ambiguous. */
+export const teamIdOf = (g: Game, opId: string) =>
   Object.keys(g.roster).find((tid) => g.roster[tid].some((o) => o.id === opId))
 
 /* ---------- board geometry ---------- */
