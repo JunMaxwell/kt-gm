@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
 
 import { tacOp, teamTacOps } from '../rules'
-import { CARDS, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, teamCards, UNIVERSAL_EQUIPMENT } from '../compendium'
+import { cardsOfKind, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, UNIVERSAL_EQUIPMENT } from '../compendium'
+import { FACTIONS } from '../factions'
 import { allTeams } from '../state'
 import { KtCard, Rules } from './kit'
-import { type Game } from './shared'
+import { type Game, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
 
 /* ---------- compendium ---------- */
@@ -69,15 +70,18 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
   // been given one yet still needs to see what they are choosing between.
   const tacs = [...teamTacOps(team?.archetypes ?? [])].sort((a, b) => Number(b.name === team?.tacOp) - Number(a.name === team?.tacOp))
 
+  // A non-preset faction's deck arrives a tick later; until then every deck is empty.
+  const faction = useFaction(team?.faction)
+
   const [deck, setDeck] = useState<Deck>('now')
   const [at, setAt] = useState(0)
   const rail = useRef<HTMLDivElement>(null)
 
   const cardsIn = (d: Deck): RefCard[] => {
-    if (d === 'now') return phaseCards(team?.faction, game.phase)
+    if (d === 'now') return phaseCards(faction?.cards, game.phase)
     if (d === 'tac') return []
-    if (d === 'equipment') return [...teamCards(team?.faction, 'equipment'), ...UNIVERSAL_EQUIPMENT]
-    return teamCards(team?.faction, d)
+    if (d === 'equipment') return [...cardsOfKind(faction?.cards, 'equipment'), ...UNIVERSAL_EQUIPMENT]
+    return cardsOfKind(faction?.cards, d)
   }
   const size = (d: Deck) => (d === 'tac' ? tacs.length : cardsIn(d).length)
 
@@ -191,12 +195,12 @@ export function CompendiumBrowser({ game }: { game: Game }) {
   const [pick, setTeamId] = useState('')
   // Validated at render, not once at mount: setup can delete the team under us.
   const teamId = teams.some((t) => t.id === pick) ? pick : (teams[0]?.id ?? '')
-  const total = Object.values(CARDS).flat().length // one deck per faction, none aliased
+  const total = FACTIONS.length
 
   return (
     <details className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
       <summary className="display cursor-pointer kt-rule bg-card px-3 py-2 text-xl text-white">
-        Ploys &amp; equipment ({total} cards)
+        Ploys &amp; equipment ({total} factions)
       </summary>
       <div className="p-3">
         <div className="mb-3 flex flex-wrap items-center gap-1">

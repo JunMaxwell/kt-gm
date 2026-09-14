@@ -1,0 +1,35 @@
+// Generated from the official team rules PDF. Do not edit by hand — rerun the
+// extractor described in CLAUDE.md (‘Where the card data came from’).
+import type { RefCard } from '../compendium'
+import type { Operative } from '../rules'
+
+export const cards: RefCard[] = [
+  { kind: 'faction', name: "Void Armour", text: "Whenever an operative is shooting a friendly IMPERIAL NAVY BREACHER operative, if the ranged weapon in that sequence has the Blast or Torrent weapon rule (excluding weapons that have a sweeping profile), you can re-roll one of your defence dice, or up to two of your defence dice if that friendly operative is a GRENADIER.\nFriendly IMPERIAL NAVY BREACHER operatives aren’t affected by the x\" Devastating x weapon rule (i.e. Devastating with a distance) unless they are the target during that sequence." },
+  { kind: 'faction', name: "Breach and Clear", text: "Once per turning point, when a ready friendly IMPERIAL NAVY BREACHER operative is activated, you can use this rule. If you do, select one other ready friendly IMPERIAL NAVY BREACHER operative visible to and within 3\" of that operative. When that first friendly operative is expended, you can activate that other friendly operative before your opponent activates. When that other operative is expended, your opponent then activates as normal." },
+  { kind: 'strategy', name: "Defence Order", text: "Place your Defence Order marker in the killzone. Whenever an operative is shooting a friendly IMPERIAL NAVY BREACHER operative that’s within 3\" of that marker, you can re-roll any of your defence dice results of one result (e.g.\nresults of 2). In the Ready step of the next\nStrategy phase, remove that marker. You cannot use this ploy and the Attack Order strategy ploy during the same Strategy phase." },
+  { kind: 'strategy', name: "Attack Order", text: "Place your Attack Order marker in the killzone. Whenever a friendly IMPERIAL NAVY BREACHER operative within 3\" of that marker is shooting, fighting or retaliating, its weapons have the Ceaseless weapon rule. In the Ready step of the next Strategy phase, remove that marker. You cannot use this ploy and the Defence Order strategy ploy during the same Strategy phase." },
+  { kind: 'strategy', name: "Close Assault", text: "Whenever a friendly IMPERIAL NAVY BREACHER operative is fighting or shooting an operative within 3\" of it:\n• Add 1 to both Dmg stats of all profiles of its Navis shotguns or Navis heavy shotguns\n(if any).\n• If you roll two or more fails, you can discard one of them to retain another as a normal success instead." },
+  { kind: 'strategy', name: "Brace for Counterattack", text: "Whenever an operative is shooting against, fighting against or retaliating against a friendly IMPERIAL NAVY BREACHER operative that’s within your territory or that hasn’t performed the Charge, Fall Back or Reposition action during this turning point, Normal and Critical Dmg of 3 or more inflicts 1 less damage on that friendly operative." },
+  { kind: 'firefight', name: "Blitz", text: "Use this firefight ploy when a friendly IMPERIAL NAVY BREACHER operative performs the Shoot or Fight action, and you select an enemy operative within 6\" of it as a valid target or to fight against. If it’s the first friendly operative to perform either of those actions during this turning point, its weapons have the Accurate 1 weapon rule for that action. If it’s the first friendly operative to be activated during this turning point, its weapons also have the Severe weapon rule for that action." },
+  { kind: 'firefight', name: "Overwhelm Target", text: "Use this firefight ploy when you activate either friendly IMPERIAL NAVY BREACHER operative while using the Breach and Clear faction rule. Until the end of that operative’s activation, add 1 to its APL stat." },
+  { kind: 'firefight', name: "Lock It Down", text: "Use this firefight ploy when a friendly IMPERIAL\nNAVY BREACHER operative is activated. Select one objective marker. Until the end of the battle or until you use this ploy again (whichever comes first), when determining control of that objective marker, treat that friendly operative’s APL stat as 1 higher. Note this isn’t a change to the APL stat, so any changes are cumulative with this." },
+  { kind: 'firefight', name: "Deck Hand", text: "Use this firefight ploy during a friendly IMPERIAL NAVY BREACHER operative’s activation, before or after it performs an action. That operative can move through one Accessible terrain feature without it counting as an additional 1\" and/or perform a free Operate Hatch action during its activation, and can do so during the Charge or Fall Back action. You cannot use this ploy if the access point has been welded shut (see HATCHCUTTER) unless it’s a friendly HATCHCUTTER operative’s activation." },
+  { kind: 'equipment', name: "Slugs", text: "Up to three times per turning point, whenever a friendly IMPERIAL NAVY BREACHER operative is performing the Shoot action and you select a Navis shotgun (long range), you can use this rule. If you do, until the end of that action, improve the Hit stat of that weapon by 1 and add 1 to both of its Dmg stats, and that weapon has the Accurate 1 weapon rule." },
+  { kind: 'equipment', name: "Rebreathers", text: "You can ignore any changes to the APL stat of friendly IMPERIAL NAVY BREACHER operatives, and they aren’t affected by enemy operatives’ Shock weapon rule." },
+  { kind: 'equipment', name: "Combat Stimms", text: "You can ignore any changes to the Move stat of friendly IMPERIAL NAVY BREACHER operatives from being injured." },
+  { kind: 'equipment', name: "System Override Device", text: "Once per turning point, one friendly IMPERIAL NAVY BREACHER operative can perform the Operate Hatch action for 1 less AP." },
+]
+
+export const operatives: Operative[] = [
+  { id: "imperial-navy-breachers:navis-sergeant-at-arms", name: "Navis Sergeant-at-arms", apl: 2, move: "6\"", save: "4+", w: 9 },
+  { id: "imperial-navy-breachers:navis-armsman", name: "Navis Armsman", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "imperial-navy-breachers:navis-axejack", name: "Navis Axejack", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "imperial-navy-breachers:navis-c-a-t-unit", name: "Navis C.a.t. Unit", apl: 2, move: "8\"", save: "5+", w: 5 },
+  { id: "imperial-navy-breachers:navis-endurant", name: "Navis Endurant", apl: 2, move: "4\"", save: "2+", w: 11 },
+  { id: "imperial-navy-breachers:navis-gheistskull", name: "Navis Gheistskull", apl: 2, move: "8\"", save: "5+", w: 5 },
+  { id: "imperial-navy-breachers:navis-grenadier", name: "Navis Grenadier", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "imperial-navy-breachers:navis-gunner", name: "Navis Gunner", apl: 2, move: "6\"", save: "4+", w: 9 },
+  { id: "imperial-navy-breachers:navis-hatchcutter", name: "Navis Hatchcutter", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "imperial-navy-breachers:navis-surveyor", name: "Navis Surveyor", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "imperial-navy-breachers:navis-void-jammer", name: "Navis Void-jammer", apl: 2, move: "6\"", save: "4+", w: 8 },
+]

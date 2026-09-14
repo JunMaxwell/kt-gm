@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { CHEAT_SHEET } from './rules'
 import { phaseMeta } from './compendium'
 import { allTeams, scores, teamsOf, useGame } from './state'
-import { type Dispatch, type Game, type Net } from './ui/shared'
+import { type Dispatch, type Game, type Net, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
 import { MapBuilder } from './ui/MapBuilder'
@@ -121,6 +121,9 @@ function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: 
 export default function App() {
   const [game, dispatch, net, canUndo] = useGame()
   const [editing, setEditing] = useState(false)
+  // Fetch the chunk for every faction on the table up front. The app is meant to survive a
+  // venue with no wifi, so a match set up beforehand must not need the network to be read.
+  usePrefetchFactions(allTeams(game).map((t) => t.faction))
 
   if (net.viewer) return <Viewer game={game} dispatch={dispatch} net={net} />
   if (game.setup) return <Setup game={game} dispatch={dispatch} />

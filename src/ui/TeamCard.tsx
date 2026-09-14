@@ -1,7 +1,7 @@
 import { blankOperative, CATALOGUE, type Operative, slug, tacOp, teamTacOps } from '../rules'
 import { currentTeamId, type Order, orderCounts, pairEligible, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
-import { type Dispatch, type Game, onInt } from './shared'
+import { type Dispatch, type Game, onInt, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
 
 /* ---------- roster ---------- */
@@ -110,6 +110,11 @@ export function TeamCard({
   // The team is the play state now — one object, not a preset plus a row beside it.
   const team = game.teams[teamId]
   const p = team
+  // A preset faction keeps its hand-curated catalogue in rules.ts (shorter names, and the
+  // default rosters are built from it); every other faction reads its datacards from the
+  // generated library, which arrives a tick after the team first appears.
+  const faction = useFaction(team.faction)
+  const catalogue = CATALOGUE[team.faction ?? ''] ?? faction?.operatives ?? []
   const ops = teamOps(game, teamId)
   const counts = orderCounts(game, teamId)
   const selectedTacOp = tacOp(p.tacOp)
@@ -120,7 +125,7 @@ export function TeamCard({
   const add = (value: string) => {
     if (!value) return
     // A hand-built team has no faction, and so no datacards to pick from.
-    const src = (CATALOGUE[team.faction ?? ''] ?? []).find((c) => c.id === value)
+    const src = catalogue.find((c) => c.id === value)
     const op: Operative = src
       ? { ...src, id: `${teamId}-${slug(src.name)}-${crypto.randomUUID().slice(0, 4)}` }
       : blankOperative(teamId)
@@ -204,7 +209,7 @@ export function TeamCard({
           >
             <option value="">+ add operative…</option>
             <optgroup label="Datacards">
-              {(CATALOGUE[team.faction ?? ''] ?? []).map((c) => (
+              {catalogue.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} — {c.apl}AP {c.move} {c.save} {c.w}W
                 </option>

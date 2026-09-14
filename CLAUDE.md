@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 91 reducer tests, the only automated suite
+bun test           # 115 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -56,7 +56,9 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 | File | Holds |
 |---|---|
 | `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board defaults, drop-zone geometry and terrain palette |
-| `src/compendium.ts` | The three turning-point phases and all 97 ploy / equipment / faction-rule cards, transcribed from the official team rules PDFs |
+| `src/compendium.ts` | The three turning-point phases, the `RefCard` type, and universal equipment. The per-faction cards moved to `src/factions/` |
+| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards — one module each, plus `index.ts` holding the metadata and the loader |
+| `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
 | `src/App.tsx` | The page shell only: `App`, the spectator `Viewer`, and `Console`'s layout |
@@ -448,12 +450,36 @@ time and a stale `pairUsed` id is inert. Fewer stored invariants, fewer things t
 - `teamsWithArchetype(teams, a)` takes the team list now, and `TacOpCard` receives the resulting
   pills as a **prop** — it is a leaf and must not reach for `game`.
 
-### What is still fixed
+### The faction library
 
-The app knows **seven factions** worth of datacards, catalogues and ploys. "Any Kill Team match"
-means any number of alliances and teams drawn from those seven, or teams typed in by hand with
-`blankOperative` — not a full faction library. Adding one is a transcription job (see **Where the
-card data came from**), not a code change.
+`src/factions/` holds every kill team Games Workshop publishes rules for — 48 of them, 697
+cards and 454 datacards. `FACTIONS` in `src/factions/index.ts` is the metadata list (id, name,
+archetypes, colour) and is always in the bundle, because the Setup picker needs it.
+
+**Loading is split, and the split is load-bearing:**
+
+- **The six factions the preset match uses are imported statically.** `initialGame()` builds a
+  roster at boot and cannot `await`, so `dw`/`aod`/`sct`/`rav`/`xv26`/`kom` must be there
+  synchronously. Vite folds a statically-imported module into the main bundle rather than
+  splitting it, so listing them in both maps costs nothing.
+- **The other 42 are dynamic imports**, one ~10KB chunk each. Without this the main bundle
+  would roughly triple; with it, it went 315KB → 335KB.
+- **`usePrefetchFactions` in `App` warms every faction on the table** as soon as the game
+  loads. The app is meant to work at a table with no wifi — that is the same reason the fonts
+  are vendored — so a match configured beforehand must not need the network to be read. Only
+  *browsing* an unused faction hits it.
+- `loadFaction(undefined)` and `loadFaction('nonsense')` resolve to `undefined` rather than
+  throwing. A hand-built team has no faction at all, and that is a normal state.
+
+**Operative names come from the PDFs verbatim** ("Kommando Boss Nob", "Deathwatch Aegis
+Veteran"). The six preset factions keep their **hand-curated** `CATALOGUE` in `rules.ts`
+instead, with the shorter names the default rosters are built from — `fromCatalogue` throws on
+a miss, so swapping those would break `DEFAULT_ROSTER`. `TeamCard` prefers `CATALOGUE` and
+falls back to the library, which is the only place the two conventions meet.
+
+Adding a team from the library gives it the faction's archetypes, colour and cards; only the
+six with a `DEFAULT_ROSTER` get a starting roster, because no other team has one legal
+composition. The rest start empty and the GM picks from the datacards.
 
 
 ## Deploy
@@ -615,35 +641,63 @@ ships the *rules*.
   0CP" says so in its own text.
 - **`PHASES[].use` is the only phase → card-kind mapping.** Add a phase or move a card kind
   there, not in the UI.
-- Flavour paragraphs are dropped on transcription. Nobody reads flavour while six people wait.
+- Flavour paragraphs are dropped on extraction. Nobody reads flavour while six people wait.
 
 ### Where the card data came from
 
-The six official Warhammer Community team rules PDFs, extracted with `pdftotext -layout`:
+**`src/factions/*` is generated. Do not hand-edit it** — rerun the extractor:
 
-| Team | PDF slug |
-|---|---|
-| Deathwatch (`dw` + `dw2`) | `eng_28-01_kill_team_team_rules_deathwatch-wngg7m6abd-uc8ksrsq97` |
-| Angels of Death | `eng_28-01_kill_team_team_rules_angels_of_death-g1xsdrmgpd-t1j6hagnfi` |
-| Scout Squad | `eng_29-04_kt_teamrules_scout_squad-gsh9kmjzgi-cx2xtxmp8b` |
-| Raveners | `eng_17-12_kt_raveners_online_rules-essk6jkv2r-uoltqtiunq` |
-| T'au XV26 | `eng_17-06_kill_team_team_rules_xv26_stealth_battlesuits_online_rules-ee27yjjgg3-mpri6mnolp` |
-| Ork Kommandos | `eng_17-06_kill_team_team_rules_kommandos_online_rules-ova8v1kjds-ds3ouz4k04` |
+```
+tools/kt_fetch.sh          # list + download every PDF, pdftotext -layout, delete the PDFs
+python3 tools/kt_generate.py   # write src/factions/*.ts
+bun test                   # the completeness checks below are the gate
+```
 
-All under `https://assets.warhammer-community.com/`. Two things that matter if this is ever
-redone:
+The source is the official Warhammer Community downloads page. It renders its list
+client-side, so `kt_fetch.sh` calls the same JSON API the page does:
 
+```
+POST https://www.warhammer-community.com/api/search/downloads/
+{"index":"downloads_v2","searchTerm":"","gameSystem":"kill-team","language":"english"}
+```
+
+That returns all 69 Kill Team downloads in one page; `kt_fetch.sh` filters out mission packs,
+update logs and the **Ctesiphus Expedition** (a campaign system, not a kill team) to leave
+**48 teams plus the Universal Equipment sheet**.
+
+Facts that cost time to establish, and will again if this is redone:
+
+- **The PDFs print two rules cards side by side**, so `pdftotext -layout` interleaves them.
+  `kt_parse.split_page` cuts each page on its gutter — the widest band of columns that is
+  blank on ≥99.5% of lines — and a column can still hold two cards stacked, so it is then cut
+  again on every kind banner.
+- **A long card is printed across several columns.** Fragments share a name and are appended,
+  not deduplicated to a winner, or half of Forward Scouting disappears.
+- **Flavour is italic, and `pdftotext` drops font info.** It is found by shape instead: the
+  rules text begins at the first sentence that either opens like a rule or contains a game
+  token (an ALL-CAPS keyword, a measurement, a stat). *Both* signals are needed — bare
+  `When`/`While` are not rule openers, because flavour opens that way too ("When roused to
+  anger, a battle-brother...") and matching them left the flavour in.
 - **Errata are already folded into the card text.** Each PDF says so: *"Rules changes will be
   updated directly into online documents and then listed below."* Transcribe the cards, ignore
   the update log at the end.
-- **Neither wiki is usable for this.** Wahapedia 403s automated fetches and KTDash is now a JS
-  app with no public API. The PDFs are the primary source and strictly better than both.
+- **Neither wiki is usable.** Wahapedia 403s automated fetches and KTDash is a JS app with no
+  public API. The PDFs are the primary source and strictly better than both.
 
-Every team landed on exactly **4 strategy ploys, 4 firefight ploys and 4 faction equipment** —
-the 2024 format — which is the completeness check. Faction rules vary (1 for Scouts and
-Kommandos, 3 for Raveners). `UNIVERSAL_EQUIPMENT` is still **empty**: it lives in the core
-rules, not any team's card, so it was not in these six PDFs. The Equipment panel says so
-rather than pretending the list is complete.
+**The completeness check is the 2024 format**: every team has exactly **4 strategy ploys, 4
+firefight ploys and 4 faction equipment**, and `state.test.ts` asserts it for all 48. Faction
+rules vary (1 for Scouts and Kommandos, 16 for Blades of Khaine, whose Aspect Shrines each get
+a card). Two teams print no fixed archetypes — Inquisitorial Agents say `ANY` and Blades of
+Khaine `SEE REVERSE` — and are given all four, which the GM trims in Setup.
+
+`UNIVERSAL_EQUIPMENT` **is now populated** (10 cards) from the separate Universal Equipment
+download, which is why it was empty before: it is in the core rules, not on any team's card.
+
+The extraction was validated against the six decks that had been transcribed by hand: 72 of 83
+cards come back byte-identical after whitespace normalisation, and every difference that was
+inspected turned out to be **real errata** since the hand transcription — Deathwatch's *Suffer
+Not the Alien* gained "or retaliating against", XV26's *Multitrackers* gained a whole second
+option. That is the reason to prefer the generated text over the old one.
 
 ### The player's phone
 
@@ -718,12 +772,16 @@ different frame — the GM is looking things up for other people, not playing a 
 - **Spectators cannot browse captured boards.** Their Board tab drops the phase strip on purpose,
   so `view` is never set. Fine for now — they are watching, not reviewing. See the read-only note
   above before changing this: the phase strip is what keeps the capture banner's dispatches dead.
-- **`UNIVERSAL_EQUIPMENT` is empty.** The universal equipment list is in the core rules, not the
-  six team PDFs, so it was never transcribed. Each team's own equipment is complete, and the
-  Equipment panel says which half is missing.
-- **Only seven factions have datacards.** The Setup view can build any number of alliances and
-  teams, but a team either draws on one of the seven transcribed factions or is typed in by hand.
-  See **Custom matches → What is still fixed**.
+- **A faction the GM has never opened needs the network the first time.** `usePrefetchFactions`
+  warms every faction on the table at load, so a configured match is safe offline; browsing an
+  unused faction in `CompendiumBrowser` at a table with no wifi will show an empty deck.
+- **The generated card text is not proof-read.** 697 cards came out of a layout heuristic. The
+  completeness check (4/4/4 per team) and the 72/83 match against the hand transcription are the
+  only evidence. Long cards that print a table — Forward Scouting, Chapter Tactics, Kauyon — are
+  the ones most likely to read oddly.
+- **Operative weapons are still not modelled.** The extractor reads APL/Move/Save/Wounds off a
+  datacard but skips the weapon table, so the board's operative card still cannot tell a player
+  what they are shooting with.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.

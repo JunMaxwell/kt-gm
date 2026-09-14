@@ -1,0 +1,38 @@
+// Generated from the official team rules PDF. Do not edit by hand — rerun the
+// extractor described in CLAUDE.md (‘Where the card data came from’).
+import type { RefCard } from '../compendium'
+import type { Operative } from '../rules'
+
+export const cards: RefCard[] = [
+  { kind: 'faction', name: "Crossfire", text: "Whenever a friendly BROOD BROTHER operative is shooting against or fighting against an enemy operative, after resolving all of your attack dice, if that enemy operative isn’t incapacitated it gains one of your Crossfire tokens. Whenever a friendly BROOD BROTHER operative is shooting against, fighting against or retaliating against an enemy operative that has any of your Crossfire tokens, you can remove any of those tokens. For each that you do, you can re-roll one of your attack dice." },
+  { kind: 'strategy', name: "Pervasive", text: "During each friendly BROOD BROTHER operative’s activation, you can ignore the first vertical distance of 2\" they move during one climb up." },
+  { kind: 'strategy', name: "Embedded", text: "Whenever an enemy operative is shooting a friendly BROOD BROTHER operative, if you can retain any cover saves as a result of Heavy terrain, you can retain one additional cover save." },
+  { kind: 'strategy', name: "Uprising", text: "The first time each friendly BROOD BROTHER operative performs either the Shoot or Fight action during each of its activations, if its order was changed from Conceal to Engage at the start of that activation, the enemy operative selected as the valid target or to fight against gains one of your Crossfire tokens as soon as it’s selected (instead of after resolving your attack dice). This ploy has no effect if that friendly operative was activated within control range of an enemy operative. Note this ploy cannot come into effect more than once per activation (you cannot use it during both the Shoot and Fight action in the same activation)." },
+  { kind: 'strategy', name: "Cult Devotion", text: "Whenever a friendly BROOD BROTHER operative (excluding PATRIARCH) is incapacitated while fighting or retaliating, if you have any unresolved successes, you can roll one D6: if the result is a success as if it were the Roll Attack Dice step of that sequence (i.e. using the same weapon, but with no re-rolls), you can strike the enemy operative in that sequence with one of your unresolved normal successes, or any of your successes instead if the D6 result is a critical success. In either case, that friendly operative is removed from the killzone afterwards." },
+  { kind: 'firefight', name: "Ruthless Coordination", text: "Use this firefight ploy when selecting a valid target for a friendly BROOD BROTHER operative. Until the end of the action, determine visibility as normal, but you can instead determine intervening (for cover and obscured) from another friendly BROOD BROTHER operative that both that friendly operative and the potential valid target are visible to, but that isn’t itself within control range of enemy operatives. Note the friendly operative doesn’t gain the additional benefits of Vantage terrain if the other friendly operative is on it (e.g. to target an enemy operative that has a Conceal order that’s in cover provided only by Light terrain)." },
+  { kind: 'firefight', name: "Unquestioning Loyalty", text: "Use this firefight ploy when a friendly BROOD BROTHER LEADER operative is selected as the valid target of a Shoot action or to fight against during the Fight action. Select one other friendly BROOD BROTHER BROODGUARD operative (excluding LEADER) visible to and within 3\" of that LEADER operative to become the valid target or to be fought against (as appropriate) instead (even if it wouldn’t normally be valid for this). If it’s the Fight action, treat that other operative as being within the fighting operative’s control range for the duration of that action. If it’s the Shoot action, that other operative is only in cover or obscured if the original target was. This ploy has no effect if it’s the Shoot action and the ranged weapon has the Blast or Torrent weapon rule." },
+  { kind: 'firefight', name: "Idolisation", text: "Use this firefight ploy when a friendly BROOD BROTHER operative (excluding LEADER) within 6\" of a friendly BROOD BROTHER LEADER or BROOD BROTHER ICONWARD operative is shooting, fighting or retaliating, in the Roll Attack Dice step. You can retain one of your fails as a normal success instead of discarding it, or retain one of your normal successes as a critical success instead." },
+  { kind: 'firefight', name: "Insidious", text: "Use this firefight ploy after an activation. Before the next activation, one friendly BROOD BROTHER operative can perform a free Dash action, as long as it’s not a valid target for enemy operatives when it starts and ends that action. You cannot use this ploy during the first turning point." },
+  { kind: 'equipment', name: "Covert Guises", text: "After revealing this equipment option, roll one D3. As a STRATEGIC GAMBIT in the first turning point, a number of friendly BROOD BROTHER BROODGUARD operatives equal to the result that are wholly within your drop zone can immediately perform a free Reposition action, but must end that move wholly within 3\" of your drop zone." },
+  { kind: 'equipment', name: "Cult Talisman", text: "Once per turning point, when an operative is shooting a friendly BROOD BROTHER operative (excluding PATRIARCH), in the Roll Defence Dice step, you can retain one of your normal successes as a critical success instead." },
+  { kind: 'equipment', name: "Cult Knives", text: "Friendly BROOD BROTHER BROODGUARD operatives have the following melee weapon — Cult knife: ATK 3, HIT 4+, DMG 3/4." },
+  { kind: 'equipment', name: "Lookout", text: "STRATEGIC GAMBIT. Select one enemy operative visible to a friendly BROOD BROTHER operative to gain one of your Crossfire tokens." },
+]
+
+export const operatives: Operative[] = [
+  { id: "brood-brothers:brood-brother-commander", name: "Brood Brother Commander", apl: 2, move: "6\"", save: "5+", w: 8 },
+  { id: "brood-brothers:brood-brother-agitator", name: "Brood Brother Agitator", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-gunner", name: "Brood Brother Gunner", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-iconward", name: "Brood Brother Iconward", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-knife-fighter", name: "Brood Brother Knife Fighter", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-medic", name: "Brood Brother Medic", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-sapper", name: "Brood Brother Sapper", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-sniper", name: "Brood Brother Sniper", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-trooper", name: "Brood Brother Trooper", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-veteran", name: "Brood Brother Veteran", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:brood-brother-vox-operator", name: "Brood Brother Vox-operator", apl: 2, move: "6\"", save: "5+", w: 7 },
+  { id: "brood-brothers:magus", name: "Magus", apl: 3, move: "6\"", save: "4+", w: 9 },
+  { id: "brood-brothers:patriarch", name: "Patriarch", apl: 4, move: "6\"", save: "4+", w: 21 },
+  { id: "brood-brothers:psychic-familiar", name: "Psychic Familiar", apl: 2, move: "6\"", save: "5+", w: 3 },
+  { id: "brood-brothers:primus", name: "Primus", apl: 3, move: "6\"", save: "4+", w: 9 },
+]

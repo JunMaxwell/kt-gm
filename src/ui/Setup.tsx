@@ -6,12 +6,11 @@ import {
   CRIT_OPS,
   type CritOpId,
   DEFAULT_ROSTER,
-  PRESET_TEAMS,
   type TeamDef,
-  blankOperative,
   dropZone,
   presetRoster,
 } from '../rules'
+import { FACTIONS } from '../factions'
 import { allTeams, teamOps, teamsOf } from '../state'
 import { Btn, BufferedInput, Label } from './kit'
 import { type Dispatch, type Game, onInt, onNum } from './shared'
@@ -38,9 +37,22 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
     if (!value) return
     const tag = crypto.randomUUID().slice(0, 4)
     const side = game.sides[0].id
-    const src = PRESET_TEAMS.find((t) => t.id === value)
-    const team: TeamDef = src
-      ? { ...src, id: `${src.id}-${tag}`, side, cp: 0, tacOp: '', tacVp: 0, player: 'New player' }
+    const f = FACTIONS.find((x) => x.id === value)
+    const team: TeamDef = f
+      ? {
+          id: `${f.id}-${tag}`,
+          player: 'New player',
+          name: f.name,
+          short: f.name.split(' ')[0].slice(0, 6),
+          side,
+          color: f.color,
+          ink: f.ink,
+          archetypes: [...f.archetypes],
+          faction: f.id,
+          cp: 0,
+          tacOp: '',
+          tacVp: 0,
+        }
       : {
           id: `team-${tag}`,
           player: 'New player',
@@ -53,7 +65,9 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
           tacOp: '',
           tacVp: 0,
         }
-    const roster = src ? presetRoster(src.id, team.id) : [blankOperative(team.id)]
+    // Only the six bundled factions carry a default roster for this match. Everything else
+    // starts empty and the GM picks from its datacards — there is no one legal composition.
+    const roster = f && DEFAULT_ROSTER[f.id] ? presetRoster(f.id, team.id) : []
     dispatch({ type: 'teamAdd', team, roster })
   }
 
@@ -222,10 +236,17 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
                 className="min-w-0 flex-1 rounded border border-rule bg-white px-2 py-1 text-sm"
               >
                 <option value="">+ Add a kill team…</option>
-                <optgroup label="Factions with datacards">
-                  {PRESET_TEAMS.filter((t, i, a) => a.findIndex((x) => x.faction === t.faction) === i).map((t) => (
-                    <option key={t.faction} value={t.id}>
-                      {t.name} — {DEFAULT_ROSTER[t.id].length} operatives, cards and ploys
+                <optgroup label="This match's teams — start with a ready roster">
+                  {FACTIONS.filter((f) => DEFAULT_ROSTER[f.id]).map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} — {DEFAULT_ROSTER[f.id].length} operatives, cards and ploys
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Every other kill team — pick its operatives yourself">
+                  {FACTIONS.filter((f) => !DEFAULT_ROSTER[f.id]).map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
                     </option>
                   ))}
                 </optgroup>

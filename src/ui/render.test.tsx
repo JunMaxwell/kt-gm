@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { renderToStaticMarkup as R } from 'react-dom/server'
 
 import { presetRoster } from '../rules'
+import { FACTIONS, loadFaction } from '../factions'
 import { allTeams, initialGame, reduce } from '../state'
 import { Scoreboard } from './Scoreboard'
 import { Objectives } from './Objectives'
@@ -63,4 +64,25 @@ test('every panel renders for a one-team-per-side match with no cards', () => {
 test('the spectator view survives a snapshot whose teams it does not know', () => {
   const g = reduce(initialGame(), { type: 'teamRemove', teamId: 'dw' })
   expect(() => R(<Compendium game={g} teamId="dw" />)).not.toThrow()
+})
+
+test('a team on a lazily-loaded faction renders before and after its chunk arrives', async () => {
+  const f = FACTIONS.find((x) => !x.preset)!
+  let g = initialGame()
+  const team = {
+    id: 'lazy', player: 'P8', name: f.name, short: 'LZ', side: 'xenos',
+    color: f.color, archetypes: [...f.archetypes], faction: f.id, cp: 0, tacOp: '', tacVp: 0,
+  }
+  g = reduce(g, { type: 'teamAdd', team, roster: [] })
+  // before the chunk resolves the deck is empty — the same state a hand-built team is in
+  expect(() => R(<Compendium game={g} teamId="lazy" />)).not.toThrow()
+  const data = await loadFaction(f.id)
+  expect(data!.cards.length).toBeGreaterThan(0)
+  // the deck that opens depends on the phase, so assert some card of this faction landed
+  const html = R(<Compendium game={g} teamId="lazy" />)
+  expect(data!.cards.some((c) => html.includes(c.name))).toBe(true)
+})
+
+test('every faction in the picker can actually be loaded', async () => {
+  for (const f of FACTIONS) expect((await loadFaction(f.id))!.cards.length).toBeGreaterThan(8)
 })

@@ -1,0 +1,32 @@
+// Generated from the official team rules PDF. Do not edit by hand — rerun the
+// extractor described in CLAUDE.md (‘Where the card data came from’).
+import type { RefCard } from '../compendium'
+import type { Operative } from '../rules'
+
+export const cards: RefCard[] = [
+  { kind: 'faction', name: "Poison", text: "*Poison: In the Resolve Attack Dice step, if you inflict damage with any successes, the operative this weapon is being used against (excluding friendly PLAGUE MARINE operatives) gains one of your Poison tokens (if it doesn’t already have one). Whenever an operative that has one of your Poison tokens is activated, inflict 1 damage on it." },
+  { kind: 'faction', name: "Astartes", text: "During each friendly PLAGUE MARINE operative’s activation, it can perform either two Shoot actions or two Fight actions. If it’s two Shoot actions, a bolt pistol, boltgun or PSYCHIC weapon must be selected for at least one of them. You cannot select the same PSYCHIC ranged weapon more than once per activation.\nEach friendly PLAGUE MARINE operative can counteract regardless of its order." },
+  { kind: 'faction', name: "Disgustingly Resilient", text: "Whenever an attack dice inflicts damage of 3 or more on a friendly PLAGUE MARINE operative, roll one D6: on a 4+, subtract 1 from that inflicted damage." },
+  { kind: 'strategy', name: "Contagion", text: "Subtract 2\" from the Move stat of an enemy operative and worsen the Hit stat of its weapons by 1 (this isn’t cumulative with being injured) whenever any of the following are true:\n• It has one of your Poison tokens and is visible to (or vice versa) and within 3\" of friendly PLAGUE MARINE operatives.\n• It’s visible to (or vice versa) and within 3\" of a friendly PLAGUE MARINE ICON BEARER operative." },
+  { kind: 'strategy', name: "Cloud of Flies", text: "Place one of your Cloud of Flies markers in the killzone. Whenever an operative is shooting a friendly PLAGUE MARINE operative that’s more than 3\" from it, if that friendly operative is wholly within 1\" of that marker, that friendly operative is obscured. In the Ready step of the next Strategy phase, remove that marker." },
+  { kind: 'strategy', name: "Lumbering Death", text: "Whenever a friendly PLAGUE MARINE operative is shooting or fighting during an activation in which it hasn’t moved more than 3\", or whenever it's retaliating, its weapons have the Ceaseless weapon rule." },
+  { kind: 'strategy', name: "Nurglings", text: "Select one enemy operative within 3\" of a friendly PLAGUE MARINE operative, or one enemy operative that has one of your Poison tokens and is within 7\" of a friendly PLAGUE MARINE operative. Until the end of the selected operative’s next activation, subtract 1 from its APL stat." },
+  { kind: 'firefight', name: "Virulent Poison", text: "Use this firefight ploy during a friendly PLAGUE MARINE operative’s activation or counteraction, before or after it performs an action. One enemy operative within 3\" of, or visible to and within 7\" of, that operative gains one of your Poison tokens (if it doesn't already have one)." },
+  { kind: 'firefight', name: "Sickening Resilience", text: "Use this firefight ploy when an attack dice inflicts damage on a friendly PLAGUE MARINE operative. Until the end of the activation or counteraction, for the purposes of the Disgustingly Resilient rule for that operative, always subtract 1 from the damage inflicted (to a minimum of 2) – you don’t need to roll." },
+  { kind: 'firefight', name: "Poisonous Demise", text: "Use this firefight ploy when a friendly PLAGUE MARINE operative is incapacitated, before it’s removed from the killzone. Each enemy operative visible to and within 3\" of that operative gains one of your Poison tokens (if they don’t already have one); for each of those enemy operatives that already has one of your Poison tokens (including if they gained one during this action), inflict 1 damage on them instead." },
+  { kind: 'firefight', name: "Curse of Rot", text: "Use this firefight ploy when a friendly PLAGUE MARINE operative is shooting against or fighting against an enemy operative within 3\" of it (or within 7\" of it if that enemy operative has one of your Poison tokens), after your opponent rolls their attack or defence dice. For each result of 3 they roll, inflict 1 damage on that enemy operative, that result cannot be retained as a success and they cannot re-roll it." },
+  { kind: 'equipment', name: "Plague Bells", text: "When the plague bells toll, the Death Guard are infused with corrupted energy, heightening their unholy resilience to extraordinary levels. You can ignore any changes to the stats of friendly PLAGUE MARINE operatives from being injured (including their weapons’ stats)." },
+  { kind: 'equipment', name: "Plague Rounds", text: "Friendly PLAGUE MARINE operatives’ boltguns and bolt pistols have the Poison and Severe weapon rules." },
+  { kind: 'equipment', name: "Blight Grenades", text: "Friendly PLAGUE MARINE operatives have the following ranged weapon — Blight grenade: ATK 4, HIT 4+, DMG 2/4. WR Range 6\", Blast 2\", Saturate, Severe, Poison*. (you cannot select it for use more than twice during the battle):" },
+  { kind: 'equipment', name: "Poison Vents", text: "Whenever an enemy operative is activated within 3\" of a friendly PLAGUE MARINE operative:\n• If that enemy operative doesn’t have one of your Poison tokens, roll one D3: on a 3, it gains one.\n• If that enemy operative has one of your Poison tokens, inflict D3 damage on it (instead of 1)." },
+]
+
+export const operatives: Operative[] = [
+  { id: "plague-marines:plague-marine-champion", name: "Plague Marine Champion", apl: 3, move: "5\"", save: "3+", w: 15 },
+  { id: "plague-marines:plague-marine-bombardier", name: "Plague Marine Bombardier", apl: 3, move: "5\"", save: "3+", w: 14 },
+  { id: "plague-marines:plague-marine-fighter", name: "Plague Marine Fighter", apl: 3, move: "5\"", save: "3+", w: 14 },
+  { id: "plague-marines:plague-marine-heavy-gunner", name: "Plague Marine Heavy Gunner", apl: 3, move: "5\"", save: "3+", w: 14 },
+  { id: "plague-marines:plague-marine-icon-bearer", name: "Plague Marine Icon Bearer", apl: 3, move: "5\"", save: "3+", w: 14 },
+  { id: "plague-marines:malignant-plaguecaster", name: "Malignant Plaguecaster", apl: 3, move: "5\"", save: "3+", w: 14 },
+  { id: "plague-marines:plague-marine-warrior", name: "Plague Marine Warrior", apl: 3, move: "5\"", save: "3+", w: 14 },
+]

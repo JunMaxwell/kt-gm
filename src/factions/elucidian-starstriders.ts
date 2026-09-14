@@ -1,0 +1,31 @@
+// Generated from the official team rules PDF. Do not edit by hand — rerun the
+// extractor described in CLAUDE.md (‘Where the card data came from’).
+import type { RefCard } from '../compendium'
+import type { Operative } from '../rules'
+
+export const cards: RefCard[] = [
+  { kind: 'faction', name: "Warrant of Trade", text: "Up to four times per battle, you can use a WARRANT OF TRADE rule (below). Each one specifies when it can be used, and you cannot use the same WARRANT OF TRADE rule more than once per battle.\nConsideration When: In the Select Operatives step, after revealing your equipment options. Effect: Select one additional equipment option. It cannot be an option you have previously selected." },
+  { kind: 'faction', name: "Privateer Support Assets", text: "Once per Firefight phase, when a friendly ELUCIDIAN STARSTRIDER NAVIS or ELUCIDIAN STARSTRIDER ELUCIA VHANE operative performs the Shoot action, you can select one of the following PRIVATEER SUPPORT ASSET ranged weapons for it to use. You cannot use each PRIVATEER SUPPORT ASSET more than once per battle.\nWhenever a friendly ELUCIDIAN STARSTRIDER operative is using a PRIVATEER SUPPORT ASSET, determine cover saves differently. Instead, the target has a cover save if any part of its base is underneath Vantage terrain. Note that while this can affect the target’s cover save, you must still select a valid target as normal. In other words, the shot is guided by an operative in the killzone, but it comes from above." },
+  { kind: 'strategy', name: "Lethal Proximity", text: "Whenever a friendly ELUCIDIAN STARSTRIDER operative is shooting an operative within 6\" of it, that friendly operative's ranged weapons (excluding PRIVATEER SUPPORT ASSET weapons) have the Balanced weapon rule." },
+  { kind: 'strategy', name: "Stake Claim", text: "Place your Claim marker in the killzone. Whenever a friendly ELUCIDIAN STARSTRIDER operative is shooting against, fighting against or retaliating against an enemy operative that’s within 3\" of that marker, in the Roll Attack Dice step, you can retain one of your fails as a normal success instead of discarding it, or retain one of your normal successes as a critical success instead. At the end of the turning point, remove your Claim marker from the killzone." },
+  { kind: 'strategy', name: "Undaunted Explorers", text: "The first time an attack dice inflicts damage on each friendly ELUCIDIAN STARSTRIDER operative during the turning point in the Resolve Attack Dice step, you can halve that inflicted damage (rounding up, to a minimum of 2)." },
+  { kind: 'firefight', name: "Combined Arms", text: "Use this firefight ploy after rolling your attack dice for a friendly ELUCIDIAN STARSTRIDER operative, if it’s shooting an enemy operative that’s been shot by another friendly ELUCIDIAN STARSTRIDER operative during this turning point. You can re-roll any of your attack dice. You cannot use this ploy while shooting with a" },
+  { kind: 'strategy', name: "Quick March", text: "Whenever a friendly ELUCIDIAN STARSTRIDER operative performs the Reposition action during its activation, you can use this rule. If you do, add 1\" to its Move stat until the end of that activation, but it must end that move closer to your opponent’s drop zone and cannot use a PRIVATEER SUPPORT ASSET during that activation." },
+  { kind: 'firefight', name: "Survivalist", text: "Use this firefight ploy when a friendly ELUCIDIAN STARSTRIDER operative is activated. That friendly operative regains up to D3+2 lost wounds and during that activation you can ignore any changes to its APL stat." },
+  { kind: 'firefight', name: "Great Endurance", text: "Use this firefight ploy during a friendly ELUCIDIAN STARSTRIDER NAVIS operative’s activation. Until the end of the activation, add 1 to its APL stat." },
+  { kind: 'equipment', name: "Armoured Undersuit", text: "Whenever an operative is shooting a friendly ELUCIDIAN STARSTRIDER operative (excluding CANID) that has a 5+ Save stat, you can retain one of your defence dice results of 4 as a normal success." },
+  { kind: 'firefight', name: "Well-drilled", text: "Use this firefight ploy when a friendly ELUCIDIAN STARSTRIDER NAVIS operative is activated. Select one other ready friendly ELUCIDIAN STARSTRIDER NAVIS operative visible to and within 3\" of that operative. When that first friendly operative is expended, you can activate that other friendly operative before your opponent activates. When that other operative is expended, your opponent then activates as normal." },
+  { kind: 'equipment', name: "Hot Shot Capacitor Packs", text: "Up to twice per turning point, whenever a friendly ELUCIDIAN STARSTRIDER operative is performing the Shoot action and you select a laspistol, lasgun or relic laspistol, you can use this rule. If you do, until the end of the turning point, add 1 to both Dmg stats of that weapon and it has the Hot and Piercing Crits 1 weapon rules." },
+  { kind: 'equipment', name: "Improved Coordinates Uplink", text: "Whenever a friendly ELUCIDIAN STARSTRIDER operative is using a PRIVATEER SUPPORT ASSET, if the target is within 6\" of a friendly ELUCIDIAN STARSTRIDER NAVIS operative, the target cannot be obscured and that weapon has the Saturate weapon rule." },
+  { kind: 'equipment', name: "Rapid Gunnery", text: "Once per battle, when selecting a PRIVATEER SUPPORT ASSET, you can select one that's already been used during the battle. This takes precedence over the normal PRIVATEER SUPPORT ASSET rules." },
+]
+
+export const operatives: Operative[] = [
+  { id: "elucidian-starstriders:elucia-vhane", name: "Elucia Vhane", apl: 3, move: "6\"", save: "4+", w: 8 },
+  { id: "elucidian-starstriders:canid", name: "Canid", apl: 2, move: "8\"", save: "5+", w: 7 },
+  { id: "elucidian-starstriders:death-cult-executioner", name: "Death Cult Executioner", apl: 3, move: "6\"", save: "5+", w: 8 },
+  { id: "elucidian-starstriders:lectro-maester", name: "Lectro-maester", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "elucidian-starstriders:rejuvenat-adept", name: "Rejuvenat Adept", apl: 2, move: "6\"", save: "4+", w: 8 },
+  { id: "elucidian-starstriders:voidmaster", name: "Voidmaster", apl: 2, move: "6\"", save: "5+", w: 8 },
+  { id: "elucidian-starstriders:voidsman", name: "Voidsman", apl: 2, move: "6\"", save: "5+", w: 7 },
+]

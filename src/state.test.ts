@@ -18,7 +18,8 @@ import {
   teamTacOps,
   teamsWithArchetype,
 } from './rules'
-import { CARDS, PHASES, type RefKind, phaseCards, phaseMeta } from './compendium'
+import { PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT } from './compendium'
+import { FACTIONS, factionData, loadFaction } from './factions'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
 const preset = (id: string) => PRESET_TEAMS.find((t) => t.id === id)!
@@ -917,18 +918,60 @@ test('every phase names the card kinds it puts in play', () => {
   expect(phaseMeta('initiative').use).toEqual([]) // nothing to spend before initiative is settled
 })
 
-// Guards the transcription: a typo'd team id or card kind would silently show a player nothing.
-test('every team has a compendium entry and every card is well formed', () => {
-  const kinds: RefKind[] = ['faction', 'strategy', 'firefight', 'equipment']
+// Guards the extraction: a faction the preset match names but the library lacks would
+// silently show a player nothing.
+test('every preset team names a faction the library actually has', () => {
   for (const t of PRESET_TEAMS) {
-    expect(CARDS[t.faction!]).toBeDefined()
-    for (const c of CARDS[t.faction!]) {
+    expect(FACTIONS.some((f) => f.id === t.faction)).toBe(true)
+    expect(factionData(t.faction)).toBeDefined() // bundled, not lazy — initialGame cannot await
+  }
+})
+
+test('every card in every faction is well formed', async () => {
+  const kinds: RefKind[] = ['faction', 'strategy', 'firefight', 'equipment']
+  for (const f of FACTIONS) {
+    const data = await loadFaction(f.id)
+    expect(data).toBeDefined()
+    for (const c of data!.cards) {
       expect(kinds).toContain(c.kind)
       expect(c.name.length).toBeGreaterThan(0)
-      expect(c.text.length).toBeGreaterThan(0)
+      expect(c.text.length).toBeGreaterThan(20)
+    }
+    for (const o of data!.operatives) {
+      expect(o.id.startsWith(`${f.id}:`)).toBe(true)
+      expect(o.apl).toBeGreaterThan(0)
+      expect(o.w).toBeGreaterThan(0)
+      expect(o.save).toMatch(/^\d\+$/)
+      expect(o.move).toMatch(/^\d+"$/)
     }
   }
-  expect(Object.keys(CARDS).sort()).toEqual([...new Set(PRESET_TEAMS.map((t) => t.faction!))].sort())
+})
+
+// The 2024 format: every team's card carries exactly four of each ploy kind and four
+// pieces of faction equipment. A short count means the extractor dropped a card.
+test('every faction has 4 strategy ploys, 4 firefight ploys and 4 equipment', async () => {
+  for (const f of FACTIONS) {
+    const cards = (await loadFaction(f.id))!.cards
+    const n = (k: RefKind) => cards.filter((c) => c.kind === k).length
+    expect([f.id, n('strategy'), n('firefight'), n('equipment')]).toEqual([f.id, 4, 4, 4])
+    expect(n('faction')).toBeGreaterThan(0)
+  }
+})
+
+test('operative ids are unique across the whole library', async () => {
+  const seen = new Set<string>()
+  for (const f of FACTIONS) {
+    for (const o of (await loadFaction(f.id))!.operatives) {
+      expect(seen.has(o.id)).toBe(false)
+      seen.add(o.id)
+    }
+  }
+  expect(seen.size).toBeGreaterThan(400)
+})
+
+test('universal equipment is no longer empty', () => {
+  expect(UNIVERSAL_EQUIPMENT.length).toBeGreaterThan(0)
+  for (const c of UNIVERSAL_EQUIPMENT) expect(c.kind).toBe('equipment')
 })
 
 test('the two Deathwatch teams share one datacard', () => {
@@ -937,9 +980,10 @@ test('the two Deathwatch teams share one datacard', () => {
 
 test('phaseCards returns only what that phase unlocks', () => {
   for (const t of PRESET_TEAMS) {
-    expect(phaseCards(t.faction, 'initiative')).toEqual([])
-    expect(phaseCards(t.faction, 'strategy').every((c) => c.kind === 'strategy')).toBe(true)
-    expect(phaseCards(t.faction, 'firefight').every((c) => c.kind === 'firefight')).toBe(true)
+    const cards = factionData(t.faction)!.cards
+    expect(phaseCards(cards, 'initiative')).toEqual([])
+    expect(phaseCards(cards, 'strategy').every((c) => c.kind === 'strategy')).toBe(true)
+    expect(phaseCards(cards, 'firefight').every((c) => c.kind === 'firefight')).toBe(true)
   }
 })
 
