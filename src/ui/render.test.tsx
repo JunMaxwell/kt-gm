@@ -1,0 +1,66 @@
+import { expect, test } from 'bun:test'
+import { renderToStaticMarkup as R } from 'react-dom/server'
+
+import { presetRoster } from '../rules'
+import { allTeams, initialGame, reduce } from '../state'
+import { Scoreboard } from './Scoreboard'
+import { Objectives } from './Objectives'
+import { ActivationOrder } from './ActivationOrder'
+import { TurnBar } from './TurnBar'
+import { MapBuilder } from './MapBuilder'
+import { TeamCard } from './TeamCard'
+import { Setup } from './Setup'
+import { Compendium, CompendiumBrowser } from './Compendium'
+import { OpsBrowser } from './OpsBrowser'
+
+const noop = () => {}
+const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, save: noop, saves: [], load: noop } as never
+
+const panels = (g: ReturnType<typeof initialGame>) =>
+  [
+    R(<TurnBar game={g} dispatch={noop} editing={false} setEditing={noop} net={net} canUndo />),
+    R(<Scoreboard game={g} dispatch={noop} />),
+    R(<Objectives game={g} dispatch={noop} />),
+    R(<ActivationOrder game={g} dispatch={noop} />),
+    R(<MapBuilder game={g} dispatch={noop} />),
+    R(<OpsBrowser game={g} />),
+    R(<CompendiumBrowser game={g} />),
+    R(<Setup game={g} dispatch={noop} />),
+    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} />)),
+    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing />)),
+    ...allTeams(g).map((t) => R(<Compendium game={g} teamId={t.id} />)),
+    R(<MapBuilder game={g} dispatch={noop} bare mine={allTeams(g)[0].id} />),
+  ].join('')
+
+test('every panel renders for the default two-alliance match', () => {
+  const html = panels(initialGame())
+  expect(html).toContain('Imperium')
+  expect(html).toContain('Xenos')
+  expect(html).toContain('Deathwatch')
+})
+
+test('every panel renders for a three-alliance match with a custom team', () => {
+  let g = reduce(initialGame(), { type: 'sideAdd' })
+  const third = g.sides[2].id
+  g = reduce(g, { type: 'sidePatch', id: third, patch: { name: 'Chaos', color: '#7b4fa8' } })
+  g = reduce(g, { type: 'teamPatch', teamId: 'sct', patch: { side: third } })
+  const team = { id: 'home', player: 'P8', name: 'Homebrew', short: 'HB', side: third, color: '#333', archetypes: [], cp: 0, tacOp: '', tacVp: 0 }
+  g = reduce(g, { type: 'teamAdd', team, roster: presetRoster('dw', 'home') })
+  const html = panels(g)
+  expect(html).toContain('Chaos')
+  expect(html).toContain('Homebrew')
+  // one scoreboard column per alliance
+  expect(html).toContain('4.25rem repeat(3, minmax(0,1fr))')
+})
+
+test('every panel renders for a one-team-per-side match with no cards', () => {
+  let g = initialGame()
+  for (const id of ['aod', 'dw2', 'sct', 'xv26', 'kom']) g = reduce(g, { type: 'teamRemove', teamId: id })
+  g = reduce(g, { type: 'teamPatch', teamId: 'dw', patch: { faction: undefined, archetypes: [] } })
+  expect(() => panels(g)).not.toThrow()
+})
+
+test('the spectator view survives a snapshot whose teams it does not know', () => {
+  const g = reduce(initialGame(), { type: 'teamRemove', teamId: 'dw' })
+  expect(() => R(<Compendium game={g} teamId="dw" />)).not.toThrow()
+})

@@ -1,30 +1,32 @@
-import { type OpKind, SIDE_COLOR, SIDES } from '../rules'
-import { enemy, killGrade, kills, maxTeamsPerSide, scores, sideOps, suggestedCrit, teamsOf, thresholds } from '../state'
+import { type OpKind } from '../rules'
+import { enemies, killGrade, kills, maxTeamsPerSide, scores, sideOps, sideDef, suggestedCrit, teamsOf, thresholds } from '../state'
 import { Btn, BufferedInput, Label, Stepper, TeamPill } from './kit'
-import { type Dispatch, type Game, ROW, SIDE_IDS } from './shared'
+import { type Dispatch, type Game, ROW, rowVars } from './shared'
 
 /* ---------- scoreboard ---------- */
 
 export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
-  const s = { imperium: scores(game, 'imperium'), xenos: scores(game, 'xenos') }
+  const sides = game.sides
+  const s = Object.fromEntries(sides.map((x) => [x.id, scores(game, x.id)]))
+  const foeOps = (side: string) => enemies(game, side).reduce((n, e) => n + sideOps(game, e).length, 0)
 
   return (
     <section className="overflow-hidden border border-rule bg-paper shadow-sm">
       <header className="flex items-stretch kt-rule bg-card text-white">
         <span className="display grid w-[4.25rem] shrink-0 place-items-center px-3 text-xs text-white/50">Total</span>
-        {SIDE_IDS.map((side) => (
-          <div key={side} className="flex-1 py-1.5 text-center" style={{ background: SIDE_COLOR[side] }}>
-            <p className="display text-sm">{SIDES[side]}</p>
-            <p className="display text-3xl">{s[side].total}</p>
+        {sides.map((x) => (
+          <div key={x.id} className="min-w-0 flex-1 py-1.5 text-center" style={{ background: x.color }}>
+            <p className="display truncate px-1 text-sm">{x.name}</p>
+            <p className="display text-3xl">{s[x.id].total}</p>
           </div>
         ))}
       </header>
 
-      <div className="p-3">
+      <div className="p-3" style={rowVars(sides.length)}>
         {/* Kill op */}
         <div className={ROW}>
           <span className="display text-base">Kill op</span>
-          {SIDE_IDS.map((side) => (
+          {sides.map(({ id: side }) => (
             <p key={side} className="text-center text-sm">
               <span className="font-semibold tabular-nums">{s[side].kill} VP</span>
               <span className="text-ink/45"> · grade {killGrade(game, side)}</span>
@@ -33,13 +35,13 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         </div>
         <div className={ROW}>
           <span />
-          {SIDE_IDS.map((side) => {
+          {sides.map(({ id: side }) => {
             const ladder = thresholds(game, side)
             const grade = killGrade(game, side)
             return (
               <div key={side} className="text-center">
                 <p className="text-[10px] text-ink/45">
-                  {kills(game, side)} of {sideOps(game, enemy(side)).length} down
+                  {kills(game, side)} of {foeOps(side)} down
                 </p>
                 <p className="text-[10px] tabular-nums">
                   {ladder.map((t, i) => (
@@ -52,7 +54,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
                 <BufferedInput
                   className="mt-0.5 w-full text-[10px]"
                   value={ladder.join(', ')}
-                  aria-label={`${SIDES[side]} kill grade thresholds`}
+                  aria-label={`${sideDef(game, side)?.name} kill grade thresholds`}
                   title="Kill grade thresholds — edit to retune, clear to re-derive from roster size"
                   onEdit={(raw) => {
                     const v = raw.split(',').map((n) => parseInt(n.trim(), 10))
@@ -67,13 +69,13 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         {/* Crit op */}
         <div className={`${ROW} mt-2 border-t border-rule pt-2`}>
           <span className="display text-base">Crit op</span>
-          {SIDE_IDS.map((side) => (
+          {sides.map(({ id: side }) => (
             <p key={side} className="text-center text-sm font-semibold tabular-nums">
               {s[side].crit} VP
             </p>
           ))}
         </div>
-        {game.crit.imperium.map((_, tp) => (
+        {game.crit[sides[0].id].map((_, tp) => (
           <div key={tp} className={ROW}>
             <span
               className={`text-xs ${game.tp === tp + 1 ? 'font-semibold text-ink' : 'text-ink/45'} ${
@@ -83,7 +85,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
             >
               TP {tp + 1}
             </span>
-            {SIDE_IDS.map((side) => (
+            {sides.map(({ id: side }) => (
               <div key={side} className="flex justify-center">
                 <Stepper
                   value={game.crit[side][tp]}
@@ -97,7 +99,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         {game.critOp && (
           <div className={ROW}>
             <Label title="What the marker board is worth this turning point">markers</Label>
-            {SIDE_IDS.map((side) => {
+            {sides.map(({ id: side }) => {
               const sug = suggestedCrit(game, side)
               if (sug === null)
                 return (
@@ -125,7 +127,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         {/* Tac ops */}
         <div className={`${ROW} mt-2 border-t border-rule pt-2`}>
           <span className="display text-base">Tac ops</span>
-          {SIDE_IDS.map((side) => (
+          {sides.map(({ id: side }) => (
             <p key={side} className="text-center text-sm font-semibold tabular-nums">
               {s[side].tac} VP
               {s[side].tacRaw > s[side].tac && <span className="font-normal text-ink/40"> (raw {s[side].tacRaw})</span>}
@@ -133,10 +135,10 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
           ))}
         </div>
         {/* one row per rotation slot — the sides can hold different numbers of players */}
-        {Array.from({ length: maxTeamsPerSide }, (_, i) => (
+        {Array.from({ length: maxTeamsPerSide(game) }, (_, i) => (
           <div key={i} className={ROW}>
             <span />
-            {SIDE_IDS.map((side) => {
+            {sides.map(({ id: side }) => {
               const t = teamsOf(game, side)[i]
               if (!t) return <span key={side} />
               return (
@@ -158,7 +160,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
           <Label title={`Secret primary op — scores half its VP again, rounded up, max ${Math.ceil(game.opCap / 2)}`}>
             Primary
           </Label>
-          {SIDE_IDS.map((side) => (
+          {sides.map(({ id: side }) => (
             <div key={side} className="flex justify-center gap-1">
               {(['kill', 'crit', 'tac'] as OpKind[]).map((op) => (
                 <Btn
@@ -175,7 +177,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         </div>
         <div className={ROW}>
           <Label>bonus</Label>
-          {SIDE_IDS.map((side) => (
+          {sides.map(({ id: side }) => (
             <p key={side} className="text-center text-xs tabular-nums text-ink/60">
               +{s[side].bonus} VP
             </p>

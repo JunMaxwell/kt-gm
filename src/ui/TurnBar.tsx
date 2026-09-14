@@ -1,8 +1,8 @@
-import { CRIT_OPS, type CritOpId, SIDE_COLOR, SIDES, TEAMS } from '../rules'
+import { CRIT_OPS, type CritOpId } from '../rules'
 import { phaseMeta, PHASES } from '../compendium'
-import { counteract, currentTeamId, enemy, pairEligible, pairTarget, readyCount, teamsOf } from '../state'
+import { counteract, currentTeamId, enemies, pairEligible, pairTarget, readyCount, sideDef, teamsOf } from '../state'
 import { Btn, BufferedInput, DarkBtn, Label, TeamPill } from './kit'
-import { type Dispatch, type Game, type Net, onInt, SIDE_IDS } from './shared'
+import { type Dispatch, type Game, type Net, onInt } from './shared'
 import { RoomBar } from './RoomBar'
 
 /* ---------- header ---------- */
@@ -102,18 +102,18 @@ export function TurnBar({
 
         <div className="flex items-center gap-2">
           <span className="display text-xs text-white/50">Initiative</span>
-          {SIDE_IDS.map((s) => (
+          {game.sides.map(({ id: s, name, color }) => (
             <button
               key={s}
               onClick={() => dispatch({ type: 'initiative', side: s })}
               className="display rounded px-2 py-1 text-sm"
               style={
                 game.initiative === s
-                  ? { background: SIDE_COLOR[s], color: '#fff' }
+                  ? { background: color, color: '#fff' }
                   : { background: 'rgba(255,255,255,.12)', color: 'rgba(255,255,255,.6)' }
               }
             >
-              {SIDES[s]}
+              {name}
             </button>
           ))}
         </div>
@@ -154,6 +154,13 @@ export function TurnBar({
           <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
             {editing ? 'Done editing' : 'Edit rosters'}
           </DarkBtn>
+          <DarkBtn
+            onClick={() => dispatch({ type: 'setup', value: true })}
+            className="display"
+            title="Alliances, teams, rosters, board and scoring — the match itself"
+          >
+            Setup
+          </DarkBtn>
           <DarkBtn onClick={() => dispatch({ type: 'nextTp' })} className="display">
             Next TP · ready all + CP
           </DarkBtn>
@@ -191,7 +198,8 @@ export function TurnBar({
 
 /** Official alternation: one named team is up. */
 export function SingleTurn({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
-  const current = TEAMS.find((t) => t.id === currentTeamId(game))
+  const cur = currentTeamId(game)
+  const current = cur ? game.teams[cur] : undefined
   return (
     <>
       {current ? (
@@ -213,11 +221,12 @@ export function SingleTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
           Skip / pass
         </DarkBtn>
       )}
-      {SIDE_IDS.map((s) => [s, counteract(game, s)] as const)
+      {game.sides
+        .map((x) => [x, counteract(game, x.id)] as const)
         .filter(([, c]) => c.available)
-        .map(([s, c]) => (
-          <p key={s} className="rounded bg-amber-300 px-2 py-1 text-sm text-ink">
-            {SIDES[s]} may <b>counteract</b>: one expended <b>Engage</b> operative, free 1AP action (not Guard), max 2"
+        .map(([x, c]) => (
+          <p key={x.id} className="rounded bg-amber-300 px-2 py-1 text-sm text-ink">
+            {x.name} may <b>counteract</b>: one expended <b>Engage</b> operative, free 1AP action (not Guard), max 2"
             move. {c.eligible.length ? `${c.eligible.length} eligible on Engage.` : 'None on Engage — nobody can.'}
           </p>
         ))}
@@ -230,9 +239,9 @@ export function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
   const target = pairTarget(game)
   const done = game.pairUsed.length
   const eligible = pairEligible(game)
-  const foe = enemy(game.sideTurn)
-  const foeDry = !teamsOf(game, foe).some((t) => readyCount(game, t.id) > 0)
-  const banked = game.counteracts[foe]
+  // With more than two alliances, several can be out at once — each banks its own Counteract.
+  const dry = enemies(game, game.sideTurn).filter((e) => !teamsOf(game, e).some((t) => readyCount(game, t.id) > 0))
+  const turn = sideDef(game, game.sideTurn)
 
   if (!target)
     return <p className="display text-xl text-amber-300">Firefight phase over — start the next turning point</p>
@@ -243,9 +252,9 @@ export function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
         <Label className="text-white/50">Activating</Label>
         <span
           className="display rounded px-2 py-0.5 text-xl"
-          style={{ background: SIDE_COLOR[game.sideTurn], color: '#fff' }}
+          style={{ background: turn?.color, color: '#fff' }}
         >
-          {SIDES[game.sideTurn]}
+          {turn?.name}
         </span>
         <span className="display text-lg text-white">
           {done}/{target}
@@ -263,7 +272,7 @@ export function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
           <TeamPill key={t.id} team={t} />
         ))}
         {game.pairUsed.map((id) => {
-          const t = TEAMS.find((x) => x.id === id)
+          const t = game.teams[id]
           return t ? <TeamPill key={id} team={t} className="opacity-30 line-through" /> : null
         })}
       </p>
@@ -272,16 +281,19 @@ export function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
         Pass
       </DarkBtn>
 
-      {foeDry && (
-        <p className="flex items-center gap-2 rounded bg-amber-300 px-2 py-1 text-sm text-ink">
-          <b>{SIDES[foe]} is out — Counteract:</b> per enemy activation, one expended <b>Engage</b> operative may
-          perform any single 1AP action, moving at most 2".
-          <span className="display">banked {banked}</span>
-          <Btn className="w-6 px-0" onClick={() => dispatch({ type: 'counteractBank', side: foe, delta: -1 })} disabled={!banked}>
-            –
-          </Btn>
-        </p>
-      )}
+      {dry.map((foe) => {
+        const banked = game.counteracts[foe] ?? 0
+        return (
+          <p key={foe} className="flex items-center gap-2 rounded bg-amber-300 px-2 py-1 text-sm text-ink">
+            <b>{sideDef(game, foe)?.name} is out — Counteract:</b> per enemy activation, one expended <b>Engage</b>{' '}
+            operative may perform any single 1AP action, moving at most 2".
+            <span className="display">banked {banked}</span>
+            <Btn className="w-6 px-0" onClick={() => dispatch({ type: 'counteractBank', side: foe, delta: -1 })} disabled={!banked}>
+              –
+            </Btn>
+          </p>
+        )
+      })}
     </>
   )
 }

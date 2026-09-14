@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
-import { CHEAT_SHEET, TEAMS } from './rules'
+import { CHEAT_SHEET } from './rules'
 import { phaseMeta } from './compendium'
-import { scores, useGame } from './state'
+import { allTeams, scores, teamsOf, useGame } from './state'
 import { type Dispatch, type Game, type Net } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
@@ -10,12 +10,21 @@ import { MapBuilder } from './ui/MapBuilder'
 import { Objectives } from './ui/Objectives'
 import { OpsBrowser } from './ui/OpsBrowser'
 import { Scoreboard } from './ui/Scoreboard'
+import { Setup } from './ui/Setup'
 import { TeamCard } from './ui/TeamCard'
 import { TurnBar } from './ui/TurnBar'
 
 /* ---------- page ---------- */
 
 const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part of `Game`
+
+/** Team columns either side of the fixed 26rem centre column. */
+const columns = (n: number) =>
+  [
+    ...Array(Math.ceil(n / 2)).fill('minmax(0,1fr)'),
+    '26rem',
+    ...Array(Math.floor(n / 2)).fill('minmax(0,1fr)'),
+  ].join(' ')
 
 type Tab = 'cards' | 'board'
 
@@ -31,14 +40,15 @@ type Tab = 'cards' | 'board'
  */
 function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: Net }) {
   const [tab, setTab] = useState<Tab>('cards')
-  const [me, setMe] = useState(() => {
-    const saved = localStorage.getItem(ME_KEY)
-    return saved && TEAMS.some((t) => t.id === saved) ? saved : TEAMS[0].id
-  })
+  const teams = allTeams(game)
+  const [saved, setSaved] = useState(() => localStorage.getItem(ME_KEY) ?? '')
+  // Checked every render: the GM can delete a team in setup, and the relay will ship that
+  // snapshot straight to this phone. A stale pick must fall back, not crash.
+  const me = teams.some((t) => t.id === saved) ? saved : (teams[0]?.id ?? '')
   const ph = phaseMeta(game.phase)
 
   const pick = (id: string) => {
-    setMe(id)
+    setSaved(id)
     localStorage.setItem(ME_KEY, id)
   }
 
@@ -54,9 +64,9 @@ function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: 
             onChange={(e) => pick(e.target.value)}
             className="display ml-auto min-w-0 max-w-[55%] rounded bg-black/15 px-1.5 py-0.5 text-xs text-ink"
           >
-            {TEAMS.map((t) => (
+            {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} — {game.teams[t.id].player}
+                {t.name} — {t.player}
               </option>
             ))}
           </select>
@@ -65,12 +75,14 @@ function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: 
         <div className="flex items-baseline gap-x-2 px-3 pt-1.5">
           <b className="display text-2xl text-amber-300">{ph.label}</b>
           <span className="display text-xs text-white/55">
-            TP{game.tp}/{game.tpCount} · {game.teams[me].cp} CP
+            TP{game.tp}/{game.tpCount} · {game.teams[me]?.cp ?? 0} CP
           </span>
-          <span className="display ml-auto shrink-0 text-xs">
-            <span className="text-imperium">IMP {scores(game, 'imperium').total}</span>
-            <span className="px-1 text-white/25">·</span>
-            <span className="text-xenos">XEN {scores(game, 'xenos').total}</span>
+          <span className="display ml-auto flex shrink-0 gap-1 text-xs">
+            {game.sides.map((x) => (
+              <span key={x.id} style={{ color: x.color }}>
+                {x.name.slice(0, 3).toUpperCase()} {scores(game, x.id).total}
+              </span>
+            ))}
           </span>
         </div>
 
@@ -111,6 +123,7 @@ export default function App() {
   const [editing, setEditing] = useState(false)
 
   if (net.viewer) return <Viewer game={game} dispatch={dispatch} net={net} />
+  if (game.setup) return <Setup game={game} dispatch={dispatch} />
 
   return (
     <Console game={game} dispatch={dispatch} net={net} editing={editing} setEditing={setEditing} canUndo={canUndo} />
@@ -136,8 +149,21 @@ function Console({
     <div className="min-h-screen">
       <TurnBar game={game} dispatch={dispatch} editing={editing} setEditing={setEditing} net={net} canUndo={canUndo} />
 
-      <main className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_26rem_minmax(0,1fr)]">
-        <div className="order-1 mx-auto w-full min-w-0 max-w-xl xl:order-none xl:max-w-none">
+      {/*
+        One team column per alliance, flanking the sticky scoreboard: even-indexed sides to
+        its left, odd to its right. At two sides that is exactly the original three-column
+        layout. Tailwind's JIT cannot see an interpolated track list, so the columns arrive
+        as a CSS variable — which, unlike an inline style, the `xl:` breakpoint can still gate.
+        Past four alliances the columns are too narrow to read, so it just stacks.
+      */}
+      <main
+        className={`grid gap-4 p-4 ${game.sides.length <= 4 ? 'xl:grid-cols-(--kt-cols)' : ''}`}
+        style={{ '--kt-cols': columns(game.sides.length) } as React.CSSProperties}
+      >
+        <div
+          className="order-1 mx-auto w-full min-w-0 max-w-xl xl:order-none xl:max-w-none"
+          style={{ order: Math.ceil(game.sides.length / 2) }}
+        >
           <div className="space-y-4 xl:sticky xl:top-32">
             <Scoreboard game={game} dispatch={dispatch} />
             <Objectives game={game} dispatch={dispatch} />
@@ -145,17 +171,22 @@ function Console({
           </div>
         </div>
 
-        <div className="order-2 grid min-w-0 content-start gap-4 sm:grid-cols-2 xl:order-first xl:grid-cols-1">
-          {TEAMS.filter((t) => t.side === 'imperium').map((t) => (
-            <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} />
-          ))}
-        </div>
-
-        <div className="order-3 grid min-w-0 content-start gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          {TEAMS.filter((t) => t.side === 'xenos').map((t) => (
-            <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} />
-          ))}
-        </div>
+        {game.sides.map((side, i) => (
+          <div
+            key={side.id}
+            className="grid min-w-0 content-start gap-4 sm:grid-cols-2 xl:grid-cols-1"
+            style={{ order: i % 2 ? Math.ceil(game.sides.length / 2) + 1 + Math.floor(i / 2) : Math.floor(i / 2) }}
+          >
+            {game.sides.length > 2 && (
+              <p className="display kt-rule px-1 text-sm" style={{ color: side.color }}>
+                {side.name}
+              </p>
+            )}
+            {teamsOf(game, side.id).map((t) => (
+              <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} />
+            ))}
+          </div>
+        ))}
       </main>
 
       <MapBuilder game={game} dispatch={dispatch} />

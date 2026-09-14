@@ -1,4 +1,4 @@
-import { blankOperative, CATALOGUE, type Operative, slug, tacOp, TEAMS, teamTacOps } from '../rules'
+import { blankOperative, CATALOGUE, type Operative, slug, tacOp, teamTacOps } from '../rules'
 import { currentTeamId, type Order, orderCounts, pairEligible, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
 import { type Dispatch, type Game, onInt } from './shared'
@@ -107,8 +107,9 @@ export function TeamCard({
   dispatch: Dispatch
   editing: boolean
 }) {
-  const team = TEAMS.find((t) => t.id === teamId)!
-  const p = game.teams[teamId]
+  // The team is the play state now — one object, not a preset plus a row beside it.
+  const team = game.teams[teamId]
+  const p = team
   const ops = teamOps(game, teamId)
   const counts = orderCounts(game, teamId)
   const selectedTacOp = tacOp(p.tacOp)
@@ -118,7 +119,8 @@ export function TeamCard({
 
   const add = (value: string) => {
     if (!value) return
-    const src = CATALOGUE[teamId].find((c) => c.id === value)
+    // A hand-built team has no faction, and so no datacards to pick from.
+    const src = (CATALOGUE[team.faction ?? ''] ?? []).find((c) => c.id === value)
     const op: Operative = src
       ? { ...src, id: `${teamId}-${slug(src.name)}-${crypto.randomUUID().slice(0, 4)}` }
       : blankOperative(teamId)
@@ -171,7 +173,7 @@ export function TeamCard({
         <option value="">— secret tac op —</option>
         {team.archetypes.map((arch) => (
           <optgroup key={arch} label={arch}>
-            {teamTacOps(teamId)
+            {teamTacOps(team.archetypes)
               .filter((t) => t.archetype === arch)
               .map((t) => (
                 <option key={t.name} value={t.name}>
@@ -202,7 +204,7 @@ export function TeamCard({
           >
             <option value="">+ add operative…</option>
             <optgroup label="Datacards">
-              {CATALOGUE[teamId].map((c) => (
+              {(CATALOGUE[team.faction ?? ''] ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} — {c.apl}AP {c.move} {c.save} {c.w}W
                 </option>

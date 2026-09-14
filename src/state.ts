@@ -2,6 +2,8 @@ import { useEffect, useReducer, useState } from 'react'
 
 import {
   BOARD,
+  type Board,
+  CP_PER_TP,
   CRIT_CAP_PER_TP,
   CRIT_OPS,
   type CritOpId,
@@ -10,13 +12,18 @@ import {
   OP_CAP,
   type OpKind,
   type Operative,
+  PRESET_SIDES,
+  PRESET_TEAMS,
+  SIDE_PALETTE,
   type Piece,
   type Point,
   STARTING_CP,
+  type SideDef,
   type SideId,
-  TEAMS,
+  type TeamDef,
   TURNING_POINTS,
   defaultMarkers,
+  dropZone,
   killThresholds,
 } from './rules'
 import type { PhaseId } from './compendium'
@@ -29,13 +36,18 @@ export type OpState = {
   order: Order
   pos?: Point // where it stands on the board; absent means not deployed
 }
-export type PlayerState = { player: string; cp: number; tacOp: string; tacVp: number }
+/** Kept as an alias: `TeamDef` absorbed it when teams became runtime data. */
+export type PlayerState = TeamDef
 
 /** Positions only — the score, wounds and orders live in `Game` itself and are what a
  *  "Save match" already captures. This is a record of where things stood. */
 export type BoardSnapshot = { terrain: Piece[]; markers: Point[]; pos: Record<string, Point> }
 
 export type Game = {
+  setup: boolean // showing the setup view rather than the console
+  sides: SideDef[] // the alliances, in order — order picks drop zones and columns
+  board: Board // table size and drop zone depth, in inches
+  cpPerTp: { lead: number; other: number } // CP granted each turning point
   tp: number
   tpCount: number // homebrew: the battle can run longer than the official four
   opCap: number // max VP per op type; official is 6 over 4 turning points
@@ -59,7 +71,7 @@ export type Game = {
   counteracts: Record<SideId, number> // banked Counteracts for a flushed side
   roster: Record<string, Operative[]> // teamId -> live, editable operatives
   ops: Record<string, OpState>
-  teams: Record<string, PlayerState>
+  teams: Record<string, TeamDef> // teamId -> the team itself, metadata and play state
   turnIdx: number
 }
 
@@ -73,6 +85,10 @@ const freshOps = (roster: Record<string, Operative[]>) =>
 export const initialGame = (): Game => {
   const roster = structuredClone(DEFAULT_ROSTER)
   return {
+    setup: false,
+    sides: structuredClone(PRESET_SIDES),
+    board: { ...BOARD },
+    cpPerTp: { ...CP_PER_TP },
     tp: 1,
     tpCount: TURNING_POINTS,
     opCap: OP_CAP,
@@ -89,17 +105,16 @@ export const initialGame = (): Game => {
     primary: { imperium: null, xenos: null },
     crit: { imperium: Array(TURNING_POINTS).fill(0), xenos: Array(TURNING_POINTS).fill(0) },
     killOverride: { imperium: null, xenos: null },
-    order: {
-      imperium: TEAMS.filter((t) => t.side === 'imperium').map((t) => t.id),
-      xenos: TEAMS.filter((t) => t.side === 'xenos').map((t) => t.id),
-    },
+    order: Object.fromEntries(
+      PRESET_SIDES.map((s) => [s.id, PRESET_TEAMS.filter((t) => t.side === s.id).map((t) => t.id)]),
+    ),
     paired: true,
     sideTurn: 'imperium',
     pairUsed: [],
     counteracts: { imperium: 0, xenos: 0 },
     roster,
     ops: freshOps(roster),
-    teams: Object.fromEntries(TEAMS.map((t) => [t.id, { player: t.player, cp: STARTING_CP, tacOp: '', tacVp: 0 }])),
+    teams: Object.fromEntries(PRESET_TEAMS.map((t) => [t.id, { ...t, cp: STARTING_CP, tacOp: '', tacVp: 0 }])),
     turnIdx: 0,
   }
 }
@@ -150,6 +165,17 @@ export type Action =
   | { type: 'removeOp'; teamId: string; opId: string }
   | { type: 'editOp'; teamId: string; opId: string; patch: Partial<Operative> }
   | { type: 'resetRoster'; teamId: string }
+  // --- setup: the match itself is editable, so these change who is playing ---
+  | { type: 'setup'; value: boolean }
+  | { type: 'sideAdd' }
+  | { type: 'sideRemove'; id: SideId }
+  | { type: 'sidePatch'; id: SideId; patch: Partial<SideDef> }
+  | { type: 'sideMove'; id: SideId; dir: -1 | 1 }
+  | { type: 'teamAdd'; team: TeamDef; roster: Operative[] }
+  | { type: 'teamRemove'; teamId: string }
+  | { type: 'teamPatch'; teamId: string; patch: Partial<TeamDef> }
+  | { type: 'board'; patch: Partial<Board> }
+  | { type: 'cpPerTp'; patch: Partial<{ lead: number; other: number }> }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
 
@@ -163,18 +189,71 @@ const findOp = (g: Game, opId: string) =>
 export const teamIdOf = (g: Game, opId: string) =>
   Object.keys(g.roster).find((tid) => g.roster[tid].some((o) => o.id === opId))
 
+/* ---------- setup invariants ---------- */
+
+/** A record with one entry per side. The five per-side records are plain objects keyed by a
+ *  now-open `string`, so the compiler cannot tell you when one is missing a side — everything
+ *  that adds or removes a side goes through `normalize` instead. */
+const blankBySide = <T,>(sides: SideDef[], value: T): Record<SideId, T> =>
+  Object.fromEntries(sides.map((x) => [x.id, value]))
+
+const bySide = <T,>(sides: SideDef[], src: Record<SideId, T>, blank: () => T): Record<SideId, T> =>
+  Object.fromEntries(sides.map((x) => [x.id, src[x.id] ?? blank()]))
+
+/**
+ * The single repair point for everything a setup edit can leave dangling.
+ *
+ * Adding a side leaves five per-side records without a row for it, and `scores` would
+ * read `undefined.reduce`. Removing one leaves rows nobody reads, a marker held by a side
+ * that no longer exists, and possibly `initiative`/`sideTurn` pointing at nothing. Removing
+ * a team leaves its roster and its operatives' wound tracks behind.
+ *
+ * `order` and `pairUsed` are deliberately *not* repaired here: `orderedIds` already
+ * self-heals at read time, and a stale `pairUsed` id is inert because `pairTarget` only
+ * ever intersects it with live teams. Fewer stored invariants, fewer things to drift.
+ */
+const normalize = (g: Game): Game => {
+  const sides = g.sides.length ? g.sides : [{ id: 'side1', name: 'Alliance 1', color: SIDE_PALETTE[0] }]
+  const live = new Set(sides.map((x) => x.id))
+  // A team whose side is gone is re-homed rather than deleted. Deleting is `sideRemove`'s
+  // job, and it does it explicitly — so a malformed snapshot can never silently empty the
+  // match on its way through `replace`.
+  const teams = Object.fromEntries(
+    Object.entries(g.teams).map(([id, t]) => [id, live.has(t.side) ? t : { ...t, side: sides[0].id }]),
+  )
+  const ids = new Set(Object.keys(teams))
+  const roster = Object.fromEntries(Object.entries(g.roster).filter(([tid]) => ids.has(tid)))
+  const keep = new Set(Object.values(roster).flat().map((o) => o.id))
+  const has = (x: SideId) => (live.has(x) ? x : sides[0].id)
+  return {
+    ...g,
+    sides,
+    teams,
+    roster,
+    ops: Object.fromEntries(Object.entries(g.ops).filter(([id]) => keep.has(id))),
+    objectives: g.objectives.map((o) => (o && live.has(o) ? o : null)),
+    primary: bySide(sides, g.primary, () => null),
+    crit: bySide(sides, g.crit, () => Array(g.tpCount).fill(0)),
+    killOverride: bySide(sides, g.killOverride, () => null),
+    counteracts: bySide(sides, g.counteracts, () => 0),
+    order: bySide(sides, g.order, () => []),
+    initiative: has(g.initiative),
+    sideTurn: has(g.sideTurn),
+  }
+}
+
+/** `normalize` plus a rewound turn cursor. Every setup edit uses this; `replace` does not,
+ *  because it runs on every relay snapshot and must not move a spectator off the live turn. */
+const recast = (g: Game): Game => ({ ...normalize(g), turnIdx: 0, pairUsed: [] })
+
 /* ---------- board geometry ---------- */
 
-// 14 columns at 3" span the 44" edge; three rows of them clear the 6" drop zone depth and
-// hold the biggest roster here (28) in two.
-const DEPLOY_COLS = 14
-
-const onBoard = (p: Point): Point => ({ x: clamp(p.x, 0, BOARD.w), y: clamp(p.y, 0, BOARD.h) })
+const onBoard = (p: Point, b: Board): Point => ({ x: clamp(p.x, 0, b.w), y: clamp(p.y, 0, b.h) })
 
 /** The one place that holds "markers is index-matched to objectives". Both the count
  *  stepper and a restored snapshot go through it, so neither can leave a hole. */
-const fitMarkers = (src: Point[], n: number): Point[] => {
-  const def = defaultMarkers(n)
+const fitMarkers = (src: Point[], n: number, board: Board): Point[] => {
+  const def = defaultMarkers(n, board)
   return Array.from({ length: n }, (_, i) => src[i] ?? def[i])
 }
 
@@ -187,15 +266,15 @@ const captureBoard = (g: Game): BoardSnapshot => ({
 
 /** Keep a piece a sane size and wholly on the table. In the reducer rather than the drag
  *  handler, so a hand-typed number or a loaded save is clamped too. */
-const fitPiece = (p: Piece): Piece => {
-  const w = clamp(p.w, 0.5, BOARD.w)
-  const h = clamp(p.h, 0.5, BOARD.h)
+const fitPiece = (p: Piece, b: Board): Piece => {
+  const w = clamp(p.w, 0.5, b.w)
+  const h = clamp(p.h, 0.5, b.h)
   return {
     ...p,
     w,
     h,
-    x: clamp(p.x, 0, BOARD.w - w),
-    y: clamp(p.y, 0, BOARD.h - h),
+    x: clamp(p.x, 0, b.w - w),
+    y: clamp(p.y, 0, b.h - h),
     rot: ((Math.round(p.rot) % 360) + 360) % 360,
   }
 }
@@ -210,7 +289,7 @@ export function reduce(g: Game, a: Action): Game {
     // Merged over a fresh game the same way a localStorage load is, so a snapshot from an
     // older client can't leave a newer top-level field undefined.
     case 'replace':
-      return { ...initialGame(), ...a.game }
+      return normalize({ ...initialGame(), ...a.game })
     case 'critOp':
       return { ...g, critOp: a.id }
     case 'phase':
@@ -242,7 +321,7 @@ export function reduce(g: Game, a: Action): Game {
         ...g,
         tpCount: n,
         tp: Math.min(g.tp, n),
-        crit: { imperium: resize(g.crit.imperium), xenos: resize(g.crit.xenos) },
+        crit: Object.fromEntries(g.sides.map((x) => [x.id, resize(g.crit[x.id] ?? [])])),
       }
     }
     case 'setTp':
@@ -261,15 +340,15 @@ export function reduce(g: Game, a: Action): Game {
       return {
         ...g,
         objectives: Array.from({ length: n }, (_, i) => g.objectives[i] ?? null),
-        markers: fitMarkers(g.markers, n),
+        markers: fitMarkers(g.markers, n, g.board),
       }
     }
     case 'markerMove':
-      return { ...g, markers: g.markers.map((m, i) => (i === a.index ? onBoard(a.pos) : m)) }
+      return { ...g, markers: g.markers.map((m, i) => (i === a.index ? onBoard(a.pos, g.board) : m)) }
     case 'terrainAdd':
-      return { ...g, terrain: [...g.terrain, fitPiece({ ...a.piece, id: `t${nextTerrainId(g)}` })] }
+      return { ...g, terrain: [...g.terrain, fitPiece({ ...a.piece, id: `t${nextTerrainId(g)}` }, g.board)] }
     case 'terrainPatch':
-      return { ...g, terrain: g.terrain.map((p) => (p.id === a.id ? fitPiece({ ...p, ...a.patch }) : p)) }
+      return { ...g, terrain: g.terrain.map((p) => (p.id === a.id ? fitPiece({ ...p, ...a.patch }, g.board) : p)) }
     case 'terrainRemove':
       return { ...g, terrain: g.terrain.filter((p) => p.id !== a.id) }
     case 'terrainClear':
@@ -280,7 +359,7 @@ export function reduce(g: Game, a: Action): Game {
       const st = g.ops[a.opId]
       if (!st) return g
       const { pos: _off, ...bare } = st
-      return { ...g, ops: { ...g.ops, [a.opId]: a.pos ? { ...st, pos: onBoard(a.pos) } : bare } }
+      return { ...g, ops: { ...g.ops, [a.opId]: a.pos ? { ...st, pos: onBoard(a.pos, g.board) } : bare } }
     }
     case 'deploy': {
       // Lay this side's undeployed survivors out in their drop zone in team order, so the
@@ -288,12 +367,22 @@ export function reduce(g: Game, a: Action): Game {
       // resume past the already-placed, so a second Deploy appends instead of stacking.
       const ops = { ...g.ops }
       const mine = sideOps(g, a.side).filter((o) => ops[o.id] && !ops[o.id].dead)
+      const zone = dropZone(g.board, Math.max(0, g.sides.findIndex((x) => x.id === a.side)), g.sides.length)
+      // Columns along the zone's longer axis, rows across its depth. Derived rather than
+      // fixed at 14: a drop zone on a 30" short edge fits ten columns, not fourteen.
+      const across = zone.w >= zone.h
+      const long = across ? zone.w : zone.h
+      const cols = Math.max(1, Math.floor((long - 4) / 3))
       let slot = mine.filter((o) => ops[o.id].pos).length
       for (const o of mine) {
         if (ops[o.id].pos) continue
-        const y = 2.4 + (Math.floor(slot / DEPLOY_COLS) % 3) * 1.4
-        const x = 2 + (slot % DEPLOY_COLS) * 3
-        ops[o.id] = { ...ops[o.id], pos: { x, y: a.side === 'imperium' ? y : BOARD.h - y } }
+        const along = 2 + (slot % cols) * 3
+        const deep = 2.4 + (Math.floor(slot / cols) % 3) * 1.4
+        // Measure depth inward from whichever edge the zone hugs.
+        const pos = across
+          ? { x: zone.x + along, y: zone.y > 0 ? zone.y + zone.h - deep : deep }
+          : { x: zone.x > 0 ? zone.x + zone.w - deep : deep, y: zone.y + along }
+        ops[o.id] = { ...ops[o.id], pos: onBoard(pos, g.board) }
         slot++
       }
       return { ...g, ops }
@@ -311,7 +400,7 @@ export function reduce(g: Game, a: Action): Game {
           return [id, b.pos[id] ? { ...o, pos: b.pos[id] } : bare]
         }),
       )
-      return { ...g, terrain: b.terrain, markers: fitMarkers(b.markers, g.objectives.length), ops }
+      return { ...g, terrain: b.terrain, markers: fitMarkers(b.markers, g.objectives.length, g.board), ops }
     }
     case 'thresholds':
       return { ...g, killOverride: { ...g.killOverride, [a.side]: a.value } }
@@ -343,15 +432,18 @@ export function reduce(g: Game, a: Action): Game {
       }
       if (!spending || !teamId) return next
 
-      const team = TEAMS.find((t) => t.id === teamId)!
+      const team = g.teams[teamId]
       // An out-of-turn activation is the GM's call; we only track whose turn it is.
-      if (team.side !== g.sideTurn) return next
+      if (!team || team.side !== g.sideTurn) return next
 
-      // While the enemy has nothing ready, each activation banks them a Counteract.
-      const foe = enemy(g.sideTurn)
-      const enemyDry = !teamsOf(next, foe).some((t) => readyCount(next, t.id) > 0)
-      const banked = enemyDry
-        ? { ...next, counteracts: { ...next.counteracts, [foe]: next.counteracts[foe] + 1 } }
+      // While an alliance has nothing ready, each activation banks it a Counteract.
+      // With more than two sides every dry one banks, not just "the enemy".
+      const dry = enemies(g, g.sideTurn).filter((e) => !teamsOf(next, e).some((t) => readyCount(next, t.id) > 0))
+      const banked = dry.length
+        ? {
+            ...next,
+            counteracts: dry.reduce((acc, e) => ({ ...acc, [e]: (next.counteracts[e] ?? 0) + 1 }), next.counteracts),
+          }
         : next
 
       const used = g.pairUsed.includes(teamId) ? g.pairUsed : [...g.pairUsed, teamId]
@@ -361,7 +453,7 @@ export function reduce(g: Game, a: Action): Game {
     case 'skip':
       return { ...g, turnIdx: g.turnIdx + 1 }
     case 'moveTeam': {
-      const team = TEAMS.find((t) => t.id === a.teamId)
+      const team = g.teams[a.teamId]
       if (!team) return g
       const ids = orderedIds(g, team.side)
       const i = ids.indexOf(a.teamId)
@@ -399,8 +491,13 @@ export function reduce(g: Game, a: Action): Game {
     case 'nextTp': {
       // Ready all surviving operatives, hand out CP.
       const ops = Object.fromEntries(Object.entries(g.ops).map(([id, o]) => [id, { ...o, expended: false }]))
+      // Iterate the live teams, not the preset list — a team the GM added mid-match
+      // would otherwise vanish from `g.teams` here while its roster and ops survived.
       const teams = Object.fromEntries(
-        TEAMS.map((t) => [t.id, { ...g.teams[t.id], cp: g.teams[t.id].cp + (t.side === g.initiative ? 1 : 2) }]),
+        allTeams(g).map((t) => [
+          t.id,
+          { ...t, cp: t.cp + (t.side === g.initiative ? g.cpPerTp.lead : g.cpPerTp.other) },
+        ]),
       )
       return {
         ...g,
@@ -413,7 +510,7 @@ export function reduce(g: Game, a: Action): Game {
         phase: 'initiative',
         sideTurn: g.initiative,
         pairUsed: [],
-        counteracts: { imperium: 0, xenos: 0 }, // a Counteract is a this-turn opportunity
+        counteracts: blankBySide(g.sides, 0), // a Counteract is a this-turn opportunity
       }
     }
     case 'finish':
@@ -439,7 +536,8 @@ export function reduce(g: Game, a: Action): Game {
       return { ...g, roster: { ...g.roster, [a.teamId]: list }, ops }
     }
     case 'resetRoster': {
-      const list = structuredClone(DEFAULT_ROSTER[a.teamId])
+      // A hand-built team has no preset to go back to; resetting it empties it.
+      const list = structuredClone(DEFAULT_ROSTER[a.teamId] ?? [])
       const kept = Object.fromEntries(Object.entries(g.ops).filter(([id]) => teamIdOf(g, id) !== a.teamId))
       return {
         ...g,
@@ -447,12 +545,84 @@ export function reduce(g: Game, a: Action): Game {
         ops: { ...kept, ...freshOps({ [a.teamId]: list }) },
       }
     }
+
+    /* ---------- setup ----------
+     * Everything below changes who is playing, so every case ends in `normalize`.
+     */
+    case 'setup':
+      return { ...g, setup: a.value }
+    case 'sideAdd': {
+      const n = g.sides.length
+      const id = `side${n + 1}-${Math.random().toString(36).slice(2, 6)}`
+      return recast({
+        ...g,
+        sides: [...g.sides, { id, name: `Alliance ${n + 1}`, color: SIDE_PALETTE[n % SIDE_PALETTE.length] }],
+      })
+    }
+    case 'sideRemove': {
+      if (g.sides.length <= 1) return g // a match needs somebody to fight
+      const teams = Object.fromEntries(Object.entries(g.teams).filter(([, t]) => t.side !== a.id))
+      return recast({ ...g, sides: g.sides.filter((x) => x.id !== a.id), teams })
+    }
+    case 'sidePatch':
+      return normalize({ ...g, sides: g.sides.map((x) => (x.id === a.id ? { ...x, ...a.patch, id: x.id } : x)) })
+    case 'sideMove': {
+      const i = g.sides.findIndex((x) => x.id === a.id)
+      const j = i + a.dir
+      if (i < 0 || j < 0 || j >= g.sides.length) return g
+      const sides = [...g.sides]
+      ;[sides[i], sides[j]] = [sides[j], sides[i]]
+      // Side order picks drop zones, so the board moves too — but only for the undeployed.
+      return recast({ ...g, sides })
+    }
+    case 'teamAdd':
+      return recast({
+        ...g,
+        teams: { ...g.teams, [a.team.id]: a.team },
+        roster: { ...g.roster, [a.team.id]: a.roster },
+        ops: { ...g.ops, ...freshOps({ [a.team.id]: a.roster }) },
+        order: { ...g.order, [a.team.side]: [...(g.order[a.team.side] ?? []), a.team.id] },
+      })
+    case 'teamRemove': {
+      const { [a.teamId]: _gone, ...teams } = g.teams
+      return recast({ ...g, teams })
+    }
+    case 'teamPatch': {
+      const t = g.teams[a.teamId]
+      if (!t) return g
+      const next = { ...g, teams: { ...g.teams, [a.teamId]: { ...t, ...a.patch, id: t.id } } }
+      // Only a change of alliance moves slots; a rename or a recolour must not rewind the turn.
+      return a.patch.side && a.patch.side !== t.side ? recast(next) : normalize(next)
+    }
+    case 'board': {
+      const b = { ...g.board, ...a.patch }
+      const board = { w: clamp(b.w, 12, 120), h: clamp(b.h, 12, 120), drop: clamp(b.drop, 1, 30) }
+      // Everything already on the table has to fit the new one.
+      return {
+        ...g,
+        board,
+        terrain: g.terrain.map((p) => fitPiece(p, board)),
+        markers: g.markers.map((m) => onBoard(m, board)),
+        ops: Object.fromEntries(
+          Object.entries(g.ops).map(([id, o]) => [id, o.pos ? { ...o, pos: onBoard(o.pos, board) } : o]),
+        ),
+      }
+    }
+    case 'cpPerTp': {
+      const c = { ...g.cpPerTp, ...a.patch }
+      return { ...g, cpPerTp: { lead: clamp(c.lead, 0, 10), other: clamp(c.other, 0, 10) } }
+    }
   }
 }
 
 /* ---------- derived ---------- */
 
-export const enemy = (s: SideId): SideId => (s === 'imperium' ? 'xenos' : 'imperium')
+/** Every alliance but this one. There used to be exactly one; now there can be any number,
+ *  so "the enemy" is a list and every rule that named it has to fold over that list. */
+export const enemies = (g: Game, s: SideId) => g.sides.filter((x) => x.id !== s).map((x) => x.id)
+
+export const sideDef = (g: Game, s: SideId) => g.sides.find((x) => x.id === s)
+export const allTeams = (g: Game) => Object.values(g.teams)
 
 /**
  * A side's team ids in activation order. Anything saved is honoured, but unknown
@@ -460,25 +630,32 @@ export const enemy = (s: SideId): SideId => (s === 'imperium' ? 'xenos' : 'imper
  * not require throwing away a game in progress.
  */
 const orderedIds = (g: Game, s: SideId) => {
-  const all = TEAMS.filter((t) => t.side === s).map((t) => t.id)
+  const all = allTeams(g)
+    .filter((t) => t.side === s)
+    .map((t) => t.id)
   const saved = (g.order?.[s] ?? []).filter((id) => all.includes(id))
   return [...saved, ...all.filter((id) => !saved.includes(id))]
 }
 
-const sideTeams = (g: Game, s: SideId) => orderedIds(g, s).map((id) => TEAMS.find((t) => t.id === id)!)
+const sideTeams = (g: Game, s: SideId) => orderedIds(g, s).map((id) => g.teams[id])
 export const teamOps = (g: Game, teamId: string) => g.roster[teamId] ?? []
 export const sideOps = (g: Game, s: SideId) => sideTeams(g, s).flatMap((t) => teamOps(g, t.id))
 
-export const thresholds = (g: Game, s: SideId) => g.killOverride[s] ?? killThresholds(sideOps(g, enemy(s)).length)
+/** Everything the side is fighting — one alliance's operatives, or several. */
+const foeOps = (g: Game, s: SideId) => enemies(g, s).flatMap((e) => sideOps(g, e))
 
-export const kills = (g: Game, s: SideId) => sideOps(g, enemy(s)).filter((o) => g.ops[o.id]?.dead).length
+export const thresholds = (g: Game, s: SideId) => g.killOverride[s] ?? killThresholds(foeOps(g, s).length)
+
+export const kills = (g: Game, s: SideId) => foeOps(g, s).filter((o) => g.ops[o.id]?.dead).length
 
 export const killGrade = (g: Game, s: SideId) => thresholds(g, s).filter((t) => kills(g, s) >= t).length
 
 export const scores = (g: Game, s: SideId) => {
   const cap = g.opCap
   const grade = killGrade(g, s)
-  const beatsEnemy = g.finished && grade > killGrade(g, enemy(s))
+  // Strictly better than every other alliance. A tie at the top pays nobody — with more
+  // than two sides that is the only reading of "beat the enemy" that stays a single bonus.
+  const beatsEnemy = g.finished && enemies(g, s).every((e) => grade > killGrade(g, e))
   const kill = Math.min(cap, grade + (beatsEnemy ? 1 : 0))
   const crit = Math.min(
     cap,
@@ -494,11 +671,10 @@ export const scores = (g: Game, s: SideId) => {
 
 /* ---------- objectives ---------- */
 
-export const objectiveCounts = (g: Game) => ({
-  imperium: g.objectives.filter((o) => o === 'imperium').length,
-  xenos: g.objectives.filter((o) => o === 'xenos').length,
-  neutral: g.objectives.filter((o) => o === null).length,
-})
+/** Markers a side holds. A plain function rather than a keyed record, because a record
+ *  would need a `neutral` key — and nothing stops a GM naming an alliance "neutral". */
+export const held = (g: Game, s: SideId) => g.objectives.filter((o) => o === s).length
+export const heldByNobody = (g: Game) => g.objectives.filter((o) => o === null).length
 
 /**
  * What the marker board is worth to a side this turning point — but only for the
@@ -510,24 +686,28 @@ export const suggestedCrit = (g: Game, s: SideId): number | null => {
   const op = CRIT_OPS.find((c) => c.id === g.critOp)
   if (!op || op.derive !== 'holders') return null
   if (g.tp < 2) return 0
-  const c = objectiveCounts(g)
-  const mine = c[s]
-  const theirs = c[enemy(s)]
+  const mine = held(g, s)
+  const theirs = Math.max(0, ...enemies(g, s).map((e) => held(g, e)))
   return Math.min(g.critCap, (mine > 0 ? 1 : 0) + (mine > theirs ? 1 : 0))
 }
 
+/** The alliances in turn order: whoever holds initiative first, then the rest in `sides` order. */
+const turnOrder = (g: Game) => {
+  const i = Math.max(0, g.sides.findIndex((x) => x.id === g.initiative))
+  return g.sides.map((_, k) => g.sides[(i + k) % g.sides.length].id)
+}
+
 /**
- * Fixed rotation: initiative side first, then alternating, one operative per slot.
- * The sides need not be the same size — pairing runs to the longer of the two, so
- * a side with an extra player still gets that player a slot at the end of the cycle.
+ * Fixed rotation: initiative side first, then round-robin, one operative per slot.
+ * The sides need not be the same size — it runs to the longest, so a side with an
+ * extra player still gets that player a slot at the end of the cycle.
  */
-export const rotation = (g: Game) => {
-  const a = sideTeams(g, g.initiative)
-  const b = sideTeams(g, enemy(g.initiative))
-  const n = Math.max(a.length, b.length)
-  return Array.from({ length: n }, (_, i) => [a[i], b[i]])
+export const rotation = (g: Game): TeamDef[] => {
+  const lists = turnOrder(g).map((sid) => sideTeams(g, sid))
+  const n = Math.max(0, ...lists.map((l) => l.length))
+  return Array.from({ length: n }, (_, i) => lists.map((l) => l[i]))
     .flat()
-    .filter((t): t is (typeof TEAMS)[number] => Boolean(t))
+    .filter((t): t is TeamDef => Boolean(t))
 }
 
 /** Teams on a side, in activation order — the scoreboard lays one row out per slot. */
@@ -535,16 +715,14 @@ export const teamsOf = (g: Game, s: SideId) => sideTeams(g, s)
 
 /** Can this team still move that way within its own side's order? */
 export const canMove = (g: Game, teamId: string, dir: -1 | 1) => {
-  const team = TEAMS.find((t) => t.id === teamId)
+  const team = g.teams[teamId]
   if (!team) return false
   const ids = orderedIds(g, team.side)
   const j = ids.indexOf(teamId) + dir
   return j >= 0 && j < ids.length
 }
-/** Rows the scoreboard needs — the larger side's player count. Order cannot change it. */
-export const maxTeamsPerSide = Math.max(
-  ...(['imperium', 'xenos'] as SideId[]).map((s) => TEAMS.filter((t) => t.side === s).length),
-)
+/** Rows the scoreboard needs — the largest side's player count. Order cannot change it. */
+export const maxTeamsPerSide = (g: Game) => Math.max(1, ...g.sides.map((x) => teamsOf(g, x.id).length))
 
 /**
  * How many activations this side turn takes. Two, per the Buddy System — but the
@@ -565,8 +743,13 @@ export const pairEligible = (g: Game) =>
 /** Hand the turn over — unless the other side has nothing ready, in which case the
  *  active side keeps activating back-to-back and the other side banks Counteracts. */
 const handOff = (g: Game): Game => {
-  const other = enemy(g.sideTurn)
-  return teamsOf(g, other).some((t) => readyCount(g, t.id) > 0) ? { ...g, sideTurn: other } : g
+  const order = turnOrder(g)
+  const at = Math.max(0, order.indexOf(g.sideTurn))
+  for (let i = 1; i < order.length; i++) {
+    const next = order[(at + i) % order.length]
+    if (teamsOf(g, next).some((t) => readyCount(g, t.id) > 0)) return { ...g, sideTurn: next }
+  }
+  return g
 }
 
 /** How the team's surviving operatives are split across orders, and how many are still ready. */
@@ -596,8 +779,9 @@ export const currentTeamId = (g: Game): string | null => {
  * and only an expended operative on ENGAGE can actually do it.
  */
 export const counteract = (g: Game, s: SideId) => {
-  const mine = sideTeams(g, s).reduce((n, t) => n + readyCount(g, t.id), 0)
-  const theirs = sideTeams(g, enemy(s)).reduce((n, t) => n + readyCount(g, t.id), 0)
+  const ready = (x: SideId) => sideTeams(g, x).reduce((n, t) => n + readyCount(g, t.id), 0)
+  const mine = ready(s)
+  const theirs = enemies(g, s).reduce((n, e) => n + ready(e), 0)
   const eligible = sideOps(g, s).filter((o) => {
     const st = g.ops[o.id]
     return st && !st.dead && st.expended && st.order === 'engage'
@@ -607,7 +791,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v12' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v13' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */
@@ -673,8 +857,10 @@ export type UiAction = Action | { type: 'undo' }
 export type History = { past: Game[]; now: Game; last?: string }
 
 /** Keystroke-level actions coalesce, or typing one player name eats the whole stack. */
-const COALESCE = new Set(['player', 'tacOp'])
-const stepKey = (a: Action) => ('teamId' in a ? `${a.type}:${a.teamId}` : a.type)
+const COALESCE = new Set(['player', 'tacOp', 'teamPatch', 'sidePatch'])
+// Keyed per subject, so editing two different teams (or sides) never merges into one step.
+const stepKey = (a: Action) =>
+  'teamId' in a ? `${a.type}:${a.teamId}` : 'id' in a ? `${a.type}:${a.id}` : a.type
 
 export const withHistory = (h: History, a: UiAction): History => {
   if (a.type === 'undo') return h.past.length ? { past: h.past.slice(0, -1), now: h.past[h.past.length - 1] } : h

@@ -491,10 +491,10 @@ const KOMMANDO_CARDS: RefCard[] = [
   },
 ]
 
-/** teamId -> its faction rules, ploys and faction equipment. */
+/** faction -> its faction rules, ploys and faction equipment. Keyed by faction, not by
+ *  team, so the match's two Deathwatch teams read one deck instead of aliasing it. */
 export const CARDS: Record<string, RefCard[]> = {
   dw: DEATHWATCH_CARDS,
-  dw2: DEATHWATCH_CARDS, // one datacard, two kill teams — as CATALOGUE shares DEATHWATCH_ROWS
   aod: AOD_CARDS,
   sct: SCOUT_CARDS,
   rav: RAVENER_CARDS,
@@ -506,8 +506,9 @@ export const CARDS: Record<string, RefCard[]> = {
  *  is not in the six PDFs above — empty until that sheet is transcribed too. */
 export const UNIVERSAL_EQUIPMENT: RefCard[] = []
 
-export const teamCards = (teamId: string, kind: RefKind) => (CARDS[teamId] ?? []).filter((c) => c.kind === kind)
+export const teamCards = (faction: string | undefined, kind: RefKind) =>
+  (CARDS[faction ?? ''] ?? []).filter((c) => c.kind === kind)
 
 /** What this phase unlocks for this team, in the order the cards should be read. */
-export const phaseCards = (teamId: string, phase: PhaseId) =>
-  phaseMeta(phase).use.flatMap((kind) => teamCards(teamId, kind))
+export const phaseCards = (faction: string | undefined, phase: PhaseId) =>
+  phaseMeta(phase).use.flatMap((kind) => teamCards(faction, kind))

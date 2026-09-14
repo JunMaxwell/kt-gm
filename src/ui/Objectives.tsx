@@ -1,14 +1,14 @@
-import { SIDE_COLOR, type SideId, SIDES } from '../rules'
-import { objectiveCounts } from '../state'
+import { type SideId } from '../rules'
+import { held, heldByNobody, sideDef } from '../state'
 import { DarkBtn } from './kit'
 import { type Dispatch, type Game } from './shared'
 
 /* ---------- objectives ---------- */
 
 export function Objectives({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
-  const counts = objectiveCounts(game)
-  const cycle = (holder: SideId | null): SideId | null =>
-    holder === null ? 'imperium' : holder === 'imperium' ? 'xenos' : null
+  // Click walks every alliance in turn, then back to neutral — however many there are.
+  const ring: (SideId | null)[] = [...game.sides.map((x) => x.id), null]
+  const cycle = (holder: SideId | null) => ring[(ring.indexOf(holder) + 1) % ring.length]
 
   return (
     <section className="overflow-hidden border border-rule bg-paper shadow-sm">
@@ -32,12 +32,15 @@ export function Objectives({ game, dispatch }: { game: Game; dispatch: Dispatch 
               key={i}
               onClick={() => dispatch({ type: 'objective', index: i, value: cycle(holder) })}
               title={`Marker ${i === 0 ? 'C (centre)' : i + 1} — ${
-                holder ? SIDES[holder] : 'neutral'
-              }. Click to cycle Imperium → Xenos → neutral.`}
+                holder ? (sideDef(game, holder)?.name ?? holder) : 'neutral'
+              }. Click to cycle ${ring.map((r) => (r ? (sideDef(game, r)?.name ?? r) : 'neutral')).join(' → ')}.`}
               className="display grid h-10 w-10 place-items-center rounded-lg border text-lg"
               style={
                 holder
-                  ? { background: SIDE_COLOR[holder], borderColor: SIDE_COLOR[holder], color: '#fff' }
+                  ? (() => {
+                      const c = sideDef(game, holder)?.color ?? '#888'
+                      return { background: c, borderColor: c, color: '#fff' }
+                    })()
                   : { background: '#fff', borderColor: 'var(--color-rule)', color: 'rgba(40,44,52,.4)' }
               }
             >
@@ -46,9 +49,13 @@ export function Objectives({ game, dispatch }: { game: Game; dispatch: Dispatch 
           ))}
         </div>
 
-        <p className="mt-2 text-xs text-ink/50">
-          <b style={{ color: SIDE_COLOR.imperium }}>{counts.imperium} Imperium</b> ·{' '}
-          <b style={{ color: SIDE_COLOR.xenos }}>{counts.xenos} Xenos</b> · {counts.neutral} neutral
+        <p className="mt-2 flex flex-wrap gap-x-2 text-xs text-ink/50">
+          {game.sides.map((x) => (
+            <b key={x.id} style={{ color: x.color }}>
+              {held(game, x.id)} {x.name}
+            </b>
+          ))}
+          <span>{heldByNobody(game)} neutral</span>
         </p>
         {!game.critOp && <p className="mt-1 text-xs text-recon">Pick a crit op above to score these.</p>}
       </div>

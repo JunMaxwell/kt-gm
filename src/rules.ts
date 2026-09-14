@@ -3,12 +3,27 @@
 // picks for this match. Both are only seeds — the live roster is editable in the
 // app and persists in localStorage.
 
-export type SideId = 'imperium' | 'xenos'
+// Sides and teams are no longer a compile-time fact. They live in `Game`, so the GM can
+// build any match: rename an alliance, add a third, move a team across, field two of the
+// same faction. What is left here is the *preset* — the match this app was written for.
+export type SideId = string
 export type OpKind = 'kill' | 'crit' | 'tac'
 
 export type Operative = { id: string; name: string; apl: number; move: string; save: string; w: number }
-/** `color` holds literal Tailwind classes so the JIT compiler still sees them. */
-export type TeamMeta = {
+
+/** An alliance. `color` is a hex value, used as an inline background — never a class. */
+export type SideDef = { id: SideId; name: string; color: string }
+
+/**
+ * A kill team as the GM configured it. This merges what used to be a compile-time
+ * `TeamMeta` with the per-player `PlayerState` that sat beside it, because both are
+ * now editable and both have to ride along in a snapshot.
+ *
+ * `faction` is the preset this team draws its datacards from — the key into CATALOGUE
+ * and CARDS. Two teams may share one; the match's two Deathwatch teams do. A team built
+ * by hand has none, and simply gets an empty catalogue and no compendium cards.
+ */
+export type TeamDef = {
   id: string
   player: string
   name: string
@@ -16,8 +31,15 @@ export type TeamMeta = {
   side: SideId
   color: string // hex, used as the card's header band
   ink?: boolean // band is light enough to need dark text
-  archetypes: [Archetype, Archetype] // its datacard's two tac op archetypes
+  archetypes: Archetype[] // its datacard's tac op archetypes
+  faction?: string // CATALOGUE / CARDS key; absent for a hand-built team
+  cp: number
+  tacOp: string
+  tacVp: number
 }
+
+/** A team before it has play state. `initialGame` adds the CP and tac op columns. */
+export type TeamPreset = Omit<TeamDef, 'cp' | 'tacOp' | 'tacVp'>
 
 export type Archetype = 'Seek & Destroy' | 'Security' | 'Infiltration' | 'Recon'
 export const ARCHETYPES: Archetype[] = ['Seek & Destroy', 'Security', 'Infiltration', 'Recon']
@@ -29,18 +51,23 @@ export const ARCHETYPE_COLOR: Record<Archetype, string> = {
   Recon: '#f05c22',
 }
 
-export const SIDE_COLOR: Record<SideId, string> = { imperium: '#0066a5', xenos: '#d1232a' }
+/** The two alliances this match was written for. Only a starting point now. */
+export const PRESET_SIDES: SideDef[] = [
+  { id: 'imperium', name: 'Imperium', color: '#0066a5' },
+  { id: 'xenos', name: 'Xenos', color: '#d1232a' },
+]
 
-export const SIDES: Record<SideId, string> = { imperium: 'Imperium', xenos: 'Xenos' }
+/** Colours to hand a newly added alliance, in order, so the GM never picks one blind. */
+export const SIDE_PALETTE = ['#0066a5', '#d1232a', '#3f8f29', '#f05c22', '#7b4fa8', '#c9a227']
 
-export const TEAMS: TeamMeta[] = [
-  { archetypes: ['Seek & Destroy', 'Security'], id: 'dw', short: 'DW', player: 'Player 1', name: 'Deathwatch', side: 'imperium', color: '#8a97a8', ink: true },
-  { archetypes: ['Seek & Destroy', 'Security'], id: 'aod', short: 'AoD', player: 'Player 2', name: 'Angels of Death', side: 'imperium', color: '#0066a5' },
-  { archetypes: ['Seek & Destroy', 'Security'], id: 'dw2', short: 'DW II', player: 'Player 7', name: 'Deathwatch II', side: 'imperium', color: '#4f5b6b' },
-  { archetypes: ['Infiltration', 'Recon'], id: 'sct', short: 'Scouts', player: 'Player 3', name: 'Scout Squad', side: 'imperium', color: '#5c5f63' },
-  { archetypes: ['Seek & Destroy', 'Infiltration'], id: 'rav', short: 'Raveners', player: 'Player 4', name: 'Raveners', side: 'xenos', color: '#b83227' },
-  { archetypes: ['Infiltration', 'Recon'], id: 'xv26', short: 'XV26', player: 'Player 5', name: "T'au XV26", side: 'xenos', color: '#dfe3e8', ink: true },
-  { archetypes: ['Seek & Destroy', 'Infiltration'], id: 'kom', short: 'Orks', player: 'Player 6', name: 'Ork Kommandos', side: 'xenos', color: '#3f8f29' },
+export const PRESET_TEAMS: TeamPreset[] = [
+  { archetypes: ['Seek & Destroy', 'Security'], id: 'dw', faction: 'dw', short: 'DW', player: 'Player 1', name: 'Deathwatch', side: 'imperium', color: '#8a97a8', ink: true },
+  { archetypes: ['Seek & Destroy', 'Security'], id: 'aod', faction: 'aod', short: 'AoD', player: 'Player 2', name: 'Angels of Death', side: 'imperium', color: '#0066a5' },
+  { archetypes: ['Seek & Destroy', 'Security'], id: 'dw2', faction: 'dw', short: 'DW II', player: 'Player 7', name: 'Deathwatch II', side: 'imperium', color: '#4f5b6b' },
+  { archetypes: ['Infiltration', 'Recon'], id: 'sct', faction: 'sct', short: 'Scouts', player: 'Player 3', name: 'Scout Squad', side: 'imperium', color: '#5c5f63' },
+  { archetypes: ['Seek & Destroy', 'Infiltration'], id: 'rav', faction: 'rav', short: 'Raveners', player: 'Player 4', name: 'Raveners', side: 'xenos', color: '#b83227' },
+  { archetypes: ['Infiltration', 'Recon'], id: 'xv26', faction: 'xv26', short: 'XV26', player: 'Player 5', name: "T'au XV26", side: 'xenos', color: '#dfe3e8', ink: true },
+  { archetypes: ['Seek & Destroy', 'Infiltration'], id: 'kom', faction: 'kom', short: 'Orks', player: 'Player 6', name: 'Ork Kommandos', side: 'xenos', color: '#3f8f29' },
 ]
 
 export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -48,7 +75,8 @@ export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').r
 const cat = (teamId: string, rows: [string, number, string, string, number][]): Operative[] =>
   rows.map(([name, apl, move, save, w]) => ({ id: `${teamId}:${slug(name)}`, name, apl, move, save, w }))
 
-// Two Deathwatch kill teams are in play, both drawing on the same datacards.
+// Two Deathwatch kill teams are in play. They share one catalogue entry, because
+// CATALOGUE is keyed by faction — but not one roster: they field different operatives.
 const DEATHWATCH_ROWS: [string, number, string, string, number][] = [
   ['Watch Sergeant', 3, '6"', '3+', 15],
   ['Aegis', 3, '6"', '2+', 15],
@@ -66,7 +94,6 @@ const DEATHWATCH_ROWS: [string, number, string, string, number][] = [
 /** Every operative each team can field, per its datacards. */
 export const CATALOGUE: Record<string, Operative[]> = {
   dw: cat('dw', DEATHWATCH_ROWS),
-  dw2: cat('dw2', DEATHWATCH_ROWS),
   aod: cat('aod', [
     ['Space Marine Captain', 3, '6"', '3+', 15],
     ['Intercessor Sergeant', 3, '6"', '3+', 15],
@@ -119,12 +146,23 @@ export const CATALOGUE: Record<string, Operative[]> = {
   ]),
 }
 
-/** Copy a catalogue entry into a roster slot. `dupe` distinguishes repeats. */
-export const fromCatalogue = (teamId: string, name: string, dupe?: number): Operative => {
-  const src = CATALOGUE[teamId].find((o) => o.name === name)
-  if (!src) throw new Error(`${name} is not in the ${teamId} catalogue`)
+/**
+ * Copy a catalogue entry into a roster slot. `dupe` distinguishes repeats.
+ *
+ * `faction` chooses the catalogue; `teamId` mints the id, and they are deliberately
+ * separate. Two teams of the same faction share datacards but must never share
+ * operative ids — `g.ops` is one flat id-keyed map, so a collision would have two
+ * models sharing one wound track.
+ */
+export const fromCatalogue = (faction: string, name: string, dupe?: number, teamId = faction): Operative => {
+  const src = (CATALOGUE[faction] ?? []).find((o) => o.name === name)
+  if (!src) throw new Error(`${name} is not in the ${faction} catalogue`)
   return { ...src, id: `${teamId}-${slug(name)}${dupe ?? ''}`, name: dupe ? `${name} ${dupe}` : name }
 }
+
+/** A preset team's starting roster, re-minted for a different team id. */
+export const presetRoster = (faction: string, teamId: string): Operative[] =>
+  (DEFAULT_ROSTER[faction] ?? []).map((o) => ({ ...o, id: `${teamId}-${o.id.split('-').slice(1).join('-')}` }))
 
 export const blankOperative = (teamId: string): Operative => ({
   id: `${teamId}-custom-${crypto.randomUUID().slice(0, 8)}`,
@@ -135,14 +173,19 @@ export const blankOperative = (teamId: string): Operative => ({
   w: 10,
 })
 
-const roster = (teamId: string, picks: (string | [string, number])[]) =>
-  picks.map((p) => (typeof p === 'string' ? fromCatalogue(teamId, p) : fromCatalogue(teamId, p[0], p[1])))
+const roster = (faction: string, teamId: string, picks: (string | [string, number])[]) =>
+  picks.map((p) =>
+    typeof p === 'string' ? fromCatalogue(faction, p, undefined, teamId) : fromCatalogue(faction, p[0], p[1], teamId),
+  )
 
-/** Starting picks for this match: 20 Imperium vs 23 Xenos. All legal compositions. */
+/**
+ * Starting picks for this match: 25 Imperium vs 28 Xenos. All legal compositions.
+ * Keyed by *team* id, not faction — the two Deathwatch teams field different operatives.
+ */
 export const DEFAULT_ROSTER: Record<string, Operative[]> = {
-  dw: roster('dw', ['Watch Sergeant', 'Aegis', 'Blademaster', 'Gunner', 'Marksman']),
-  dw2: roster('dw2', ['Watch Sergeant', 'Bombard', 'Demolisher', 'Disruptor', 'Headtaker']),
-  aod: roster('aod', [
+  dw: roster('dw', 'dw', ['Watch Sergeant', 'Aegis', 'Blademaster', 'Gunner', 'Marksman']),
+  dw2: roster('dw', 'dw2', ['Watch Sergeant', 'Bombard', 'Demolisher', 'Disruptor', 'Headtaker']),
+  aod: roster('aod', 'aod', [
     'Intercessor Sergeant',
     'Intercessor Gunner',
     'Heavy Intercessor Gunner',
@@ -150,7 +193,7 @@ export const DEFAULT_ROSTER: Record<string, Operative[]> = {
     'Assault Intercessor Warrior',
     'Intercessor Warrior',
   ]),
-  sct: roster('sct', [
+  sct: roster('sct', 'sct', [
     'Scout Sergeant',
     'Heavy Gunner',
     'Hunter',
@@ -161,7 +204,7 @@ export const DEFAULT_ROSTER: Record<string, Operative[]> = {
     ['Warrior', 3],
     ['Warrior', 4],
   ]),
-  rav: roster('rav', [
+  rav: roster('rav', 'rav', [
     'Ravener Prime',
     'Felltalon',
     'Tremorscythe',
@@ -173,7 +216,7 @@ export const DEFAULT_ROSTER: Record<string, Operative[]> = {
     ['Warrior', 4],
     ['Warrior', 5],
   ]),
-  xv26: roster('xv26', [
+  xv26: roster('xv26', 'xv26', [
     "Shas'Vre",
     'Designator',
     'Infiltrator',
@@ -182,7 +225,7 @@ export const DEFAULT_ROSTER: Record<string, Operative[]> = {
     'MV75 Marker Drone',
     'MV15 Gun Drone',
   ]),
-  kom: roster('kom', [
+  kom: roster('kom', 'kom', [
     'Boss Nob',
     'Slasha Boy',
     'Breacha Boy',
@@ -457,19 +500,20 @@ export const TAC_OPS: TacOp[] = [
 export const tacOp = (name: string) => TAC_OPS.find((o) => o.name === name)
 
 /** The six tac ops a team may actually choose from, given its two archetypes. */
-export const teamTacOps = (teamId: string) => {
-  const team = TEAMS.find((t) => t.id === teamId)
-  return team ? TAC_OPS.filter((o) => team.archetypes.includes(o.archetype)) : []
-}
+export const teamTacOps = (archetypes: Archetype[]) => TAC_OPS.filter((o) => archetypes.includes(o.archetype))
 
-/** Which teams can take a given tac op — handy for the card browser. */
-export const teamsWithArchetype = (a: Archetype) => TEAMS.filter((t) => t.archetypes.includes(a))
+/** Which of these teams can take a given tac op — handy for the card browser. Takes the
+ *  list because the teams in play are now a property of the game, not of this module. */
+export const teamsWithArchetype = <T extends { archetypes: Archetype[] }>(teams: T[], a: Archetype) =>
+  teams.filter((t) => t.archetypes.includes(a))
 
 export const TURNING_POINTS = 4 // default; the GM can extend the battle in the app
 export const OBJECTIVE_MARKERS = 5 // homebrew: 5 not 3, for a 44"x30" board
 export const OP_CAP = 6 // default max VP per op type
 export const CRIT_CAP_PER_TP = 3 // homebrew default; the cards themselves cap at 2VP per TP
 export const STARTING_CP = 2
+/** CP granted each turning point: less to the side holding initiative. */
+export const CP_PER_TP = { lead: 1, other: 2 }
 
 // Official kill grade table only goes to ~14 operatives, so this extrapolates.
 // Editable per side in the app if it plays out wrong.
@@ -560,13 +604,35 @@ export const CHEAT_SHEET: { title: string; lines: string[] }[] = [
  * edges running left-right.
  */
 
-export const BOARD = {
-  w: 44,
-  h: 30,
-  drop: 6, // drop zone depth on each long edge
-  snap: 0.5, // drag granularity — finer than anyone measures at a table
-  token: 0.6, // operative token radius; a 32mm base is ~0.63"
-} as const
+/** The table itself. `w`/`h`/`drop` are the GM-editable defaults and live in `Game`;
+ *  `snap` and `token` are fixed — nobody measures a table finer than a half inch. */
+export const BOARD = { w: 44, h: 30, drop: 6 }
+export const SNAP = 0.5 // drag granularity
+export const TOKEN = 0.6 // operative token radius; a 32mm base is ~0.63"
+export type Board = typeof BOARD
+
+/**
+ * Where a side deploys, derived from its position in `sides` — never stored, so
+ * adding or reordering an alliance can never leave a stale rectangle behind.
+ *
+ * Two sides take the long edges, as printed. A third and fourth take the short
+ * ones. Beyond four there is no fifth edge, so the long edges are sliced into
+ * strips instead and the two halves share out the sides between them.
+ */
+export const dropZone = (board: Board, index: number, sideCount: number) => {
+  const { w, h, drop } = board
+  if (sideCount <= 4) {
+    if (index === 0) return { x: 0, y: 0, w, h: drop }
+    if (index === 1) return { x: 0, y: h - drop, w, h: drop }
+    if (index === 2) return { x: 0, y: 0, w: drop, h }
+    return { x: w - drop, y: 0, w: drop, h }
+  }
+  // 5+: half the sides along the top edge, half along the bottom, side by side.
+  const perEdge = Math.ceil(sideCount / 2)
+  const strip = w / perEdge
+  const col = index % perEdge
+  return { x: col * strip, y: index < perEdge ? 0 : h - drop, w: strip, h: drop }
+}
 
 export type Point = { x: number; y: number }
 /** Heavy blocks line of sight, Light only gives cover, Vantage can be climbed —
@@ -603,24 +669,24 @@ export const TERRAIN_PALETTE: { label: string; w: number; h: number; kind: Terra
  * Above 5 markers the 6" spacing stops being satisfiable in a 38"x8" band, and
  * the pairs simply stack closer. Still a legal start for the 5 this match uses.
  */
-export const defaultMarkers = (n: number): Point[] => {
-  const mid = { x: BOARD.w / 2, y: BOARD.h / 2 }
+export const defaultMarkers = (n: number, board: Board = BOARD): Point[] => {
+  const mid = { x: board.w / 2, y: board.h / 2 }
   const out: Point[] = n % 2 ? [mid] : []
   for (let i = 0; out.length < n; i++) {
-    const x = 9 + (i % 2) * 26
+    const x = 9 + (i % 2) * (board.w - 18)
     const y = mid.y - 3.5 + Math.floor(i / 2) * 1.5
-    out.push({ x, y }, { x: BOARD.w - x, y: BOARD.h - y })
+    out.push({ x, y }, { x: board.w - x, y: board.h - y })
   }
   return out.slice(0, n)
 }
 
 /** A piece's 180° twin. Derived at render time, never stored, so moving a piece
  *  always moves its mirror and the toggle can never leave orphans behind. */
-export const mirrorPiece = (p: Piece): Piece => ({
+export const mirrorPiece = (p: Piece, board: Board = BOARD): Piece => ({
   ...p,
   id: `${p.id}~m`,
-  x: BOARD.w - p.x - p.w,
-  y: BOARD.h - p.y - p.h,
+  x: board.w - p.x - p.w,
+  y: board.h - p.y - p.h,
   rot: -p.rot,
 })
 

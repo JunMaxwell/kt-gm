@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 
-import { tacOp, teamTacOps, TEAMS } from '../rules'
+import { tacOp, teamTacOps } from '../rules'
 import { CARDS, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, teamCards, UNIVERSAL_EQUIPMENT } from '../compendium'
+import { allTeams } from '../state'
 import { KtCard, Rules } from './kit'
 import { type Game } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -61,22 +62,22 @@ const DECK_LABEL: Record<Deck, string> = {
  * The only JS is reading `scrollLeft` back out to light the right dot.
  */
 export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
-  const team = TEAMS.find((t) => t.id === teamId)!
-  const p = game.teams[teamId]
-  const op = tacOp(p.tacOp)
+  // Teams can be deleted in setup, and a spectator's stored pick may name one that is gone.
+  const team = game.teams[teamId] ?? allTeams(game)[0]
+  const op = tacOp(team?.tacOp ?? '')
   // Their own op first, then the rest of the six their archetypes allow. A player who has not
   // been given one yet still needs to see what they are choosing between.
-  const tacs = [...teamTacOps(teamId)].sort((a, b) => Number(b.name === p.tacOp) - Number(a.name === p.tacOp))
+  const tacs = [...teamTacOps(team?.archetypes ?? [])].sort((a, b) => Number(b.name === team?.tacOp) - Number(a.name === team?.tacOp))
 
   const [deck, setDeck] = useState<Deck>('now')
   const [at, setAt] = useState(0)
   const rail = useRef<HTMLDivElement>(null)
 
   const cardsIn = (d: Deck): RefCard[] => {
-    if (d === 'now') return phaseCards(teamId, game.phase)
+    if (d === 'now') return phaseCards(team?.faction, game.phase)
     if (d === 'tac') return []
-    if (d === 'equipment') return [...teamCards(teamId, 'equipment'), ...UNIVERSAL_EQUIPMENT]
-    return teamCards(teamId, d)
+    if (d === 'equipment') return [...teamCards(team?.faction, 'equipment'), ...UNIVERSAL_EQUIPMENT]
+    return teamCards(team?.faction, d)
   }
   const size = (d: Deck) => (d === 'tac' ? tacs.length : cardsIn(d).length)
 
@@ -91,15 +92,15 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
             key={t.name}
             op={t}
             className="flex-1"
-            badge={t.name === p.tacOp ? <span className="text-white">Yours</span> : undefined}
+            badge={t.name === team?.tacOp ? <span className="text-white">Yours</span> : undefined}
           />
         ))
       : cardsIn(live).map((c) => (
           <RefCardView
               key={`${c.kind}:${c.name}`}
               card={c}
-              kicker={team.name}
-              cp={p.cp}
+              kicker={team?.name ?? ''}
+              cp={team?.cp ?? 0}
               live={live === 'now'}
               className="flex-1"
             />
@@ -186,8 +187,11 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
 
 /** The GM's copy: same cards, any team, tucked in a collapsible beside the ops browser. */
 export function CompendiumBrowser({ game }: { game: Game }) {
-  const [teamId, setTeamId] = useState(TEAMS[0].id)
-  const total = Object.values(CARDS).flat().length - CARDS.dw.length // dw2 shares dw's deck
+  const teams = allTeams(game)
+  const [pick, setTeamId] = useState('')
+  // Validated at render, not once at mount: setup can delete the team under us.
+  const teamId = teams.some((t) => t.id === pick) ? pick : (teams[0]?.id ?? '')
+  const total = Object.values(CARDS).flat().length // one deck per faction, none aliased
 
   return (
     <details className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
@@ -196,7 +200,7 @@ export function CompendiumBrowser({ game }: { game: Game }) {
       </summary>
       <div className="p-3">
         <div className="mb-3 flex flex-wrap items-center gap-1">
-          {TEAMS.map((t) => (
+          {teams.map((t) => (
             <button
               key={t.id}
               onClick={() => setTeamId(t.id)}

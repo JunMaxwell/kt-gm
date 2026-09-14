@@ -1,7 +1,6 @@
-import { SIDE_COLOR, SIDES } from '../rules'
 import { canMove, currentTeamId, readyCount, rotation, teamsOf } from '../state'
 import { Btn, TeamPill } from './kit'
-import { type Dispatch, type Game, SIDE_IDS } from './shared'
+import { type Dispatch, type Game } from './shared'
 
 /* ---------- activation order ---------- */
 
@@ -18,10 +17,10 @@ export function ActivationOrder({ game, dispatch }: { game: Game; dispatch: Disp
 
       {game.paired ? (
         <div className="p-3">
-          {SIDE_IDS.map((side) => (
+          {game.sides.map(({ id: side, name, color }) => (
             <div key={side} className="mb-2 last:mb-0">
-              <p className="display text-sm" style={{ color: SIDE_COLOR[side] }}>
-                {SIDES[side]}
+              <p className="display truncate text-sm" style={{ color }}>
+                {name}
                 {side === game.sideTurn && <span className="ml-1 text-ink/45">· activating</span>}
               </p>
               <ul className="mt-1 space-y-0.5">
@@ -64,7 +63,7 @@ export function ActivationOrder({ game, dispatch }: { game: Game; dispatch: Disp
               </span>
               <Btn
                 className="w-6 px-0 disabled:opacity-20"
-                title={`Move ${t.name} earlier in the ${SIDES[t.side]} order`}
+                title={`Move ${t.name} earlier in its alliance's order`}
                 disabled={!canMove(game, t.id, -1)}
                 onClick={() => dispatch({ type: 'moveTeam', teamId: t.id, dir: -1 })}
               >
@@ -72,7 +71,7 @@ export function ActivationOrder({ game, dispatch }: { game: Game; dispatch: Disp
               </Btn>
               <Btn
                 className="w-6 px-0 disabled:opacity-20"
-                title={`Move ${t.name} later in the ${SIDES[t.side]} order`}
+                title={`Move ${t.name} later in its alliance's order`}
                 disabled={!canMove(game, t.id, 1)}
                 onClick={() => dispatch({ type: 'moveTeam', teamId: t.id, dir: 1 })}
               >

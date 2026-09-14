@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
-import { type Archetype, ARCHETYPE_COLOR, ARCHETYPES, CRIT_OPS, TAC_OPS, TEAMS, teamsWithArchetype } from '../rules'
+import { type Archetype, ARCHETYPE_COLOR, ARCHETYPES, CRIT_OPS, TAC_OPS, teamsWithArchetype } from '../rules'
+import { allTeams } from '../state'
 import { Btn, KtCard, TeamPill } from './kit'
 import { type Game } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -14,7 +15,9 @@ export function OpsBrowser({ game }: { game: Game }) {
       (arch === 'all' || o.archetype === arch) &&
       (!needle || `${o.name} ${o.reveal} ${o.select ?? ''} ${o.vp.join(' ')}`.toLowerCase().includes(needle)),
   )
-  const taken = new Map(TEAMS.filter((t) => game.teams[t.id].tacOp).map((t) => [game.teams[t.id].tacOp, t]))
+  const teams = allTeams(game)
+  const withArch = (a: Archetype) => teamsWithArchetype(teams, a)
+  const taken = new Map(teams.filter((t) => t.tacOp).map((t) => [t.tacOp, t]))
 
   return (
     <details className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
@@ -59,7 +62,7 @@ export function OpsBrowser({ game }: { game: Game }) {
             <button
               key={a}
               onClick={() => setArch(a)}
-              title={teamsWithArchetype(a)
+              title={withArch(a)
                 .map((t) => t.name)
                 .join(', ')}
               className="display rounded px-2 py-1 text-sm"
@@ -69,7 +72,7 @@ export function OpsBrowser({ game }: { game: Game }) {
                   : { background: 'rgba(0,0,0,.05)', color: ARCHETYPE_COLOR[a] }
               }
             >
-              {a} ({teamsWithArchetype(a).length})
+              {a} ({withArch(a).length})
             </button>
           ))}
           <input
@@ -85,7 +88,7 @@ export function OpsBrowser({ game }: { game: Game }) {
             const owner = taken.get(op.name)
             return (
               <div key={op.name} className="relative">
-                <TacOpCard op={op} showTeams className={owner ? 'ring-2 ring-ink' : ''} />
+                <TacOpCard op={op} teams={withArch(op.archetype)} className={owner ? 'ring-2 ring-ink' : ''} />
                 {owner && <TeamPill team={owner} className="absolute -top-2 right-2 shadow" />}
               </div>
             )

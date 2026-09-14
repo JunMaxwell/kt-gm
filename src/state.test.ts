@@ -6,7 +6,9 @@ import {
   CATALOGUE,
   CRIT_OPS,
   TAC_OPS,
-  TEAMS,
+  PRESET_TEAMS,
+  STARTING_CP,
+  presetRoster,
   blankOperative,
   boardPhases,
   defaultMarkers,
@@ -17,6 +19,10 @@ import {
   teamsWithArchetype,
 } from './rules'
 import { CARDS, PHASES, type RefKind, phaseCards, phaseMeta } from './compendium'
+
+/** The preset teams still carry archetypes and a faction; these keep the old test shape. */
+const preset = (id: string) => PRESET_TEAMS.find((t) => t.id === id)!
+const tacOpsOf = (id: string) => teamTacOps(preset(id).archetypes)
 import {
   canMove,
   counteract,
@@ -26,7 +32,8 @@ import {
   initialGame,
   killGrade,
   kills,
-  objectiveCounts,
+  held,
+  heldByNobody,
   orderCounts,
   pairEligible,
   pairTarget,
@@ -37,6 +44,7 @@ import {
   teamIdOf,
   teamOps,
   teamsOf,
+  thresholds,
   withHistory,
 } from './state'
 
@@ -48,7 +56,7 @@ const killOff = (g: Game, opIds: string[]) =>
 
 test('sides start at 25 vs 28 operatives across seven players', () => {
   const g = initialGame()
-  expect(TEAMS.length).toBe(7)
+  expect(PRESET_TEAMS.length).toBe(7)
   expect(teamsOf(g, 'imperium').length).toBe(4) // two Deathwatch teams
   expect(teamsOf(g, 'xenos').length).toBe(3)
   expect(sideOps(g, 'imperium').length).toBe(25)
@@ -401,8 +409,8 @@ test('switching to single mode restores the official alternation', () => {
 /* ---------- orders ---------- */
 
 test('the extra Deathwatch team shares the archetypes and tac ops of the first', () => {
-  expect(teamTacOps('dw2').map((o) => o.name)).toEqual(teamTacOps('dw').map((o) => o.name))
-  expect(teamsWithArchetype('Security').map((t) => t.id)).toEqual(['dw', 'aod', 'dw2'])
+  expect(tacOpsOf('dw2').map((o) => o.name)).toEqual(tacOpsOf('dw').map((o) => o.name))
+  expect(teamsWithArchetype(PRESET_TEAMS, 'Security').map((t) => t.id)).toEqual(['dw', 'aod', 'dw2'])
 })
 
 test('operatives start on Conceal and flip individually', () => {
@@ -497,9 +505,9 @@ test('objective markers cycle neutral to Imperium to Xenos and back', () => {
   expect(g.objectives).toEqual([null, null, null, null, null])
   g = reduce(g, { type: 'objective', index: 0, value: 'imperium' })
   g = reduce(g, { type: 'objective', index: 1, value: 'xenos' })
-  expect(objectiveCounts(g)).toEqual({ imperium: 1, xenos: 1, neutral: 3 })
+  expect([held(g, 'imperium'), held(g, 'xenos'), heldByNobody(g)]).toEqual([1, 1, 3])
   g = reduce(g, { type: 'objective', index: 0, value: null })
-  expect(objectiveCounts(g)).toEqual({ imperium: 0, xenos: 1, neutral: 4 })
+  expect([held(g, 'imperium'), held(g, 'xenos'), heldByNobody(g)]).toEqual([0, 1, 4])
 })
 
 test('changing the marker count preserves the holders it keeps', () => {
@@ -576,15 +584,15 @@ test('twelve tac ops, three per archetype, uniquely named', () => {
 })
 
 test('each team can choose from exactly six tac ops, its own two archetypes only', () => {
-  for (const t of TEAMS) {
-    const mine = teamTacOps(t.id)
+  for (const t of PRESET_TEAMS) {
+    const mine = tacOpsOf(t.id)
     expect(mine.length).toBe(6)
     expect(new Set(mine.map((o) => o.archetype))).toEqual(new Set(t.archetypes))
   }
 })
 
 test('teams sharing an archetype pair share a tac op list', () => {
-  const names = (id: string) => teamTacOps(id).map((o) => o.name)
+  const names = (id: string) => tacOpsOf(id).map((o) => o.name)
   expect(names('dw')).toEqual(names('aod')) // both Seek & Destroy + Security
   expect(names('dw')).toEqual(names('dw2'))
   expect(names('sct')).toEqual(names('xv26')) // both Infiltration + Recon
@@ -594,17 +602,17 @@ test('teams sharing an archetype pair share a tac op list', () => {
 
 test('a team cannot reach a tac op outside its archetypes', () => {
   // Scouts are Infiltration + Recon, so no Seek & Destroy or Security ops
-  const scouts = teamTacOps('sct').map((o) => o.name)
+  const scouts = tacOpsOf('sct').map((o) => o.name)
   expect(scouts).not.toContain('Rout')
   expect(scouts).not.toContain('Plant Banner')
   // and Deathwatch cannot take a Recon op
-  expect(teamTacOps('dw').map((o) => o.name)).not.toContain('Flank')
+  expect(tacOpsOf('dw').map((o) => o.name)).not.toContain('Flank')
 })
 
 test('every archetype is covered by at least one team', () => {
-  for (const a of ARCHETYPES) expect(teamsWithArchetype(a).length).toBeGreaterThan(0)
-  expect(teamsWithArchetype('Security').map((t) => t.id)).toEqual(['dw', 'aod', 'dw2'])
-  expect(teamsWithArchetype('Recon').map((t) => t.id)).toEqual(['sct', 'xv26'])
+  for (const a of ARCHETYPES) expect(teamsWithArchetype(PRESET_TEAMS, a).length).toBeGreaterThan(0)
+  expect(teamsWithArchetype(PRESET_TEAMS, 'Security').map((t) => t.id)).toEqual(['dw', 'aod', 'dw2'])
+  expect(teamsWithArchetype(PRESET_TEAMS, 'Recon').map((t) => t.id)).toEqual(['sct', 'xv26'])
 })
 
 test('setCritVp writes an absolute value and respects the per-TP cap', () => {
@@ -912,38 +920,38 @@ test('every phase names the card kinds it puts in play', () => {
 // Guards the transcription: a typo'd team id or card kind would silently show a player nothing.
 test('every team has a compendium entry and every card is well formed', () => {
   const kinds: RefKind[] = ['faction', 'strategy', 'firefight', 'equipment']
-  for (const t of TEAMS) {
-    expect(CARDS[t.id]).toBeDefined()
-    for (const c of CARDS[t.id]) {
+  for (const t of PRESET_TEAMS) {
+    expect(CARDS[t.faction!]).toBeDefined()
+    for (const c of CARDS[t.faction!]) {
       expect(kinds).toContain(c.kind)
       expect(c.name.length).toBeGreaterThan(0)
       expect(c.text.length).toBeGreaterThan(0)
     }
   }
-  expect(Object.keys(CARDS).sort()).toEqual(TEAMS.map((t) => t.id).sort())
+  expect(Object.keys(CARDS).sort()).toEqual([...new Set(PRESET_TEAMS.map((t) => t.faction!))].sort())
 })
 
 test('the two Deathwatch teams share one datacard', () => {
-  expect(CARDS.dw).toBe(CARDS.dw2)
+  expect(preset('dw2').faction).toBe('dw') // one datacard, two kill teams — no aliased deck
 })
 
 test('phaseCards returns only what that phase unlocks', () => {
-  for (const t of TEAMS) {
-    expect(phaseCards(t.id, 'initiative')).toEqual([])
-    expect(phaseCards(t.id, 'strategy').every((c) => c.kind === 'strategy')).toBe(true)
-    expect(phaseCards(t.id, 'firefight').every((c) => c.kind === 'firefight')).toBe(true)
+  for (const t of PRESET_TEAMS) {
+    expect(phaseCards(t.faction, 'initiative')).toEqual([])
+    expect(phaseCards(t.faction, 'strategy').every((c) => c.kind === 'strategy')).toBe(true)
+    expect(phaseCards(t.faction, 'firefight').every((c) => c.kind === 'firefight')).toBe(true)
   }
 })
 
 test('a team sees all six tac ops its archetypes allow, chosen one first', () => {
   // What the player view offers in its Tac op deck: every eligible op, not just the picked one.
-  for (const t of TEAMS) {
-    const six = teamTacOps(t.id)
+  for (const t of PRESET_TEAMS) {
+    const six = tacOpsOf(t.id)
     expect(six).toHaveLength(6)
     expect(six.every((o) => t.archetypes.includes(o.archetype))).toBe(true)
   }
   const g = reduce(initialGame(), { type: 'tacOp', teamId: 'dw', value: 'Rout' })
-  const sorted = [...teamTacOps('dw')].sort(
+  const sorted = [...tacOpsOf('dw')].sort(
     (a, b) => Number(b.name === g.teams.dw.tacOp) - Number(a.name === g.teams.dw.tacOp),
   )
   expect(sorted[0].name).toBe('Rout')
@@ -952,9 +960,173 @@ test('a team sees all six tac ops its archetypes allow, chosen one first', () =>
 
 test('teamIdOf resolves an operative back to its team, prefixes and all', () => {
   const g = initialGame()
-  for (const t of TEAMS) for (const o of teamOps(g, t.id)) expect(teamIdOf(g, o.id)).toBe(t.id)
+  for (const t of PRESET_TEAMS) for (const o of teamOps(g, t.id)) expect(teamIdOf(g, o.id)).toBe(t.id)
 
   // `dw` is a prefix of `dw2`, which is exactly why this is a lookup and not startsWith.
   expect(teamIdOf(g, teamOps(g, 'dw2')[0].id)).toBe('dw2')
   expect(teamIdOf(g, 'nobody')).toBeUndefined()
+})
+
+/* ---------- any number of alliances ---------- */
+
+/** A three-way match built the way the setup view builds one. */
+const threeWay = () => {
+  let g = reduce(initialGame(), { type: 'sideAdd' })
+  const third = g.sides[2].id
+  // move the Scouts across, so all three sides have somebody
+  g = reduce(g, { type: 'teamPatch', teamId: 'sct', patch: { side: third } })
+  return { g, third }
+}
+
+test('a third alliance gets its own rows rather than an undefined one', () => {
+  const { g, third } = threeWay()
+  expect(g.sides.length).toBe(3)
+  expect(g.crit[third]).toEqual([0, 0, 0, 0])
+  expect(g.primary[third]).toBeNull()
+  expect(g.counteracts[third]).toBe(0)
+  expect(g.killOverride[third]).toBeNull()
+  expect(scores(g, third).total).toBe(0) // would throw if `crit` had no row
+  expect(teamsOf(g, third).map((t) => t.id)).toEqual(['sct'])
+  expect(teamsOf(g, 'imperium').map((t) => t.id)).toEqual(['dw', 'aod', 'dw2'])
+})
+
+test('rotation round-robins every alliance, and still alternates for two', () => {
+  const two = initialGame()
+  expect(rotation(two).map((t) => t.id)).toEqual(['dw', 'rav', 'aod', 'xv26', 'dw2', 'kom', 'sct'])
+
+  const { g } = threeWay()
+  // imperium holds initiative, then xenos, then the new side, one slot each per cycle
+  expect(rotation(g).map((t) => t.id)).toEqual(['dw', 'rav', 'sct', 'aod', 'xv26', 'dw2', 'kom'])
+})
+
+test('kills and thresholds count every other alliance, not just one', () => {
+  const { g, third } = threeWay()
+  // Imperium is down to 16 without the Scouts; it faces Xenos' 28 plus the Scouts' 9
+  expect(sideOps(g, 'imperium').length).toBe(16)
+  expect(thresholds(g, 'imperium')).toEqual(killThresholds(37)) // 28 + 9
+  expect(thresholds(g, third)).toEqual(killThresholds(44)) // 16 + 28
+})
+
+test('the end-of-battle bonus needs a strict win over every other alliance', () => {
+  const { g, third } = threeWay()
+  const drop = (h: Game, ids: string[]) => ids.reduce((a, id) => reduce(a, { type: 'dead', opId: id, dead: true }), h)
+  // enough Xenos down that Imperium and the Scouts reach the same grade
+  let h = drop(g, sideOps(g, 'xenos').slice(0, 8).map((o) => o.id))
+  h = reduce(h, { type: 'finish', finished: true })
+  const a = killGrade(h, 'imperium')
+  expect(a).toBeGreaterThan(0)
+  expect(killGrade(h, third)).toBe(a) // both share the same kills, so it is a tie
+  expect(scores(h, 'imperium').kill).toBe(a) // a tie at the top pays nobody the bonus
+})
+
+test('every dry alliance banks a Counteract, not only the one enemy', () => {
+  const { g, third } = threeWay()
+  // wipe both other sides out so neither has anything ready
+  let h = g
+  for (const o of [...sideOps(g, 'xenos'), ...sideOps(g, third)]) h = reduce(h, { type: 'dead', opId: o.id, dead: true })
+  h = reduce(h, { type: 'activate', opId: sideOps(h, 'imperium')[0].id })
+  expect(h.counteracts.xenos).toBe(1)
+  expect(h.counteracts[third]).toBe(1)
+})
+
+test('the turn hands over to the next alliance with something ready, skipping the dry', () => {
+  const { g, third } = threeWay()
+  let h = g
+  for (const o of sideOps(h, 'xenos')) h = reduce(h, { type: 'dead', opId: o.id, dead: true })
+  // a full pair: two operatives from two different Imperium teams
+  h = reduce(h, { type: 'activate', opId: teamOps(h, 'dw')[0].id })
+  expect(h.sideTurn).toBe('imperium') // still mid-pair
+  h = reduce(h, { type: 'activate', opId: teamOps(h, 'aod')[0].id })
+  expect(h.sideTurn).toBe(third) // xenos has nothing ready, so it is passed over
+})
+
+test('removing an alliance takes its teams with it and leaves nothing dangling', () => {
+  const { g, third } = threeWay()
+  const scoutOps = teamOps(g, 'sct').map((o) => o.id)
+  let h = reduce(g, { type: 'objective', index: 0, value: third })
+  h = reduce(h, { type: 'initiative', side: third })
+  h = reduce(h, { type: 'sideRemove', id: third })
+
+  expect(h.sides.map((x) => x.id)).toEqual(['imperium', 'xenos'])
+  expect(h.teams.sct).toBeUndefined()
+  expect(h.roster.sct).toBeUndefined()
+  for (const id of scoutOps) expect(h.ops[id]).toBeUndefined()
+  expect(h.crit[third]).toBeUndefined()
+  expect(h.objectives[0]).toBeNull() // the marker it held falls back to neutral
+  expect(h.sides.some((x) => x.id === h.initiative)).toBe(true)
+  expect(h.sides.some((x) => x.id === h.sideTurn)).toBe(true)
+  expect(sideOps(h, 'imperium').length).toBe(16) // the other teams are untouched
+})
+
+test('the last alliance cannot be removed', () => {
+  let g = reduce(initialGame(), { type: 'sideRemove', id: 'xenos' })
+  g = reduce(g, { type: 'sideRemove', id: 'imperium' })
+  expect(g.sides.length).toBe(1)
+})
+
+test('removing one team leaves every other team whole', () => {
+  const g = initialGame()
+  const dwOps = teamOps(g, 'dw').map((o) => o.id)
+  const h = reduce(g, { type: 'teamRemove', teamId: 'dw' })
+  expect(h.teams.dw).toBeUndefined()
+  for (const id of dwOps) expect(h.ops[id]).toBeUndefined()
+  expect(teamOps(h, 'dw2').length).toBe(5) // `dw` is a prefix of `dw2` — must not be caught
+  expect(sideOps(h, 'imperium').length).toBe(20)
+})
+
+test('a team added from a preset cannot collide ids with the team it copied', () => {
+  const g = initialGame()
+  const team = { ...PRESET_TEAMS[0], id: 'dw-copy', side: 'xenos', cp: 0, tacOp: '', tacVp: 0 }
+  const h = reduce(g, { type: 'teamAdd', team, roster: presetRoster('dw', 'dw-copy') })
+  const ids = Object.values(h.roster).flat().map((o) => o.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  expect(teamOps(h, 'dw-copy').length).toBe(teamOps(g, 'dw').length)
+  expect(teamsOf(h, 'xenos').map((t) => t.id)).toEqual(['rav', 'xv26', 'kom', 'dw-copy'])
+  expect(h.ops[teamOps(h, 'dw-copy')[0].id]).toBeDefined()
+})
+
+test('a new turning point keeps a team the GM added, and pays the tunable CP', () => {
+  const team = { ...PRESET_TEAMS[0], id: 'late', side: 'xenos', cp: 0, tacOp: '', tacVp: 0 }
+  let g = reduce(initialGame(), { type: 'teamAdd', team, roster: presetRoster('dw', 'late') })
+  g = reduce(g, { type: 'cpPerTp', patch: { lead: 0, other: 5 } })
+  g = reduce(g, { type: 'nextTp' })
+  expect(g.teams.late).toBeDefined() // it used to be deleted here
+  expect(g.teams.late.cp).toBe(5) // xenos does not hold initiative
+  expect(g.teams.dw.cp).toBe(STARTING_CP + 0)
+})
+
+test('resizing the board brings everything on it back inside', () => {
+  let g = reduce(initialGame(), { type: 'terrainAdd', piece: { x: 30, y: 20, w: 8, h: 6, rot: 0, kind: 'heavy' } })
+  g = reduce(g, { type: 'deploy', side: 'imperium' })
+  g = reduce(g, { type: 'board', patch: { w: 22, h: 16 } })
+  expect(g.board).toEqual({ w: 22, h: 16, drop: 6 })
+  for (const p of g.terrain) {
+    expect(p.x + p.w).toBeLessThanOrEqual(22)
+    expect(p.y + p.h).toBeLessThanOrEqual(16)
+  }
+  for (const m of g.markers) expect(m.x).toBeLessThanOrEqual(22)
+  for (const o of Object.values(g.ops)) if (o.pos) expect(o.pos.x).toBeLessThanOrEqual(22)
+})
+
+test('a third alliance deploys onto its own edge, not on top of another', () => {
+  const { g, third } = threeWay()
+  let h = reduce(g, { type: 'deploy', side: 'imperium' })
+  h = reduce(h, { type: 'deploy', side: third })
+  const imp = sideOps(h, 'imperium').filter((o) => h.ops[o.id].pos)
+  const trd = sideOps(h, third).filter((o) => h.ops[o.id].pos)
+  expect(imp.length).toBeGreaterThan(0)
+  expect(trd.length).toBeGreaterThan(0)
+  expect(imp.every((o) => h.ops[o.id].pos!.y <= BOARD.drop)).toBe(true) // top edge
+  expect(trd.every((o) => h.ops[o.id].pos!.x <= BOARD.drop)).toBe(true) // left edge
+  expect(trd.every((o) => h.ops[o.id].pos!.y <= BOARD.h)).toBe(true) // and stays on the table
+})
+
+test('replace repairs a snapshot missing a side, without moving the turn cursor', () => {
+  const g = reduce(initialGame(), { type: 'sideAdd' })
+  const third = g.sides[2].id
+  // a snapshot from a client that never knew about the third side
+  const stale = { ...g, crit: { imperium: [0, 0, 0, 0], xenos: [0, 0, 0, 0] }, turnIdx: 3 }
+  const h = reduce(g, { type: 'replace', game: stale as Game })
+  expect(h.crit[third]).toEqual([0, 0, 0, 0])
+  expect(h.turnIdx).toBe(3) // a spectator must not be knocked off the live turn
 })

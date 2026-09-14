@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { TEAMS } from '../rules'
+import type { TeamDef } from '../rules'
 
 /* ---------- shared bits ---------- */
 
@@ -108,7 +108,7 @@ export const TeamPill = ({
   team,
   className = '',
 }: {
-  team: (typeof TEAMS)[number]
+  team: TeamDef
   className?: string
 }) => (
   <span

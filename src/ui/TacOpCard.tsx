@@ -1,4 +1,4 @@
-import { ARCHETYPE_COLOR, type TacOp, teamsWithArchetype } from '../rules'
+import { ARCHETYPE_COLOR, type TacOp, type TeamDef } from '../rules'
 import { KtCard, TeamPill } from './kit'
 
 /* ---------- ops cards ---------- */
@@ -6,12 +6,14 @@ import { KtCard, TeamPill } from './kit'
 export function TacOpCard({
   op,
   className = '',
-  showTeams,
+  teams,
   badge,
 }: {
   op: TacOp
   className?: string
-  showTeams?: boolean
+  /** Teams that may take this op. Passed in rather than looked up: this is a leaf, and the
+   *  teams in play are a property of the game now. */
+  teams?: TeamDef[]
   /** Marks the one this player actually took, among the six they could have. */
   badge?: React.ReactNode
 }) {
@@ -44,9 +46,9 @@ export function TacOpCard({
       </ul>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] text-fade">
         {op.cap && <span>max {op.cap}VP per TP</span>}
-        {showTeams && (
+        {teams && teams.length > 0 && (
           <span className="flex flex-wrap gap-1">
-            {teamsWithArchetype(op.archetype).map((t) => (
+            {(teams ?? []).map((t) => (
               <TeamPill key={t.id} team={t} />
             ))}
           </span>

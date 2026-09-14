@@ -5,7 +5,9 @@ match: seven friends, two alliances, one GM. Five of the players have never play
 is to hold the scoring state nobody at the table understands yet, tell people whose activation it is,
 and answer "how does shooting work?" without anyone opening a rulebook.
 
-Not a general Kill Team tool. It is hard-wired to this match, and that is deliberate.
+Built for this match, but **no longer hard-wired to it**. Alliances, kill teams, rosters, the
+table and every scoring dial are now editable in a **Setup** view — the seven teams below are the
+default the app opens with, not a constant. See **Custom matches** for what moved into `Game`.
 
 ## The match
 
@@ -53,7 +55,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 
 | File | Holds |
 |---|---|
-| `src/rules.ts` | All static data and every tunable: teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board constants and terrain palette |
+| `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board defaults, drop-zone geometry and terrain palette |
 | `src/compendium.ts` | The three turning-point phases and all 97 ploy / equipment / faction-rule cards, transcribed from the official team rules PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
@@ -78,6 +80,8 @@ the section markers that were already in it:
 | `ui/TeamCard.tsx` | A player's card, plus `EditRow` / `PlayRow` |
 | `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
 | `ui/RoomBar.tsx` | Share / save / load |
+| `ui/Setup.tsx` | The pre-game setup view: alliances, teams, board, scoring dials |
+| `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides and a degenerate 1-team match |
 
 Two conventions the split rests on:
 
@@ -89,9 +93,9 @@ Two conventions the split rests on:
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`/`onNum`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v12`). Any change to
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v13`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-twelve times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+thirteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -345,16 +349,112 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` covers the reducer and selectors only — 91 tests. There is no React test harness and one
-was not added for a single component-state fix; UI behaviour is verified by driving a real browser.
-`withHistory` is exported purely so undo is testable without one.
-`tsconfig.app.json` excludes `*.test.ts` so `bun run build` doesn't need `@types/bun`.
+`bun test` is 109 tests in two files:
+
+- `src/state.test.ts` — the reducer and selectors, 105 tests. `withHistory` is exported purely so
+  undo is testable without a React harness.
+- `src/ui/render.test.tsx` — four `renderToStaticMarkup` smoke tests that mount **every** panel
+  against a 2-alliance game, a 3-alliance game with a hand-built team, a one-team-per-side match
+  with no faction cards, and a snapshot naming a team that no longer exists. Not a React test
+  harness and not a substitute for one: it catches the crash-on-render class (a `TEAMS.find(...)!`
+  that is now `undefined`, a missing per-side record) that the type checker cannot, because
+  `SideId` is an open `string`. Interaction is still verified by driving a real browser.
+
+`tsconfig.app.json` excludes `*.test.ts` **and `*.test.tsx`** so `bun run build` doesn't need
+`@types/bun`.
 
 **Paired activations are on by default**, so any test of the official alternation must opt out with
 `reduce(initialGame(), { type: 'paired', value: false })` — the `single()` helper.
 
-Team order within `TEAMS` is `dw, aod, dw2, sct` for Imperium, which is the order `pairEligible` and
-`teamsOf` return. Easy to get wrong in assertions.
+Team order within `PRESET_TEAMS` is `dw, aod, dw2, sct` for Imperium, which is the order
+`pairEligible` and `teamsOf` return. Easy to get wrong in assertions.
+
+## Custom matches
+
+`SideId` used to be the union `'imperium' | 'xenos'` and `TEAMS` a 7-element array in `rules.ts`.
+Both are now **runtime data on `Game`**, so the GM can build any match from the **Setup** view
+(header → *Setup*, or `game.setup`). `initialGame()` still produces exactly the match above, with
+the same team ids and the same side ids — which is why the whole reducer suite survived the change.
+
+| In `rules.ts` | In `Game` |
+|---|---|
+| `PRESET_SIDES`, `PRESET_TEAMS` — seeds, read only by `initialGame` and the Setup team picker | `sides: SideDef[]`, `teams: Record<string, TeamDef>` |
+| `BOARD` — the default 44×30×6 | `board: { w, h, drop }` |
+| `CP_PER_TP` | `cpPerTp: { lead, other }` |
+
+- **`TeamDef` absorbed `PlayerState`.** One object now holds a team's identity *and* its
+  CP/tac op/VP, because both are editable and both have to ride along in a snapshot.
+- **`faction` is the datacard key, and it is not the team id.** `CATALOGUE` and `CARDS` are keyed
+  by faction, so the two Deathwatch teams read one deck instead of aliasing it — but
+  **`DEFAULT_ROSTER` stays keyed by team id**, because `dw` and `dw2` field *different* operatives.
+  Key that on faction and `dw2` silently becomes a copy of `dw`, sharing operative **ids** with it,
+  and `g.ops` gives two models one wound track. `fromCatalogue(faction, name, dupe, teamId)` takes
+  both for exactly this reason.
+- **A hand-built team has no `faction`** and therefore no catalogue and no cards. Every lookup
+  tolerates that (`CATALOGUE[t.faction ?? ''] ?? []`); none of them assert.
+
+### The N-side rules
+
+- **`enemy(s)` is gone.** `enemies(g, s)` returns every other alliance, and everything that named
+  a singular enemy folds over it: `kills` and `thresholds` count all of them, `counteract` fires
+  when *any* other side still has something ready, and `activate` banks a Counteract to **every**
+  dry alliance rather than to one foe.
+- **The end-of-battle kill bonus needs a strict win over every other side.** A three-way tie at the
+  top grade pays nobody. That is the only reading of "beat the enemy" that stays one bonus.
+- **`rotation` is an N-way round-robin** — sides cycled from `initiative`, slot `i` taken from each.
+  At two sides it reduces to the old alternation exactly, and a test pins that.
+- **Drop zones are derived from a side's index in `sides`, never stored** (`dropZone` in
+  `rules.ts`): 0 = top, 1 = bottom, 2 = left, 3 = right; past four the long edges are sliced into
+  strips. Same reasoning as `mirrorPiece` — a stored rectangle would go stale on reorder.
+  `deploy` derives its **column count from the zone's long axis**; the old fixed `DEPLOY_COLS = 14`
+  was 14 × 3" = 42", a fact about the 44" edge, and would have run a short-edge zone off the table.
+
+### `normalize` and `recast`
+
+`SideId` is an open `string`, so `Record<SideId, T>` no longer makes the compiler tell you when a
+per-side record is missing a row — and a missing `crit` row means `scores` calls `.reduce` on
+`undefined`. **`normalize(g)` is the single repair point**: it refills all five per-side records
+(`crit`, `primary`, `killOverride`, `counteracts`, `order`), drops operatives and rosters of teams
+that are gone, and clamps `initiative`/`sideTurn`/`objectives` to live sides. Two rules:
+
+- **`normalize` must never touch `turnIdx`/`pairUsed`** — `replace` runs it on *every* relay
+  snapshot, and moving the cursor would knock spectators off the live turn. `recast(g)` is
+  `normalize` plus a rewound cursor, and only the setup cases that change the cast use it.
+  `teamPatch` picks between them: a change of alliance recasts, a rename does not.
+- **`normalize` re-homes an orphan team rather than deleting it.** Deleting is `sideRemove`'s job
+  and it does that explicitly, so a malformed snapshot cannot silently empty the match on its way
+  through `replace`.
+
+`order` and `pairUsed` are deliberately *not* repaired: `orderedIds` already self-heals at read
+time and a stale `pairUsed` id is inert. Fewer stored invariants, fewer things to drift.
+
+### UI consequences
+
+- **`SIDE_IDS` is gone**; panels iterate `game.sides`. `Scoreboard` was already `SIDE_IDS.map(...)`
+  throughout, so most of the sweep was mechanical.
+- **Tailwind's JIT cannot see an interpolated track list**, and an inline `style` cannot carry the
+  `xl:` breakpoint the layout needs. Both grids therefore pass their columns as a **CSS variable**:
+  `rowVars(n)` on the scoreboard body feeding `grid-cols-(--kt-row)`, and `columns(n)` on `<main>`
+  feeding `xl:grid-cols-(--kt-cols)`. Team columns flank the sticky centre, even-indexed sides left
+  and odd right, placed with inline `order`. At two sides this is the original three-column layout
+  exactly. Past four alliances the columns are unreadable, so it just stacks.
+- **`--color-imperium` / `--color-xenos` in `index.css` are no longer side identity.** They survive
+  as palette values, and the remaining `text-xenos` / `bg-xenos` uses in `MapBuilder` and
+  `TeamCard` mean "red = destructive", not "Xenos".
+- **Stored team picks are validated at render, not at mount.** `Viewer`'s `killteam-gm/me` and
+  `CompendiumBrowser`'s selection both used to be checked once in a `useState` initializer; the
+  relay can ship a snapshot deleting that team at any moment, so the fallback has to be re-derived
+  every render.
+- `teamsWithArchetype(teams, a)` takes the team list now, and `TacOpCard` receives the resulting
+  pills as a **prop** — it is a leaf and must not reach for `game`.
+
+### What is still fixed
+
+The app knows **seven factions** worth of datacards, catalogues and ploys. "Any Kill Team match"
+means any number of alliances and teams drawn from those seven, or teams typed in by hand with
+`blankOperative` — not a full faction library. Adding one is a transcription job (see **Where the
+card data came from**), not a code change.
+
 
 ## Deploy
 
@@ -621,6 +721,11 @@ different frame — the GM is looking things up for other people, not playing a 
 - **`UNIVERSAL_EQUIPMENT` is empty.** The universal equipment list is in the core rules, not the
   six team PDFs, so it was never transcribed. Each team's own equipment is complete, and the
   Equipment panel says which half is missing.
+- **Only seven factions have datacards.** The Setup view can build any number of alliances and
+  teams, but a team either draws on one of the seven transcribed factions or is typed in by hand.
+  See **Custom matches → What is still fixed**.
+- **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
+  alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.
   `teams[].player` is a free-text label, not an identity, so the server cannot tell who is who.
   Authentik OIDC is already running on the VPS if that ever changes.
@@ -629,4 +734,6 @@ different frame — the GM is looking things up for other people, not playing a 
 - Tac ops are archetype-based, so two players on the same side can take the same op (both Deathwatch
   teams could take Rout). The app does not enforce distinct picks within a side. The user was offered
   this and has not asked for it.
+- A team's archetypes are free-form in Setup — nothing stops giving one all four, or none. A team
+  with none simply has no tac ops to pick from.
 - No player-facing second screen, no dice roller.

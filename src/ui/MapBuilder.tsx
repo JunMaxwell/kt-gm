@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 
-import { BOARD, boardPhases, mirrorPiece, type Operative, type Piece, type Point, SIDE_COLOR, SIDES, TEAMS, TERRAIN_KIND, TERRAIN_PALETTE, type TerrainKind } from '../rules'
+import { boardPhases, dropZone, mirrorPiece, type Operative, type Piece, type Point, SNAP, type TeamDef, TERRAIN_KIND, TERRAIN_PALETTE, type TerrainKind, TOKEN } from '../rules'
 import { type OpState, teamIdOf } from '../state'
 import { Btn, BufferedInput, KtCard, Label } from './kit'
-import { type Dispatch, type Game, onNum, SIDE_IDS } from './shared'
+import { type Dispatch, type Game, onNum } from './shared'
 
 /* ---------- the board ---------- */
 
@@ -38,7 +38,9 @@ export function MapBuilder({
   const [sel, setSel] = useState<Sel>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [view, setView] = useState<string | null>(null) // null = the live board
-  const { w, h, drop, snap: step, token } = BOARD
+  const { w, h } = game.board
+  const step = SNAP
+  const token = TOKEN
 
   const phases = boardPhases(game.tpCount)
   const shot = view ? game.boards[view] : undefined
@@ -97,7 +99,7 @@ export function MapBuilder({
     selPiece && dispatch({ type: 'terrainPatch', id: selPiece.id, patch: p })
   const selOp =
     !shot && sel?.kind === 'op' ? Object.values(game.roster).flat().find((o) => o.id === sel.id) : undefined
-  const selTeam = selOp ? TEAMS.find((t) => t.id === teamIdOf(game, selOp.id)) : undefined
+  const selTeam = selOp ? game.teams[teamIdOf(game, selOp.id) ?? ''] : undefined
 
   const label = (i: number) => (i === 0 && markers.length % 2 ? 'C' : String(i + 1))
   const grabbable = shot || bare ? '' : 'cursor-move'
@@ -195,18 +197,21 @@ export function MapBuilder({
               <line key={`r${i}`} x1={0} y1={i * 2 + 2} x2={w} y2={i * 2 + 2} stroke="#282c34" strokeOpacity={0.07} strokeWidth={0.06} />
             ))}
 
-            {SIDE_IDS.map((side, i) => (
-              <g key={side}>
-                <rect x={0} y={i ? h - drop : 0} width={w} height={drop} fill={SIDE_COLOR[side]} fillOpacity={0.1} />
-                {/* hugging the outer edge, so the deployed rows below never sit on the label */}
-                <text x={0.6} y={i ? h - 0.5 : 1.2} fontSize={1.1} fill={SIDE_COLOR[side]} className="display">
-                  {SIDES[side]} drop zone
-                </text>
-              </g>
-            ))}
+            {game.sides.map((side, i) => {
+              const z = dropZone(game.board, i, game.sides.length)
+              return (
+                <g key={side.id}>
+                  <rect x={z.x} y={z.y} width={z.w} height={z.h} fill={side.color} fillOpacity={0.1} />
+                  {/* hugging the outer edge, so the deployed rows never sit on the label */}
+                  <text x={z.x + 0.6} y={z.y > 0 ? z.y + z.h - 0.5 : 1.2} fontSize={1.1} fill={side.color} className="display">
+                    {side.name} drop zone
+                  </text>
+                </g>
+              )
+            })}
             <line x1={0} y1={h / 2} x2={w} y2={h / 2} stroke="#282c34" strokeOpacity={0.3} strokeWidth={0.08} strokeDasharray="0.8 0.7" />
 
-            {game.mirror && terrain.map((p) => piece(mirrorPiece(dragged('piece', p.id, p)), true))}
+            {game.mirror && terrain.map((p) => piece(mirrorPiece(dragged('piece', p.id, p), game.board), true))}
             {terrain.map((p) => piece(dragged('piece', p.id, p)))}
 
             {markers.map((m0, i) => {
@@ -215,7 +220,7 @@ export function MapBuilder({
               return (
                 <g key={i} className={grabbable} onPointerDown={grab('marker', String(i), m0.x, m0.y)}>
                   <title>{`Marker ${label(i)}${shot ? '' : ' — drag to match the table'}`}</title>
-                  <circle cx={m.x} cy={m.y} r={1} fill="#fff" stroke={holder ? SIDE_COLOR[holder] : '#282c34'} strokeWidth={0.25} />
+                  <circle cx={m.x} cy={m.y} r={1} fill="#fff" stroke={holder ? (game.sides.find((x) => x.id === holder)?.color ?? '#282c34') : '#282c34'} strokeWidth={0.25} />
                   <text x={m.x} y={m.y + 0.45} textAnchor="middle" fontSize={1.3} fill="#282c34" className="display">
                     {label(i)}
                   </text>
@@ -223,7 +228,7 @@ export function MapBuilder({
               )
             })}
 
-            {TEAMS.map((t) =>
+            {Object.values(game.teams).map((t) =>
               (game.roster[t.id] ?? []).map((o, i) => {
                 const st = game.ops[o.id]
                 // A capture holds positions only, so its tokens are drawn plain: conceal,
@@ -399,9 +404,9 @@ export function MapBuilder({
               <div>
                 <Label>Operatives</Label>
                 <div className="mt-1 flex flex-wrap gap-1">
-                  {SIDE_IDS.map((side) => (
-                    <Btn key={side} onClick={() => dispatch({ type: 'deploy', side })} title={`Lay undeployed ${SIDES[side]} survivors out in their drop zone`}>
-                      Deploy {SIDES[side]}
+                  {game.sides.map(({ id: side, name }) => (
+                    <Btn key={side} onClick={() => dispatch({ type: 'deploy', side })} title={`Lay undeployed ${name} survivors out in their drop zone`}>
+                      Deploy {name}
                     </Btn>
                   ))}
                 </div>
@@ -462,7 +467,7 @@ function OpCard({
   onClose,
 }: {
   op: Operative
-  team: (typeof TEAMS)[number]
+  team: TeamDef
   st?: OpState
   onClose: () => void
 }) {
