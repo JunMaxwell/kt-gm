@@ -98,7 +98,7 @@ export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch 
         ))}
         {game.critOp && (
           <div className={ROW}>
-            <Label title="What the marker board is worth this turning point">markers</Label>
+            <Label title="What the objective markers are worth this turning point">markers</Label>
             {sides.map(({ id: side }) => {
               const sug = suggestedCrit(game, side)
               if (sug === null)

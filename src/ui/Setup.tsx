@@ -7,13 +7,12 @@ import {
   type CritOpId,
   DEFAULT_ROSTER,
   type TeamDef,
-  dropZone,
   presetRoster,
 } from '../rules'
 import { FACTIONS } from '../factions'
 import { allTeams, teamOps, teamsOf } from '../state'
 import { Btn, BufferedInput, Label } from './kit'
-import { type Dispatch, type Game, onInt, onNum } from './shared'
+import { type Dispatch, type Game, onInt } from './shared'
 import { TeamCard } from './TeamCard'
 
 /* ---------- setup ----------
@@ -155,43 +154,25 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
             </Btn>
           </Panel>
 
-          <Panel title="Board">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <Num label="Width" value={game.board.w} onEdit={(w) => dispatch({ type: 'board', patch: { w } })} />
-              <Num label="Height" value={game.board.h} onEdit={(h) => dispatch({ type: 'board', patch: { h } })} />
-              <Num label="Drop zone" value={game.board.drop} onEdit={(drop) => dispatch({ type: 'board', patch: { drop } })} />
-              <span className="display text-xs text-ink/40">inches</span>
-            </div>
-            <svg viewBox={`0 0 ${game.board.w} ${game.board.h}`} className="mt-2 w-full border border-rule bg-white">
-              {game.sides.map((x, i) => {
-                const z = dropZone(game.board, i, game.sides.length)
-                return <rect key={x.id} x={z.x} y={z.y} width={z.w} height={z.h} fill={x.color} fillOpacity={0.25} />
-              })}
-            </svg>
-          </Panel>
-
           <Panel title="Scoring">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <Num label="Turning points" value={game.tpCount} onEdit={(value) => dispatch({ type: 'tpCount', value })} int />
-              <Num label="VP cap per op" value={game.opCap} onEdit={(value) => dispatch({ type: 'opCap', value })} int />
-              <Num label="Crit VP per TP" value={game.critCap} onEdit={(value) => dispatch({ type: 'critCap', value })} int />
+              <Num label="Turning points" value={game.tpCount} onEdit={(value) => dispatch({ type: 'tpCount', value })} />
+              <Num label="VP cap per op" value={game.opCap} onEdit={(value) => dispatch({ type: 'opCap', value })} />
+              <Num label="Crit VP per TP" value={game.critCap} onEdit={(value) => dispatch({ type: 'critCap', value })} />
               <Num
                 label="Objectives"
                 value={game.objectives.length}
                 onEdit={(value) => dispatch({ type: 'objectiveCount', value })}
-                int
               />
               <Num
                 label="CP — initiative"
                 value={game.cpPerTp.lead}
                 onEdit={(lead) => dispatch({ type: 'cpPerTp', patch: { lead } })}
-                int
               />
               <Num
                 label="CP — others"
                 value={game.cpPerTp.other}
                 onEdit={(other) => dispatch({ type: 'cpPerTp', patch: { other } })}
-                int
               />
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -304,7 +285,7 @@ function TeamRow({ game, dispatch, team }: { game: Game; dispatch: Dispatch; tea
           className="w-16 shrink-0"
           value={team.short}
           aria-label="Short name"
-          title="Short name, used on the pills and the board"
+          title="Short name, used on the scoreboard pills"
           onEdit={(short) => patch({ short })}
         />
         <select
@@ -369,17 +350,15 @@ function Num({
   label,
   value,
   onEdit,
-  int,
 }: {
   label: string
   value: number
   onEdit: (n: number) => void
-  int?: boolean
 }) {
   return (
     <label className="display flex items-center gap-1 text-xs text-ink/50">
       {label}
-      <BufferedInput className="w-14" inputMode="numeric" aria-label={label} value={String(value)} onEdit={(int ? onInt : onNum)(onEdit)} />
+      <BufferedInput className="w-14" inputMode="numeric" aria-label={label} value={String(value)} onEdit={onInt(onEdit)} />
     </label>
   )
 }

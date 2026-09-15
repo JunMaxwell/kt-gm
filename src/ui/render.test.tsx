@@ -8,7 +8,6 @@ import { Scoreboard } from './Scoreboard'
 import { Objectives } from './Objectives'
 import { ActivationOrder } from './ActivationOrder'
 import { TurnBar } from './TurnBar'
-import { MapBuilder } from './MapBuilder'
 import { TeamCard } from './TeamCard'
 import { Setup } from './Setup'
 import { Compendium, CompendiumBrowser } from './Compendium'
@@ -23,14 +22,12 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     R(<Scoreboard game={g} dispatch={noop} />),
     R(<Objectives game={g} dispatch={noop} />),
     R(<ActivationOrder game={g} dispatch={noop} />),
-    R(<MapBuilder game={g} dispatch={noop} />),
     R(<OpsBrowser game={g} />),
     R(<CompendiumBrowser game={g} />),
     R(<Setup game={g} dispatch={noop} />),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} />)),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing />)),
     ...allTeams(g).map((t) => R(<Compendium game={g} teamId={t.id} />)),
-    R(<MapBuilder game={g} dispatch={noop} bare mine={allTeams(g)[0].id} />),
   ].join('')
 
 test('every panel renders for the default two-alliance match', () => {

@@ -6,7 +6,6 @@ import { allTeams, scores, teamsOf, useGame } from './state'
 import { type Dispatch, type Game, type Net, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
-import { MapBuilder } from './ui/MapBuilder'
 import { Objectives } from './ui/Objectives'
 import { OpsBrowser } from './ui/OpsBrowser'
 import { Scoreboard } from './ui/Scoreboard'
@@ -26,20 +25,15 @@ const columns = (n: number) =>
     ...Array(Math.floor(n / 2)).fill('minmax(0,1fr)'),
   ].join(' ')
 
-type Tab = 'cards' | 'board'
-
 /**
  * The spectator's phone. Five of seven players watch on one of these, so the console's three
- * columns are the wrong shape — they get their own cards first and the rest behind a tab.
+ * columns are the wrong shape — they get their own cards and nothing else.
  *
- * Both tabs are OUTSIDE `inert`: it blocks keyboard and pointer alike, so a `<details>` inside
- * it can never be opened and a token inside it can never be tapped — the panels would be dead
- * weight. Neither tab can mutate anyway: the Cards deck only reads, and `bare` makes the board
- * select-only (see MapBuilder). A stray click still can't do damage — the server rejects writes
- * without the token, and the next relay message overwrites any local divergence.
+ * Read-only is structural, not a flag: `Compendium` takes no `dispatch` and so is incapable of
+ * writing. A stray tap could not do damage anyway — the server rejects writes without the token,
+ * and the next relay message overwrites any local divergence.
  */
-function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: Net }) {
-  const [tab, setTab] = useState<Tab>('cards')
+function Viewer({ game, net }: { game: Game; net: Net }) {
   const teams = allTeams(game)
   const [saved, setSaved] = useState(() => localStorage.getItem(ME_KEY) ?? '')
   // Checked every render: the GM can delete a team in setup, and the relay will ship that
@@ -86,34 +80,12 @@ function Viewer({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: 
           </span>
         </div>
 
-        <p className="truncate px-3 pt-0.5 text-[11px] text-white/45">{ph.hint}</p>
-
-        <div className="flex gap-1 px-2 pt-1.5 pb-2">
-          {(['cards', 'board'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`display flex-1 rounded px-2 py-1 text-sm capitalize ${
-                tab === t ? 'bg-white text-ink' : 'bg-white/12 text-white/60'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        <p className="truncate px-3 pt-0.5 pb-2 text-[11px] text-white/45">{ph.hint}</p>
       </div>
 
-      {/* Only the live tab mounts, so 53 board tokens never render twice. */}
-      {tab === 'cards' && (
-        <div className="flex min-h-0 flex-1 flex-col p-2">
-          <Compendium game={game} teamId={me} />
-        </div>
-      )}
-      {tab === 'board' && (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <MapBuilder game={game} dispatch={dispatch} bare mine={me} />
-        </div>
-      )}
+      <div className="flex min-h-0 flex-1 flex-col p-2">
+        <Compendium game={game} teamId={me} />
+      </div>
     </div>
   )
 }
@@ -125,7 +97,7 @@ export default function App() {
   // venue with no wifi, so a match set up beforehand must not need the network to be read.
   usePrefetchFactions(allTeams(game).map((t) => t.faction))
 
-  if (net.viewer) return <Viewer game={game} dispatch={dispatch} net={net} />
+  if (net.viewer) return <Viewer game={game} net={net} />
   if (game.setup) return <Setup game={game} dispatch={dispatch} />
 
   return (
@@ -192,8 +164,6 @@ function Console({
         ))}
       </main>
 
-      <MapBuilder game={game} dispatch={dispatch} />
-
       <OpsBrowser game={game} />
 
       <CompendiumBrowser game={game} />
@@ -218,10 +188,6 @@ function Console({
         Card styling after the official Kill Team rules cards; side and archetype colours after{' '}
         <a className="underline" href="https://github.com/tiltos/kill-team-critical-ops" target="_blank" rel="noreferrer">
           tiltos/kill-team-critical-ops
-        </a>
-        ; the board builder after{' '}
-        <a className="underline" href="https://labrador.dev/layout-builder" target="_blank" rel="noreferrer">
-          labrador.dev
         </a>
         .<br />
         Kill Team is a trademark of Games Workshop. Unofficial fan tool for one homebrew match.

@@ -1,8 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 
 import {
-  BOARD,
-  type Board,
   CP_PER_TP,
   CRIT_CAP_PER_TP,
   CRIT_OPS,
@@ -15,15 +13,11 @@ import {
   PRESET_SIDES,
   PRESET_TEAMS,
   SIDE_PALETTE,
-  type Piece,
-  type Point,
   STARTING_CP,
   type SideDef,
   type SideId,
   type TeamDef,
   TURNING_POINTS,
-  defaultMarkers,
-  dropZone,
   killThresholds,
 } from './rules'
 import type { PhaseId } from './compendium'
@@ -34,29 +28,19 @@ export type OpState = {
   expended: boolean
   dead: boolean
   order: Order
-  pos?: Point // where it stands on the board; absent means not deployed
 }
 /** Kept as an alias: `TeamDef` absorbed it when teams became runtime data. */
 export type PlayerState = TeamDef
 
-/** Positions only — the score, wounds and orders live in `Game` itself and are what a
- *  "Save match" already captures. This is a record of where things stood. */
-export type BoardSnapshot = { terrain: Piece[]; markers: Point[]; pos: Record<string, Point> }
-
 export type Game = {
   setup: boolean // showing the setup view rather than the console
-  sides: SideDef[] // the alliances, in order — order picks drop zones and columns
-  board: Board // table size and drop zone depth, in inches
+  sides: SideDef[] // the alliances, in order — order picks the console's columns
   cpPerTp: { lead: number; other: number } // CP granted each turning point
   tp: number
   tpCount: number // homebrew: the battle can run longer than the official four
   opCap: number // max VP per op type; official is 6 over 4 turning points
   critCap: number // max crit VP per turning point; the cards say 2, this homebrew defaults to 3
   objectives: (SideId | null)[] // one entry per marker, index 0 is the centre
-  markers: Point[] // board position of each marker, index-matched to `objectives`
-  terrain: Piece[] // the table as the GM laid it out
-  mirror: boolean // draw each piece's 180° twin, for a symmetric table
-  boards: Record<string, BoardSnapshot> // captured boards, keyed by `boardPhases` id
   finished: boolean
   phase: PhaseId // which phase of the turning point the table is in; announced to every viewer
   critOp: CritOpId | null
@@ -87,17 +71,12 @@ export const initialGame = (): Game => {
   return {
     setup: false,
     sides: structuredClone(PRESET_SIDES),
-    board: { ...BOARD },
     cpPerTp: { ...CP_PER_TP },
     tp: 1,
     tpCount: TURNING_POINTS,
     opCap: OP_CAP,
     critCap: CRIT_CAP_PER_TP,
     objectives: Array(OBJECTIVE_MARKERS).fill(null),
-    markers: defaultMarkers(OBJECTIVE_MARKERS),
-    terrain: [],
-    mirror: true,
-    boards: {},
     finished: false,
     phase: 'initiative',
     critOp: null,
@@ -134,16 +113,6 @@ export type Action =
   | { type: 'critCap'; value: number }
   | { type: 'objective'; index: number; value: SideId | null }
   | { type: 'objectiveCount'; value: number }
-  | { type: 'markerMove'; index: number; pos: Point }
-  | { type: 'terrainAdd'; piece: Omit<Piece, 'id'> }
-  | { type: 'terrainPatch'; id: string; patch: Partial<Omit<Piece, 'id'>> }
-  | { type: 'terrainRemove'; id: string }
-  | { type: 'terrainClear' }
-  | { type: 'mirror'; value: boolean }
-  | { type: 'place'; opId: string; pos: Point | null }
-  | { type: 'deploy'; side: SideId }
-  | { type: 'boardCapture'; phase: string }
-  | { type: 'boardRestore'; phase: string }
   | { type: 'thresholds'; side: SideId; value: number[] | null }
   | { type: 'wound'; opId: string; delta: number }
   | { type: 'dead'; opId: string; dead: boolean }
@@ -174,7 +143,6 @@ export type Action =
   | { type: 'teamAdd'; team: TeamDef; roster: Operative[] }
   | { type: 'teamRemove'; teamId: string }
   | { type: 'teamPatch'; teamId: string; patch: Partial<TeamDef> }
-  | { type: 'board'; patch: Partial<Board> }
   | { type: 'cpPerTp'; patch: Partial<{ lead: number; other: number }> }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
@@ -246,42 +214,6 @@ const normalize = (g: Game): Game => {
  *  because it runs on every relay snapshot and must not move a spectator off the live turn. */
 const recast = (g: Game): Game => ({ ...normalize(g), turnIdx: 0, pairUsed: [] })
 
-/* ---------- board geometry ---------- */
-
-const onBoard = (p: Point, b: Board): Point => ({ x: clamp(p.x, 0, b.w), y: clamp(p.y, 0, b.h) })
-
-/** The one place that holds "markers is index-matched to objectives". Both the count
- *  stepper and a restored snapshot go through it, so neither can leave a hole. */
-const fitMarkers = (src: Point[], n: number, board: Board): Point[] => {
-  const def = defaultMarkers(n, board)
-  return Array.from({ length: n }, (_, i) => src[i] ?? def[i])
-}
-
-/** Arrays are shared by reference — safe, since every case replaces rather than mutates. */
-const captureBoard = (g: Game): BoardSnapshot => ({
-  terrain: g.terrain,
-  markers: g.markers,
-  pos: Object.fromEntries(Object.entries(g.ops).flatMap(([id, o]) => (o.pos ? [[id, o.pos] as const] : []))),
-})
-
-/** Keep a piece a sane size and wholly on the table. In the reducer rather than the drag
- *  handler, so a hand-typed number or a loaded save is clamped too. */
-const fitPiece = (p: Piece, b: Board): Piece => {
-  const w = clamp(p.w, 0.5, b.w)
-  const h = clamp(p.h, 0.5, b.h)
-  return {
-    ...p,
-    w,
-    h,
-    x: clamp(p.x, 0, b.w - w),
-    y: clamp(p.y, 0, b.h - h),
-    rot: ((Math.round(p.rot) % 360) + 360) % 360,
-  }
-}
-
-/** Ids only need to be unique within one game, and saves are whole snapshots. */
-const nextTerrainId = (g: Game) => g.terrain.reduce((n, p) => Math.max(n, Number(p.id.slice(1)) + 1 || 0), 1)
-
 export function reduce(g: Game, a: Action): Game {
   switch (a.type) {
     case 'reset':
@@ -337,70 +269,7 @@ export function reduce(g: Game, a: Action): Game {
     }
     case 'objectiveCount': {
       const n = clamp(a.value, 1, 9)
-      return {
-        ...g,
-        objectives: Array.from({ length: n }, (_, i) => g.objectives[i] ?? null),
-        markers: fitMarkers(g.markers, n, g.board),
-      }
-    }
-    case 'markerMove':
-      return { ...g, markers: g.markers.map((m, i) => (i === a.index ? onBoard(a.pos, g.board) : m)) }
-    case 'terrainAdd':
-      return { ...g, terrain: [...g.terrain, fitPiece({ ...a.piece, id: `t${nextTerrainId(g)}` }, g.board)] }
-    case 'terrainPatch':
-      return { ...g, terrain: g.terrain.map((p) => (p.id === a.id ? fitPiece({ ...p, ...a.patch }, g.board) : p)) }
-    case 'terrainRemove':
-      return { ...g, terrain: g.terrain.filter((p) => p.id !== a.id) }
-    case 'terrainClear':
-      return { ...g, terrain: [] }
-    case 'mirror':
-      return { ...g, mirror: a.value }
-    case 'place': {
-      const st = g.ops[a.opId]
-      if (!st) return g
-      const { pos: _off, ...bare } = st
-      return { ...g, ops: { ...g.ops, [a.opId]: a.pos ? { ...st, pos: onBoard(a.pos, g.board) } : bare } }
-    }
-    case 'deploy': {
-      // Lay this side's undeployed survivors out in their drop zone in team order, so the
-      // GM starts dragging from somewhere sensible rather than from an empty board. Slots
-      // resume past the already-placed, so a second Deploy appends instead of stacking.
-      const ops = { ...g.ops }
-      const mine = sideOps(g, a.side).filter((o) => ops[o.id] && !ops[o.id].dead)
-      const zone = dropZone(g.board, Math.max(0, g.sides.findIndex((x) => x.id === a.side)), g.sides.length)
-      // Columns along the zone's longer axis, rows across its depth. Derived rather than
-      // fixed at 14: a drop zone on a 30" short edge fits ten columns, not fourteen.
-      const across = zone.w >= zone.h
-      const long = across ? zone.w : zone.h
-      const cols = Math.max(1, Math.floor((long - 4) / 3))
-      let slot = mine.filter((o) => ops[o.id].pos).length
-      for (const o of mine) {
-        if (ops[o.id].pos) continue
-        const along = 2 + (slot % cols) * 3
-        const deep = 2.4 + (Math.floor(slot / cols) % 3) * 1.4
-        // Measure depth inward from whichever edge the zone hugs.
-        const pos = across
-          ? { x: zone.x + along, y: zone.y > 0 ? zone.y + zone.h - deep : deep }
-          : { x: zone.x > 0 ? zone.x + zone.w - deep : deep, y: zone.y + along }
-        ops[o.id] = { ...ops[o.id], pos: onBoard(pos, g.board) }
-        slot++
-      }
-      return { ...g, ops }
-    }
-    case 'boardCapture':
-      return { ...g, boards: { ...g.boards, [a.phase]: captureBoard(g) } }
-    case 'boardRestore': {
-      const b = g.boards[a.phase]
-      if (!b) return g
-      // Positions only. Wounds, orders and the score stay where they are — this puts the
-      // models back on the table, it does not rewind the game.
-      const ops = Object.fromEntries(
-        Object.entries(g.ops).map(([id, o]) => {
-          const { pos: _off, ...bare } = o
-          return [id, b.pos[id] ? { ...o, pos: b.pos[id] } : bare]
-        }),
-      )
-      return { ...g, terrain: b.terrain, markers: fitMarkers(b.markers, g.objectives.length, g.board), ops }
+      return { ...g, objectives: Array.from({ length: n }, (_, i) => g.objectives[i] ?? null) }
     }
     case 'thresholds':
       return { ...g, killOverride: { ...g.killOverride, [a.side]: a.value } }
@@ -502,8 +371,6 @@ export function reduce(g: Game, a: Action): Game {
       return {
         ...g,
         tp: Math.min(g.tpCount, g.tp + 1),
-        // The board as it stood at the end of the turning point being left behind.
-        boards: { ...g.boards, [`tp${g.tp}`]: captureBoard(g) },
         ops,
         teams,
         turnIdx: 0,
@@ -572,7 +439,6 @@ export function reduce(g: Game, a: Action): Game {
       if (i < 0 || j < 0 || j >= g.sides.length) return g
       const sides = [...g.sides]
       ;[sides[i], sides[j]] = [sides[j], sides[i]]
-      // Side order picks drop zones, so the board moves too — but only for the undeployed.
       return recast({ ...g, sides })
     }
     case 'teamAdd':
@@ -593,20 +459,6 @@ export function reduce(g: Game, a: Action): Game {
       const next = { ...g, teams: { ...g.teams, [a.teamId]: { ...t, ...a.patch, id: t.id } } }
       // Only a change of alliance moves slots; a rename or a recolour must not rewind the turn.
       return a.patch.side && a.patch.side !== t.side ? recast(next) : normalize(next)
-    }
-    case 'board': {
-      const b = { ...g.board, ...a.patch }
-      const board = { w: clamp(b.w, 12, 120), h: clamp(b.h, 12, 120), drop: clamp(b.drop, 1, 30) }
-      // Everything already on the table has to fit the new one.
-      return {
-        ...g,
-        board,
-        terrain: g.terrain.map((p) => fitPiece(p, board)),
-        markers: g.markers.map((m) => onBoard(m, board)),
-        ops: Object.fromEntries(
-          Object.entries(g.ops).map(([id, o]) => [id, o.pos ? { ...o, pos: onBoard(o.pos, board) } : o]),
-        ),
-      }
     }
     case 'cpPerTp': {
       const c = { ...g.cpPerTp, ...a.patch }
@@ -677,7 +529,7 @@ export const held = (g: Game, s: SideId) => g.objectives.filter((o) => o === s).
 export const heldByNobody = (g: Game) => g.objectives.filter((o) => o === null).length
 
 /**
- * What the marker board is worth to a side this turning point — but only for the
+ * What the objective markers are worth to a side this turning point — but only for the
  * crit ops whose VP follows from marker control alone (Secure, Transmission).
  * The other seven accumulate points or track named markers, so they return null
  * and the GM uses the steppers. No crit op scores during the first turning point.
@@ -791,7 +643,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v13' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v14' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */

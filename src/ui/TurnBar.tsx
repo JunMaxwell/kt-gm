@@ -157,7 +157,7 @@ export function TurnBar({
           <DarkBtn
             onClick={() => dispatch({ type: 'setup', value: true })}
             className="display"
-            title="Alliances, teams, rosters, board and scoring — the match itself"
+            title="Alliances, teams, rosters and scoring — the match itself"
           >
             Setup
           </DarkBtn>

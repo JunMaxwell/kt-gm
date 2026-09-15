@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 115 tests: the reducer, and a render pass over every panel
+bun test           # 96 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -55,7 +55,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 
 | File | Holds |
 |---|---|
-| `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula, cheat-sheet text, plus the board defaults, drop-zone geometry and terrain palette |
+| `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula and cheat-sheet text |
 | `src/compendium.ts` | The three turning-point phases, the `RefCard` type, and universal equipment. The per-faction cards moved to `src/factions/` |
 | `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
@@ -72,17 +72,16 @@ the section markers that were already in it:
 
 | File | Holds |
 |---|---|
-| `ui/shared.ts` | `Dispatch` / `Game` / `Net`, `SIDE_IDS`, `ROW`, `onInt`, `onNum` |
+| `ui/shared.ts` | `Dispatch` / `Game` / `Net`, `ROW`, `rowVars`, `onInt`, the faction hooks |
 | `ui/kit.tsx` | `Btn`, `DarkBtn`, `BufferedInput`, `Stepper`, `Card`, `TeamPill`, `Label` |
 | `ui/TurnBar.tsx` | The sticky header, plus `SingleTurn` / `PairedTurn` |
 | `ui/Scoreboard.tsx`, `ui/Objectives.tsx`, `ui/ActivationOrder.tsx` | The three left-column panels |
 | `ui/TacOpCard.tsx` | One tac op card. Its own file because three panels use it |
 | `ui/OpsBrowser.tsx` | The crit op / tac op catalogue |
-| `ui/MapBuilder.tsx` | The board: phase strip, SVG table, inspector rail |
 | `ui/TeamCard.tsx` | A player's card, plus `EditRow` / `PlayRow` |
 | `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
 | `ui/RoomBar.tsx` | Share / save / load |
-| `ui/Setup.tsx` | The pre-game setup view: alliances, teams, board, scoring dials |
+| `ui/Setup.tsx` | The pre-game setup view: alliances, teams, scoring dials |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides and a degenerate 1-team match |
 
 Two conventions the split rests on:
@@ -92,12 +91,12 @@ Two conventions the split rests on:
   panel-to-panel edge. Do not let a leaf import a panel.
 - **`shared.ts` is `.ts`, not `.tsx`, and holds every non-component export.** A `.tsx` that
   exports a constant or a helper beside its components loses React Fast Refresh for the whole
-  file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`/`onNum`
+  file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v13`). Any change to
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v14`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-thirteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+fourteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -123,19 +122,11 @@ Non-negotiables that this design rests on:
   Viewers run the same selectors on the same state, so scores can't disagree.
 - **Read-only is structural, and `inert` is gone.** It used to be one `<div inert>` over the whole
   console. That worked while the player view *was* a small console, and stopped working the moment
-  it wasn't: `inert` blocks pointer **and** keyboard, so inside it a card carousel cannot be swiped
-  and a board token cannot be tapped. There is now no `inert` anywhere in `src/`.
+  it wasn't: `inert` blocks pointer **and** keyboard, so inside it a card carousel cannot be
+  swiped. There is now no `inert` anywhere in `src/`.
 
-  What replaces it is that the player view only renders things that *cannot* write:
-  - `Compendium` takes no `dispatch` prop at all — it is incapable of writing.
-  - `MapBuilder bare` selects but never drags: `grab` skips `setDrag`, and `onUp` opens with
-    `if (!drag) return`, so its three dispatches are dead. Its other dispatches live inside
-    `{!bare && …}` (the phase strip and the whole inspector rail), and `patch` needs a selected
-    *terrain piece*, which `bare` refuses to select.
-  - The one indirect case: the captured-board banner dispatches `boardRestore`/`boardCapture`, and
-    is gated on `shot` rather than on `bare`. It is unreachable only because `view` is set solely
-    by the phase strip, which `bare` hides. **If you ever let `view` be set under `bare`, that
-    banner becomes live** — gate it explicitly at that point.
+  What replaces it is that the player view renders one thing that *cannot* write: `Compendium`
+  takes no `dispatch` prop at all. Anything added to that view has to clear the same bar.
 
   The server still rejects writes without the token and the next relay message overwrites any local
   divergence, so a stray click is harmless regardless. That is the backstop, not the mechanism.
@@ -217,70 +208,7 @@ turn. The GM is the referee; the app tracks whose turn it is and never blocks a 
 Teams already counted in the current pair still count toward the target, so spending a player's last
 operative cannot retroactively turn a 2 into a 1 mid-turn.
 
-## The board
-
-The score is only half a save. `Game` also carries the table: `terrain: Piece[]` as the GM laid it
-out, `markers: Point[]` for where the objectives actually sit, and `pos?: Point` on each `OpState`.
-Because a save is already "insert the whole `Game`" and the relay already ships whole snapshots,
-**the board needed no server change at all** — it saves, loads and syncs to spectators for free.
-All measurements are inches, origin top-left, the 44" edges running left-right.
-
-The builder's UX follows <https://labrador.dev/layout-builder>: a preset footprint palette, an
-X/Y/W/H/Rot inspector for the selected piece, and a mirror toggle. Nothing is copied from it — it
-is a 40k tournament tool on a 60"×44" board. An earlier attempt here was a map *generator*, and it
-was the wrong idea: a rolled layout matches nobody's actual table.
-
-- **Mirror is derived, never stored.** `mirror: boolean` plus `mirrorPiece()` at render time, drawn
-  `pointer-events: none` and fainter. So moving a piece always moves its twin, the toggle can never
-  leave orphans, and clicks always land on the real piece. Storing twins would mean keeping pairs in
-  sync on every drag.
-- **`markers` is a parallel array to `objectives`**, index-matched. `objectiveCount` is the only case
-  that can change their length, so it is the only place they could drift — and it is tested. The
-  Objectives panel stays the place you cycle a marker's holder; the board only holds positions.
-- **Clamping lives in the reducer** (`onBoard`, `fitPiece`), not the drag handler, so a hand-typed
-  number or a loaded save is bounded too.
-- **Drags dispatch on pointer-up only.** In-flight position sits in component state; a dispatch per
-  `pointermove` would rewrite localStorage and re-render 53 tokens sixty times a second.
-- **Pointer→board maths is `getScreenCTM().inverse()`**, the native answer, correct at any scale.
-- `Deploy` lays a side's undeployed survivors out in their drop zone in team order — 14 columns at 3"
-  across the 44" edge, rows 1.4" apart inside the 6" band. Slots resume past the already-placed, so a
-  second Deploy appends rather than stacking. Nobody drags 53 tokens on from nothing.
-- Tokens carry state: dashed ring = conceal, faded = expended, red ring = injured, dead leave the
-  board. The **outline is what makes them legible** — XV26 and Deathwatch are near-white fills.
-- **`mine` rings the tokens of one team** — the team the viewing device is playing. It is drawn as
-  a *separate circle outside the token*, never as a fourth meaning on `stroke`: that attribute
-  already carries injured and selected, and `strokeDasharray` carries conceal, so overloading it
-  would make "mine" and "injured" mutually exclusive exactly when you want both.
-- **`bare` means read-only, not just chrome-free.** Under it `grab` sets `sel` but never `drag`,
-  and `onUp` opens with `if (!drag) return` — so a spectator's board cannot dispatch at all. That
-  is a structural guarantee from a guard that already existed, not a `disabled` flag to remember.
-  `bare` also restricts selection to operatives; selecting terrain would open a hidden rail.
-
-### Captured boards
-
-One live board is not enough: the evening has stages, and a mid-game save should be replayable, not
-just resumable. `Game.boards` is `Record<phaseId, BoardSnapshot>` over the fixed slots in
-`boardPhases(tpCount)` — `setup`, `deploy`, then `tp1…tpN`.
-
-- **A snapshot is positions only** — `{ terrain, markers, pos }`. Wounds, orders and the score are
-  what "Save match" already captures, and undo already covers a misclick. Restoring puts the models
-  back on the table; it does **not** rewind the game, and a test pins that.
-- **`nextTp` captures the turning point it is leaving** into `tp{g.tp}`, so the one snapshot nobody
-  would remember to take is free. Everything else is a click.
-- **The strip is the whole UI.** An empty slot shows `+` and captures on click; a full one opens
-  read-only. That is one row instead of a view row plus a capture row.
-- **Viewing is genuinely inert**, not just discouraged: `grab()` returns `undefined` when a snapshot
-  is showing, so no handler is attached at all, and the palette and inspector are unmounted.
-- Snapshot tokens render **plain** — no conceal dash, no expended fade, no injured ring. Those are
-  today's state and would be a lie on TP1's board.
-- **`fitMarkers` is the single home of the markers/objectives invariant.** Both `objectiveCount` and
-  `boardRestore` go through it, so a capture taken at 5 markers cannot leave a hole after the GM
-  drops to 3.
-- Snapshots share their arrays with live state by reference. Safe only because every reducer case
-  replaces rather than mutates — do not start mutating `terrain` in place.
-- Lowering `tpCount` orphans a `tp5` snapshot rather than deleting it; raise it again and it is back.
-
-### Undo
+## Undo
 
 `withHistory` wraps the reducer inside `useGame`: `{ past: Game[], now, last }`, depth 50, Ctrl/Cmd+Z
 or the header button. `reduce` itself is untouched and stays a pure `Game -> Game` — `undo` is a
@@ -326,8 +254,7 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
 - The page lattice is stroked at 0.03 and the card lattice at 0.06 — the page one sits under
   everything, so it has to be fainter or it reads as noise.
 
-The board builder still follows <https://labrador.dev/layout-builder>, and the side and
-archetype colours are still <https://tiltos.github.io/kill-team-critical-ops/>'s. Both are
+The side and archetype colours are still <https://tiltos.github.io/kill-team-critical-ops/>'s,
 credited in the **in-app footer** alongside the Games Workshop trademark line.
 
 Conventions that exist for a reason:
@@ -351,9 +278,9 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 109 tests in two files:
+`bun test` is 96 tests in two files:
 
-- `src/state.test.ts` — the reducer and selectors, 105 tests. `withHistory` is exported purely so
+- `src/state.test.ts` — the reducer and selectors, 90 tests. `withHistory` is exported purely so
   undo is testable without a React harness.
 - `src/ui/render.test.tsx` — four `renderToStaticMarkup` smoke tests that mount **every** panel
   against a 2-alliance game, a 3-alliance game with a hand-built team, a one-team-per-side match
@@ -381,7 +308,6 @@ the same team ids and the same side ids — which is why the whole reducer suite
 | In `rules.ts` | In `Game` |
 |---|---|
 | `PRESET_SIDES`, `PRESET_TEAMS` — seeds, read only by `initialGame` and the Setup team picker | `sides: SideDef[]`, `teams: Record<string, TeamDef>` |
-| `BOARD` — the default 44×30×6 | `board: { w, h, drop }` |
 | `CP_PER_TP` | `cpPerTp: { lead, other }` |
 
 - **`TeamDef` absorbed `PlayerState`.** One object now holds a team's identity *and* its
@@ -405,11 +331,9 @@ the same team ids and the same side ids — which is why the whole reducer suite
   top grade pays nobody. That is the only reading of "beat the enemy" that stays one bonus.
 - **`rotation` is an N-way round-robin** — sides cycled from `initiative`, slot `i` taken from each.
   At two sides it reduces to the old alternation exactly, and a test pins that.
-- **Drop zones are derived from a side's index in `sides`, never stored** (`dropZone` in
-  `rules.ts`): 0 = top, 1 = bottom, 2 = left, 3 = right; past four the long edges are sliced into
-  strips. Same reasoning as `mirrorPiece` — a stored rectangle would go stale on reorder.
-  `deploy` derives its **column count from the zone's long axis**; the old fixed `DEPLOY_COLS = 14`
-  was 14 × 3" = 42", a fact about the 44" edge, and would have run a short-edge zone off the table.
+- **Deployment edges are a label, not geometry.** Setup shows each alliance the edge its index
+  implies — 0 = top, 1 = bottom, 2 = left, 3 = right — and the players lay their models out on the
+  real table. The app stores nothing about where anything stands.
 
 ### `normalize` and `recast`
 
@@ -441,8 +365,8 @@ time and a stale `pairUsed` id is inert. Fewer stored invariants, fewer things t
   and odd right, placed with inline `order`. At two sides this is the original three-column layout
   exactly. Past four alliances the columns are unreadable, so it just stacks.
 - **`--color-imperium` / `--color-xenos` in `index.css` are no longer side identity.** They survive
-  as palette values, and the remaining `text-xenos` / `bg-xenos` uses in `MapBuilder` and
-  `TeamCard` mean "red = destructive", not "Xenos".
+  as palette values, and the remaining `text-xenos` / `bg-xenos` uses in `TeamCard` mean
+  "red = destructive", not "Xenos".
 - **Stored team picks are validated at render, not at mount.** `Viewer`'s `killteam-gm/me` and
   `CompendiumBrowser`'s selection both used to be checked once in a `useState` initializer; the
   relay can ship a snapshot deleting that team at any moment, so the fallback has to be re-derived
@@ -709,7 +633,6 @@ identical — that is gone, and `Console` is now GM-only.
 Room ABCD — read only        [ Deathwatch — Player 1 ▾ ]
 STRATEGY   TP1/4 · 2CP                    IMP 0 · XEN 0
 Gain CP, then alternate Strategy Ploys, initiative side first.
-[ CARDS ][ BOARD ]
 ┌──────────────────────────────┐
 │   ██ DEATHWATCH · 1CP ██     │   ← one card, swipe for the next
 │      STRATEGY PLOY           │
@@ -744,14 +667,9 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
   the way the printed art does instead of the card floating in the middle of the screen.
 - **Switching deck resets the rail to card 1** — `pick()` does both, or the new deck would open
   at whatever scroll offset the last one ended on.
-- **Board** is `<MapBuilder bare mine={me} />`. `bare` drops the phase strip, palette and
-  inspector rail, and makes the board select-only. Your team's operatives are ringed in the
-  accent orange; tapping any operative — yours or an enemy's — opens a read-only `KtCard` naming
-  it with APL / Move / Save / Wounds and its conceal, injured and expended state. There is no
-  weapon data in the app, so that is everything it can say.
-- **Both tabs are fully interactive** — there is no `inert` wrapper any more. Neither can mutate:
-  `Compendium` has no `dispatch` prop, and `bare` makes the board select-only. See the read-only
-  note in **Rooms** for why that is a structural guarantee rather than a convention.
+- **There are no tabs.** The view is one deck of cards; a second tab existed for the board and
+  went with it. The deck is fully interactive and still cannot mutate — `Compendium` has no
+  `dispatch` prop. See the read-only note in **Rooms** for why that is structural.
 
 **Which team you are playing is a per-device choice**, stored under `killteam-gm/me` and never
 in `Game`. `teams[].player` is a free-text label, not an identity — putting the selection in the
@@ -769,9 +687,6 @@ different frame — the GM is looking things up for other people, not playing a 
   suggestion; only Secure and Transmission are auto-derived. Adding per-marker counters would fix it.
 - **No redo.** Undo exists (below) but Ctrl+Shift+Z does not; the `future` array was skipped as
   YAGNI. Undo is also memory-only, so a reload loses it — saves remain the durable escape hatch.
-- **Spectators cannot browse captured boards.** Their Board tab drops the phase strip on purpose,
-  so `view` is never set. Fine for now — they are watching, not reviewing. See the read-only note
-  above before changing this: the phase strip is what keeps the capture banner's dispatches dead.
 - **A faction the GM has never opened needs the network the first time.** `usePrefetchFactions`
   warms every faction on the table at load, so a configured match is safe offline; browsing an
   unused faction in `CompendiumBrowser` at a table with no wifi will show an empty deck.
@@ -780,8 +695,8 @@ different frame — the GM is looking things up for other people, not playing a 
   only evidence. Long cards that print a table — Forward Scouting, Chapter Tactics, Kauyon — are
   the ones most likely to read oddly.
 - **Operative weapons are still not modelled.** The extractor reads APL/Move/Save/Wounds off a
-  datacard but skips the weapon table, so the board's operative card still cannot tell a player
-  what they are shooting with.
+  datacard but skips the weapon table, so nothing in the app can tell a player what they are
+  shooting with.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.
@@ -794,4 +709,9 @@ different frame — the GM is looking things up for other people, not playing a 
   this and has not asked for it.
 - A team's archetypes are free-form in Setup — nothing stops giving one all four, or none. A team
   with none simply has no tac ops to pick from.
+- **There is no board in the app, on purpose.** A builder for terrain, marker positions and 53
+  operative tokens existed and was deleted: it cost more to set up than it repaid and drifted out
+  of sync with the real table within an activation, so it showed the GM something untrue. The
+  physical table is the board. `Game.objectives` still tracks who *holds* each marker — that is
+  scoring, not geometry.
 - No player-facing second screen, no dice roller.

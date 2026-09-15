@@ -28,12 +28,6 @@ export const onInt = (fn: (n: number) => void) => (raw: string) => {
   if (Number.isFinite(v)) fn(v)
 }
 
-/** Like `onInt`, but the board inspector works in half-inches. */
-export const onNum = (fn: (n: number) => void) => (raw: string) => {
-  const v = parseFloat(raw)
-  if (Number.isFinite(v)) fn(v)
-}
-
 /**
  * A faction's cards and datacards, fetched on demand.
  *
