@@ -16,7 +16,7 @@ import {
   teamsWithArchetype,
 } from './rules'
 import { PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT } from './compendium'
-import { FACTIONS, factionData, loadFaction } from './factions'
+import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
 const preset = (id: string) => PRESET_TEAMS.find((t) => t.id === id)!
@@ -37,6 +37,7 @@ import {
   pairTarget,
   reduce,
   scores,
+  allTeams,
   readyCount,
   sideOps,
   suggestedCrit,
@@ -780,6 +781,83 @@ test('every extracted faction has 4 strategy ploys, 4 firefight ploys and 4 equi
     expect([f.id, n('strategy'), n('firefight'), n('equipment')]).toEqual([f.id, 4, 4, 4])
     expect(n('faction')).toBeGreaterThan(0)
   }
+})
+
+// The join the player view depends on. The preset six field operatives under the SHORT
+// hand-curated CATALOGUE names ("Aegis"), while the PDFs print the full one ("Deathwatch
+// Aegis Veteran") — so if this ever stops resolving, every operative on the table silently
+// loses its weapons and abilities and the card just shows four numbers.
+test('every operative in the preset match resolves to exactly one datacard', () => {
+  const g = initialGame()
+  for (const t of allTeams(g)) {
+    const data = factionData(t.faction)
+    for (const o of teamOps(g, t.id)) {
+      const card = datacardOf(data, o.name)
+      expect([t.id, o.name, card?.name ?? null]).not.toEqual([t.id, o.name, null])
+      expect(card!.weapons.length).toBeGreaterThan(0)
+    }
+  }
+})
+
+// NOT scoped to `!custom`, unlike the 4/4/4 card-format guard above. That guard encodes the
+// printed layout, which homebrew is not bound by. This one encodes something every operative
+// needs whoever wrote it: its own weapons and rules. Scoping it is exactly what let the three
+// hand-written factions ship with no datacards at all while the other 48 had them.
+test('every operative in the library has a datacard, and it is well formed', async () => {
+  for (const f of FACTIONS) {
+    const data = (await loadFaction(f.id))!
+    expect(data.datacards!.length).toBe(data.operatives.length)
+    for (const o of data.operatives) {
+      const card = datacardOf(data, o.name)
+      expect([f.id, o.name, card?.name]).toEqual([f.id, o.name, o.name])
+    }
+    for (const d of data.datacards!) {
+      for (const w of d.weapons) {
+        expect(w.hit).toMatch(/^\d\+$/)
+        expect(w.dmg).toMatch(/^\d+\/\d+$/)
+        expect(w.atk).toBeGreaterThan(0)
+      }
+      for (const a of d.abilities) expect(a.text.length).toBeGreaterThan(10)
+      // 0AP unique actions are real — Kasrkin's Medikit, Exaction Squad's Apprehend
+      for (const a of d.actions) expect(a.ap).toBeGreaterThanOrEqual(0)
+    }
+  }
+})
+
+// The two bosses are hand-written, so nothing regenerates them — and they are the operatives
+// whose rules matter most. Without their own datacards they would be the ONLY operatives in the
+// game reduced to four bare numbers on the player's Ops card.
+test('the NEMESIS bosses carry a datacard with their weapons and traits', async () => {
+  for (const id of ['angron', 'farsight']) {
+    const f = (await loadFaction(id))!
+    const o = f.operatives[0]
+    const card = datacardOf(f, o.name)
+    expect([id, card?.name]).toEqual([id, card!.name]) // found at all
+    expect(card!.weapons.length).toBeGreaterThan(1)
+    // the nemesis trait and the allegiance trait, the same objects the Rules cards use
+    expect(card!.abilities.length).toBeGreaterThanOrEqual(2)
+    expect(card!.keywords).toContain('NEMESIS')
+    for (const a of card!.abilities) expect(f.cards.some((c) => c.text === a.text) || a.name === 'Paired Weapon').toBe(true)
+  }
+})
+
+// A hand-built team has no faction at all, and a GM can rename an operative to anything. Both
+// must resolve to undefined rather than throw — the card then simply shows less.
+test('an unknown name, and no faction at all, resolve to undefined', async () => {
+  const custom = FACTIONS.find((f) => f.custom)!
+  expect(datacardOf(await loadFaction(custom.id), 'Not An Operative')).toBeUndefined()
+  expect(datacardOf(factionData('kom'), 'Not An Operative')).toBeUndefined()
+  expect(datacardOf(undefined, 'Boss Nob')).toBeUndefined()
+})
+
+// "Boy" is a suffix of eight Kommandos; the shortest full name is the right one.
+test('an ambiguous short name picks the shortest matching datacard', () => {
+  expect(datacardOf(factionData('kom'), 'Boy')!.name).toBe('Kommando Boy')
+  expect(datacardOf(factionData('kom'), 'Snipa Boy')!.name).toBe('Kommando Snipa Boy')
+  // a roster duplicate carries a trailing number that is not part of any datacard name
+  expect(datacardOf(factionData('rav'), 'Ravener Warrior 3')!.name).toBe(
+    datacardOf(factionData('rav'), 'Ravener Warrior')!.name,
+  )
 })
 
 test('operative ids are unique across the whole library', async () => {

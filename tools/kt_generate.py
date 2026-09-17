@@ -46,7 +46,7 @@ for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
     lines = [
         f"// Generated from the official team rules PDF. Do not edit by hand — rerun the",
         f"// extractor described in CLAUDE.md (‘Where the card data came from’).",
-        f"import type {{ RefCard }} from '../compendium'",
+        f"import type {{ Datacard, RefCard }} from '../compendium'",
         f"import type {{ Operative }} from '../rules'",
         "",
         f"export const cards: RefCard[] = [",
@@ -59,13 +59,27 @@ for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
     for o in ops:
         lines.append(f"  {{ id: {ts(o['id'])}, name: {ts(o['name'])}, apl: {o['apl']}, move: {ts(o['move'])}, save: {ts(o['save'])}, w: {o['w']} }},")
     lines.append("]")
+    lines.append("")
+    # The rest of the datacard — weapons, abilities, unique actions, keywords. Kept OUT of
+    # `Operative` on purpose: rosters ride in every relay snapshot and localStorage save, and
+    # this is reference text nobody edits. Joined back on by name, in `factions/index.ts`.
+    lines.append("export const datacards: Datacard[] = [")
+    for d in data['datacards']:
+        row = {'name': d['name'], 'weapons': d['weapons'],
+               'abilities': d['abilities'], 'actions': d['actions']}
+        if d.get('keywords'): row['keywords'] = d['keywords']
+        lines.append(f"  {ts(row)},")
+    lines.append("]")
     open(f"{OUT}/{fid}.ts", 'w').write("\n".join(lines) + "\n")
     index.append({'id': fid, 'name': name, 'archetypes': data['archetypes'],
                   'color': colour, 'ink': colour in INK,
-                  'preset': fid in PRESET, 'cards': len(data['cards']), 'ops': len(ops)})
+                  'preset': fid in PRESET, 'cards': len(data['cards']), 'ops': len(ops),
+                  'weapons': sum(len(d['weapons']) for d in data['datacards']),
+                  'rules': sum(len(d['abilities']) + len(d['actions']) for d in data['datacards'])})
 
 index.sort(key=lambda r: r['name'])
 json.dump(index, open(f'{SRC}/index.json','w'), indent=1)
 print(f"wrote {len(index)} faction modules")
 print(f"  presets: {[r['id'] for r in index if r['preset']]}")
 print(f"  total cards: {sum(r['cards'] for r in index)}  operatives: {sum(r['ops'] for r in index)}")
+print(f"  datacard weapons: {sum(r['weapons'] for r in index)}  abilities+actions: {sum(r['rules'] for r in index)}")

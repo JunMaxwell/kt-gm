@@ -184,7 +184,11 @@ export function KtCard({
 }) {
   return (
     <div
-      className={`flex min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
+      // `min-h-fit` is load-bearing: the carousel gives every card `flex-1` inside a fixed-height
+      // slide, and a flex item will happily shrink below its content. With `overflow-hidden` on
+      // this card that silently CLIPS a long one — two equipment cards and most datacards were
+      // losing their bottom third. Now the card grows instead and the slide scrolls.
+      className={`flex min-h-fit min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
       style={{ borderColor: outline ?? '#2a2a2a' }}
     >
       <div className="kt-band px-2 pt-1.5 pb-3 text-center">

@@ -17,6 +17,22 @@ export type RefKind = 'faction' | 'strategy' | 'firefight' | 'equipment'
 /** One card: a faction rule, a ploy, or a piece of equipment. */
 export type RefCard = { name: string; kind: RefKind; text: string }
 
+/** One line of an operative's weapon table. `wr` is the weapon rules column, absent when "-". */
+export type Weapon = { name: string; atk: number; hit: string; dmg: string; wr?: string }
+
+/**
+ * Everything a datacard prints below the stat row. Deliberately NOT part of `Operative`:
+ * a roster rides in every relay snapshot and localStorage save, and this is reference text
+ * nobody edits. It is joined back onto an operative by name — see `datacardOf`.
+ */
+export type Datacard = {
+  name: string
+  weapons: Weapon[]
+  abilities: { name: string; text: string }[]
+  actions: { name: string; ap: number; text: string }[]
+  keywords?: string[]
+}
+
 export const PLOY_CP = 1
 
 export const KIND_LABEL: Record<RefKind, string> = {

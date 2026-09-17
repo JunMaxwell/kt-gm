@@ -257,35 +257,154 @@ def parse_cards(path):
     return cards
 
 # ---------- operatives ----------
+#
+# A datacard prints a name over an APL/MOVE/SAVE/WOUNDS row, then a weapons table, then the
+# operative's abilities and unique actions, then its keywords and points. Everything below the
+# stat row used to be discarded; it is the only place a player can learn what they are holding.
+#
+# Three things about the layout cost time to work out, and will again:
+#   - A long datacard CONTINUES ON THE OTHER SIDE, printing the same name twice. The halves are
+#     merged, never deduplicated to a winner, or an operative loses its abilities.
+#   - Abilities and unique actions can print in two columns, interleaved line by line.
+#   - A unique action's header puts its name and its AP cost at opposite ends of one line, which
+#     is exactly what a column finder mistakes for a gutter. `twocol` guards against that.
 
 STAT = re.compile(r'^\s*(\d)\s+(\d+)"\s+(\d)\s*\+?\s+(\d+)\s*$')
+DC_HDR = re.compile(r'APL\s+MOVE\s+SAVE\s+WOUNDS')
+W_HDR = re.compile(r'\bNAME\b\s+\bATK\b\s+\bHIT\b\s*\bDMG\b')
+W_ROW = re.compile(r'^\s*(.+?)\s{2,}(\d+)\s+(\d\+)\s+(\d+/\d+)\s*(.*)$')
+# "KOMMANDO , ORK, LEADER, BOSS NOB                                      32"
+KEYWORDS = re.compile(r'^\s*([A-Z][A-Z0-9 ,\'\u2019\u2013\-\.]{3,})\s{2,}(\d{1,3})\s*$')
+ACTION = re.compile(r'^\s*([A-Z][A-Z0-9 \'\u2019\-\u2026!\.]{2,})\s{2,}(\d)\s*AP\s*$')
+ABILITY = re.compile(r'^\s*([A-Z][^:]{2,60}?):\s+(.*)$')
+DC_NOISE = re.compile(r'RULES CONTINUE ON')
+
+def dc_blocks(path):
+    """Every page, cut into one chunk per operative datacard."""
+    for page in open(path, encoding='utf-8').read().split('\f'):
+        lines = page.split('\n')
+        hits = [i for i, l in enumerate(lines) if DC_HDR.search(l)]
+        for n, i in enumerate(hits):
+            end = hits[n + 1] if n + 1 < len(hits) else len(lines)
+            yield lines[i:end]
+
+def dewrap(lines):
+    """Join a paragraph's wrapped lines; a blank line ends the paragraph."""
+    out, cur = [], []
+    for l in lines:
+        if l.strip():
+            cur.append(l.strip())
+        elif cur:
+            out.append(' '.join(cur)); cur = []
+    if cur: out.append(' '.join(cur))
+    return out
+
+def twocol(lines):
+    """The columns of a rules region, in reading order — or the region whole if it is one column.
+
+    Do NOT ask for text on both sides of the SAME line: real columns interleave line by line.
+    Ask how many lines carry text on each side. A genuine second column has several; the
+    right-aligned "1AP" of an action header has exactly one, and splitting on it would fold the
+    action into the ability above it."""
+    body = [l for l in lines if l.strip()]
+    if len(body) < 4: return [lines]
+    got = split_page('\n'.join(lines))
+    if len(got) == 1: return [lines]
+    left, right = got
+    if sum(1 for x in left if x.strip()) < 3 or sum(1 for y in right if y.strip()) < 3:
+        return [lines]
+    return [list(left), list(right)]
+
+def rules_of(lines):
+    """One column's prose, as (abilities, unique actions)."""
+    abilities, actions = [], []
+    segs, at = [(None, [])], 0
+    for l in lines:
+        m = ACTION.match(l)
+        if m:
+            segs.append(((titlecase(m.group(1).strip()), int(m.group(2))), [])); at += 1
+        else:
+            segs[at][1].append(l)
+    for head, body in segs:
+        paras = dewrap(body)
+        if head:
+            actions.append({'name': head[0], 'ap': head[1], 'text': '\n'.join(paras).strip()})
+            continue
+        cur = None
+        for para in paras:
+            m = ABILITY.match(para)
+            if m and not para.startswith('\u2022'):
+                abilities.append({'name': m.group(1).strip(), 'text': m.group(2).strip()})
+                cur = abilities[-1]
+            elif cur is not None:
+                cur['text'] = (cur['text'] + '\n' + para).strip()
+    return abilities, actions
+
+def parse_datacard(b):
+    name = stats = None
+    rest = []
+    for j in range(1, min(6, len(b))):
+        line = b[j].strip()
+        if line and is_caps(line) and not STAT.match(b[j]) and name is None:
+            name = line
+        m = STAT.match(b[j])
+        if m and stats is None:
+            stats = m.groups()
+        if name and stats:
+            rest = b[j + 1:]
+            break
+    if not (name and stats):
+        return None
+
+    weapons, keywords, body, in_weapons = [], None, [], False
+    for l in rest:
+        if W_HDR.search(l):
+            in_weapons = True; continue
+        k = KEYWORDS.match(l)
+        if k and is_caps(k.group(1)):
+            keywords = [w.strip() for w in k.group(1).replace(' ,', ',').split(',') if w.strip()]
+            in_weapons = False; continue
+        if in_weapons:
+            w = W_ROW.match(l)
+            if w:
+                wr = w.group(5).strip()
+                weapons.append({'name': w.group(1).strip(), 'atk': int(w.group(2)),
+                                'hit': w.group(3), 'dmg': w.group(4),
+                                **({'wr': wr} if wr and wr != '-' else {})})
+                continue
+            if l.strip(): in_weapons = False
+        if not in_weapons and not DC_NOISE.search(l):
+            body.append(l)
+
+    abilities, actions = [], []
+    for col in twocol(body):
+        ab, ac = rules_of(col)
+        abilities += ab; actions += ac
+    return {'name': titlecase(name), 'apl': int(stats[0]), 'move': f'{stats[1]}"',
+            'save': f'{stats[2]}+', 'w': int(stats[3]), 'weapons': weapons,
+            'abilities': abilities, 'actions': actions,
+            **({'keywords': keywords} if keywords else {})}
+
+def parse_datacards(path):
+    got = {}
+    for b in dc_blocks(path):
+        o = parse_datacard(b)
+        if not o: continue
+        prev = got.get(o['name'])
+        if not prev:
+            got[o['name']] = o
+            continue
+        # the reverse of the card: merge its half in rather than picking a winner
+        for k in ('weapons', 'abilities', 'actions'):
+            for x in o[k]:
+                if x not in prev[k]: prev[k].append(x)
+        if o.get('keywords') and not prev.get('keywords'):
+            prev['keywords'] = o['keywords']
+    return list(got.values())
 
 def parse_operatives(path):
-    """Datacards print NAME above an APL/MOVE/SAVE/WOUNDS row."""
-    raw = open(path, encoding='utf-8').read()
-    ops, seen = [], set()
-    for page in raw.split('\f'):
-        lines = page.split('\n')
-        for i, l in enumerate(lines):
-            if 'APL' in l and 'MOVE' in l and 'SAVE' in l and 'WOUNDS' in l:
-                # name is the next non-empty all-caps line; stats the next numeric row
-                name = None
-                for j in range(i + 1, min(i + 5, len(lines))):
-                    s = lines[j].strip()
-                    if s and is_caps(s) and not STAT.match(lines[j]):
-                        name = s; break
-                stats = None
-                for j in range(i + 1, min(i + 6, len(lines))):
-                    m = STAT.match(lines[j])
-                    if m: stats = m; break
-                if name and stats:
-                    apl, move, save, w = stats.groups()
-                    key = name
-                    if key in seen: continue
-                    seen.add(key)
-                    ops.append({'name': titlecase(name), 'apl': int(apl),
-                                'move': f'{move}"', 'save': f'{save}+', 'w': int(w)})
-    return ops
+    """Just the stat line, which is all `Operative` holds. The rest rides in `datacards`."""
+    return [{k: o[k] for k in ('name', 'apl', 'move', 'save', 'w')} for o in parse_datacards(path)]
 
 ARCH_NAMES = [('SEEK & DESTROY', 'Seek & Destroy'), ('SECURITY', 'Security'),
               ('INFILTRATION', 'Infiltration'), ('RECON', 'Recon')]
@@ -332,11 +451,11 @@ def trim_common_affixes(names):
     return dict(zip(names, trimmed))
 
 def parse_faction(path):
-    ops = parse_operatives(path)
-    return {'archetypes': parse_archetypes(path), 'cards': parse_cards(path), 'operatives': ops}
+    dcs = parse_datacards(path)
+    ops = [{k: o[k] for k in ('name', 'apl', 'move', 'save', 'w')} for o in dcs]
+    return {'archetypes': parse_archetypes(path), 'cards': parse_cards(path),
+            'operatives': ops, 'datacards': dcs}
 
 if __name__ == '__main__':
     p = sys.argv[1]
-    print(json.dumps({'archetypes': parse_archetypes(p),
-                      'cards': parse_cards(p),
-                      'operatives': parse_operatives(p)}, indent=1)[:4000])
+    print(json.dumps(parse_faction(p), indent=1, ensure_ascii=False)[:4000])

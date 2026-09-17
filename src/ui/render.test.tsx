@@ -2,15 +2,15 @@ import { expect, test } from 'bun:test'
 import { renderToStaticMarkup as R } from 'react-dom/server'
 
 import { blankOperative, presetRoster } from '../rules'
-import { FACTIONS, loadFaction } from '../factions'
-import { allTeams, initialGame, reduce } from '../state'
+import { datacardOf, factionData, FACTIONS, loadFaction } from '../factions'
+import { allTeams, initialGame, reduce, teamOps } from '../state'
 import { Scoreboard } from './Scoreboard'
 import { Objectives } from './Objectives'
 import { ActivationOrder } from './ActivationOrder'
 import { TurnBar } from './TurnBar'
 import { TeamCard } from './TeamCard'
 import { Setup } from './Setup'
-import { Compendium, CompendiumBrowser } from './Compendium'
+import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 
 const noop = () => {}
@@ -117,6 +117,41 @@ test('a hand-built team with only GM cards gets a working deck instead of a dead
   const id = g.teams.boss.cards![0].id
   g = reduce(g, { type: 'cardPatch', teamId: 'boss', cardId: id, patch: { name: 'Butcher', text: 'Blood for the Blood God.' } })
   expect(R(<Compendium game={g} teamId="boss" />)).toContain('Blood for the Blood God.')
+})
+
+test("a player can read their own operatives' stats in the player view", () => {
+  // Strip the rules so `ops` is the only deck this team owns — it must then be the one that
+  // opens, rather than falling through to the universal equipment everybody shares.
+  const g = reduce(initialGame(), { type: 'teamPatch', teamId: 'dw', patch: { faction: undefined, archetypes: [] } })
+  const html = R(<Compendium game={g} teamId="dw" />)
+  expect(html).toContain('Watch Sergeant')
+  expect(html).toContain('Wounds')
+  expect(html).toContain('15/15') // hp over starting wounds, straight off the snapshot
+  expect(html).not.toContain('Ladder')
+})
+
+test("an operative's card carries its weapons, abilities and unique actions", () => {
+  const g = initialGame()
+  const kom = factionData('kom')
+  const nob = teamOps(g, 'kom').find((o) => o.name === 'Boss Nob')!
+  const html = R(<OperativeCard o={nob} st={g.ops[nob.id]} card={datacardOf(kom, nob.name)} kicker="Ork Kommandos" />)
+  expect(html).toContain('Power klaw') // weapon, with its ATK/HIT/DMG row
+  expect(html).toContain('5/7')
+  expect(html).toContain('Brutal, Shock') // the weapon rules column
+  expect(html).toContain('Krumpin') // ability
+  expect(html).toContain('1AP') // unique action, with its cost
+  expect(html).toContain('LEADER') // keywords line
+})
+
+// A hand-built team and the homebrew factions have no PDF, so no datacards. The card must
+// still render — it simply shows less.
+test('an operative with no datacard still renders its stats', () => {
+  const g = initialGame()
+  const nob = teamOps(g, 'kom')[0]
+  const html = R(<OperativeCard o={nob} st={g.ops[nob.id]} kicker="Ork Kommandos" />)
+  expect(html).toContain(nob.name)
+  expect(html).toContain('Wounds')
+  expect(html).not.toContain('Power klaw')
 })
 
 test('a boss operative renders in the roster editor with its kill value', () => {

@@ -522,6 +522,9 @@ const orderedIds = (g: Game, s: SideId) => {
 
 const sideTeams = (g: Game, s: SideId) => orderedIds(g, s).map((id) => g.teams[id])
 export const teamOps = (g: Game, teamId: string) => g.roster[teamId] ?? []
+
+/** Below half starting wounds: −2" Move and −1 to the weapon's Hit stat. Not an APL penalty. */
+export const injured = (o: Operative, st: OpState) => !st.dead && st.hp * 2 < o.w
 export const sideOps = (g: Game, s: SideId) => sideTeams(g, s).flatMap((t) => teamOps(g, t.id))
 
 /** Everything the side is fighting — one alliance's operatives, or several. */

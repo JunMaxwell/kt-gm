@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { blankOperative, CATALOGUE, killWorth, type Operative, slug, tacOp, teamTacOps } from '../rules'
-import { currentTeamId, type Order, orderCounts, pairEligible, pairTarget, readyCount, teamOps } from '../state'
+import { currentTeamId, injured, type Order, orderCounts, pairEligible, pairTarget, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
 import { type Dispatch, type Game, onInt, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -67,7 +67,6 @@ export function EditRow({ teamId, o, dispatch }: { teamId: string; o: Operative;
 export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispatch: Dispatch }) {
   const st = game.ops[o.id]
   if (!st) return null
-  const injured = !st.dead && st.hp * 2 < o.w
   const acts = Math.max(1, o.acts ?? 1)
 
   return (
@@ -109,7 +108,7 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
       <span className="shrink-0 text-xs tabular-nums text-ink/40" title={`${o.apl}AP · ${o.w}W`}>
         {o.move} {o.save}
       </span>
-      {injured && <span className="display shrink-0 rounded bg-recon px-1 text-xs text-white">inj</span>}
+      {injured(o, st) && <span className="display shrink-0 rounded bg-recon px-1 text-xs text-white">inj</span>}
       <Stepper
         value={st.hp}
         max={o.w}

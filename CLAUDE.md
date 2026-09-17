@@ -57,7 +57,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 |---|---|
 | `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula and cheat-sheet text |
 | `src/compendium.ts` | The three turning-point phases, the `RefCard` type, and universal equipment. The per-faction cards moved to `src/factions/` |
-| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards — one module each, plus `index.ts` holding the metadata and the loader |
+| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1196 weapons, 617 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
@@ -247,6 +247,12 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
 - **Keywords are highlighted by heuristic**, not by hand: `Rules` in `ui/kit.tsx` oranges any
   run of 3+ capitals, minus a `NOISE` stop-list (`APL`, `ATK`, `HIT`, `DMG`, `NAME`). Tagging
   97 cards by hand was not worth it. If a word highlights wrongly, add it to `NOISE`.
+- **`KtCard` carries `min-h-fit`, and it is load-bearing.** The carousel gives every card
+  `flex-1` inside a fixed-height slide, and a flex item will happily shrink below its content —
+  which, with `overflow-hidden` on the card, silently **clips** a long one. Two equipment cards
+  were already losing their bottom third before anyone noticed; the datacards made it obvious.
+  With `min-h-fit` the card grows instead and the slide's `overflow-y-auto` takes over. Measured
+  at 390: zero clipped cards across every deck.
 - **Panels are square-cornered**, controls stay rounded. The printed cards have no radius.
 - **The live card outline is the accent orange**, not a per-kind colour. The printed cards carry
   no coloured outline at all, so an invented palette read as off-brand; orange already means
@@ -631,6 +637,42 @@ Facts that cost time to establish, and will again if this is redone:
   the only place the NEMESIS *allegiance traits* could be found — the dossier defers to physical
   cards for those. Useful when a rule exists but is not in any free PDF.
 
+### The datacards
+
+`parse_datacards` reads everything the operative's card prints below its stat row: the weapon
+table, its abilities, its unique actions with their AP cost, and its keywords. Three things
+about that layout cost time and will again:
+
+- **A long datacard continues on the other side**, printing the same name twice — once with the
+  weapons, once with the abilities. The halves are **merged, never deduplicated to a winner**,
+  the same rule the rules cards follow.
+- **Abilities and unique actions can print in two columns, interleaved line by line.** So the
+  two-column test cannot ask for text on both sides of the *same* line; it counts how many
+  lines carry text on each side of the candidate gutter.
+- **A unique action's header puts its name and its AP cost at opposite ends of one line**, which
+  is exactly what a column finder mistakes for a gutter. Without the guard above, every action
+  gets folded into the ability printed above it. This was the one real bug in the parser.
+
+**0AP unique actions are real** — Kasrkin's Medikit, Exaction Squad's Apprehend — so nothing may
+assert `ap > 0`. A test pinned that assumption and the data was right, not the test.
+
+The extraction was validated by regenerating over the previous modules: **all 48 factions produce
+byte-identical `cards` and `operatives`**, 697 and 454 exactly as before, with the datacards as
+pure addition. That is the check to repeat if the parser is ever touched.
+
+**`Datacard` is deliberately not part of `Operative`.** A roster rides in every relay snapshot and
+every localStorage save, and this is reference text nobody edits — putting it on the operative
+would have added ~29KB to the wire on every debounced change. It lives in the faction module and
+is joined back on by name.
+
+**That join is by name because the two naming conventions cannot move.** The preset six field
+operatives under the short hand-curated `CATALOGUE` names (`Aegis`), while the PDFs print the
+full one (`Deathwatch Aegis Veteran`). `datacardOf` matches when a name's words appear as a
+contiguous run in the datacard's, and **the shortest such datacard wins** — without that, `Boy`
+matches all eight Kommandos from Breacha to Snipa. A trailing roster duplicate number
+(`Warrior 3`) is stripped first. Tests pin that every `CATALOGUE` entry and every
+`DEFAULT_ROSTER` operative resolves to exactly one datacard.
+
 **The completeness check is the 2024 format**: every team has exactly **4 strategy ploys, 4
 firefight ploys and 4 faction equipment**, and `state.test.ts` asserts it for all 48. Faction
 rules vary (1 for Scouts and Kommandos, 16 for Blades of Khaine, whose Aspect Shrines each get
@@ -639,6 +681,9 @@ Khaine `SEE REVERSE` — and are given all four, which the GM trims in Setup.
 
 `UNIVERSAL_EQUIPMENT` **is now populated** (10 cards) from the separate Universal Equipment
 download, which is why it was empty before: it is in the core rules, not on any team's card.
+**It is no longer shown anywhere.** `Gear` used to concatenate it onto every team's equipment,
+which meant a player opening a boss saw ladders and barricades before their own rules; the deck
+is faction equipment only now, and the constant survives as data nothing renders.
 
 The extraction was validated against the six decks that had been transcribed by hand: 72 of 83
 cards come back byte-identical after whitespace normalisation, and every difference that was
@@ -665,8 +710,8 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
 │   Whenever an operative is…  │
 └──────────────────────────────┘
           ○ ▬ ○ ○   2/4
- NOW   STRAT  FIRE  GEAR  RULES  TAC OP    ← bottom navigation
-  4      4     4     4      2      1
+ NOW  OPS  STRAT  FIRE  GEAR  RULES  TAC OP   ← bottom navigation
+  4    5     4     4     4      2      1
 ```
 
 - **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`). The page itself never
@@ -678,12 +723,20 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
   momentum swiping on a phone, trackpad swiping on a laptop and keyboard scrolling for free. The
   only JS is `Math.round(scrollLeft / clientWidth)` in `onScroll` to light the right dot — do
   not replace this with a JS carousel.
-- **Slides are laid out side by side, so every card in the deck is mounted.** A deck is at most
-  four cards, so this is cheaper than the remounting a windowed carousel would cost.
+- **Slides are laid out side by side, so every card in the deck is mounted.** A card deck is at
+  most four, and the `Ops` deck is one per operative — 11 for the Kommandos, the largest roster on
+  this table. Still cheaper than the remounting a windowed carousel would cost.
 - **Categories live in a bottom bar**, under the thumb, the way a native app puts primary
   navigation. Active item is the accent orange with a bar above it; each carries its card count.
 - **Tabs are only offered for decks that have cards.** `Now` disappears in the Initiative phase
   rather than sitting there dead; `live` falls back to the first surviving deck.
+- **The `Ops` deck is the player's own roster**, one `OperativeCard` per operative: the printed
+  APL / Move / Save / Wounds row, the live wound bar, the Injured and Conceal/Engage rules
+  written out rather than named, then the rest of the datacard — the weapon table, the
+  operative's abilities, its unique actions with their AP cost, and its keywords. It reads `teamOps` and `game.ops` straight off the snapshot, so
+  it needs no relay change — and it takes no `dispatch`, like every other slide. A team's own
+  operatives count as *own* content in `hasOwn`, so a team with a roster and no rules opens on its
+  models rather than falling through to the universal equipment everybody shares.
 - **The `Tac op` deck holds all six the team's archetypes allow, not just the chosen one**, with
   the chosen one sorted first and badged "Yours". An earlier cut showed only the picked op, so
   the tab vanished entirely when none was set — meaning a first-time player was never told they
@@ -748,17 +801,42 @@ dead one "counts as two operatives" for Kill Op scoring (`kv: 2`) — the rule s
 outright, where the house rule of thumb (wounds ÷ 7) would have said 3.
 
 Its source listed 17 equipment entries, 13 of them the **universal** equipment the app already
-ships and concatenates onto every deck; only the four faction ones were imported. Check that before
-importing any KTDash team, or every barricade appears twice.
+ships; only the four faction ones were imported. Check that before importing any KTDash team.
+
+Its five operatives' weapons and rules **used to be five `faction` cards** — the only place there
+was to put them — so the Rules deck carried five statlines nobody could act on while each
+operative's own card showed four bare numbers. They are `datacards` now, and `cards` is left at
+exactly the printed 2024 shape: 1 faction rule, 4 strategy, 4 firefight, 4 equipment.
 
 `src/factions/nemesis.ts` holds the shared core-rules card so the two bosses cannot drift apart.
 It exports no `cards`/`operatives`, so the faction loader never sees it.
 
+**All three hand-written factions export `datacards`**, in the same shape the extractor emits, so
+the player's Ops deck shows them like everyone else. For the bosses each trait is declared once in
+the module and spread into both the Rules card and the datacard — the same anti-drift reason
+`nemesis.ts` exists.
+
+**The completeness guard for this is deliberately NOT scoped to `custom`.** The 4/4/4 card-format
+guard is, because homebrew is not bound by the printed layout — but every operative needs its own
+weapons and rules whoever wrote it, and scoping that check is exactly what let all three
+hand-written factions ship with no datacards while the other 48 had them. 51 factions, 461
+operatives, 1217 weapons, 476 abilities, 159 unique actions, and a test that fails on any gap.
+
+**Neither has a single strategy or firefight ploy, and that is correct.** A nemesis operative
+*accompanies* a kill team rather than being one — the dossier's own intro says a kill team fielding
+one "will have fewer operatives than normal to accompany it" — so the ploys come from the team it
+joins, and cannot target the boss anyway because it has **no faction keyword**. The Custom Builder
+has no ploy step. If this match wants ploys for a boss, they are **homebrew**: the GM writes them
+in Setup, where the card editor already offers all four card kinds.
+
 ### Still unread
 
-The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46) and the
-team-size reduction a nemesis operative imposes on the kill team accompanying it. Both are in the
-dossier; neither has been transcribed.
+The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46), and the exact
+team-size reduction a nemesis operative imposes — the intro (pg 6) confirms it exists and is keyed
+to the boss's size, but the number itself has not been read.
+
+**The dossier is a scan** — 80 pages from an HP MFP with no text layer, so `pdftotext` returns
+nothing at all and the extractor cannot touch it. Read it as page images, or OCR it first.
 
 ## The console layout
 
@@ -847,10 +925,10 @@ the typed absolute into a delta, so the `wound` action and its clamp are unchang
   completeness check (4/4/4 per team) and the 72/83 match against the hand transcription are the
   only evidence. Long cards that print a table — Forward Scouting, Chapter Tactics, Kauyon — are
   the ones most likely to read oddly.
-- **Operative weapons are still not modelled.** The extractor reads APL/Move/Save/Wounds off a
-  datacard but skips the weapon table, so nothing in the app can tell a player what they are
-  shooting with. A GM card is the workaround — and for a boss it is the only channel at all,
-  since the player view shows no operative stats.
+- **Nothing a datacard prints is modelled beyond the card itself.** Weapons, abilities, unique
+  actions and keywords are all extracted, and the two NEMESIS bosses carry hand-written ones.
+  Points costs are parsed and then dropped: this app does not do list building. Neither boss has
+  ploys, which is the format, not a gap — see **Nemesis operatives**.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.

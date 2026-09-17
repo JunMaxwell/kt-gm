@@ -7,7 +7,7 @@
 // A faction whose module is statically imported is folded into the main bundle rather than
 // split, which is exactly what the preset six want, so the two maps below do not conflict.
 import type { Archetype, Operative } from '../rules'
-import type { RefCard } from '../compendium'
+import type { Datacard, RefCard } from '../compendium'
 
 import * as aod from './aod'
 import * as dw from './dw'
@@ -16,7 +16,8 @@ import * as rav from './rav'
 import * as sct from './sct'
 import * as xv26 from './xv26'
 
-export type FactionData = { cards: RefCard[]; operatives: Operative[] }
+/** `datacards` is optional: a hand-written faction has none, and that is a normal state. */
+export type FactionData = { cards: RefCard[]; operatives: Operative[]; datacards?: Datacard[] }
 export type FactionMeta = {
   id: string
   name: string
@@ -167,6 +168,45 @@ export const loadFaction = async (id?: string): Promise<FactionData | undefined>
   const chunk = CHUNKS[id]
   if (!chunk) return undefined
   const mod = await chunk()
-  cache[id] = { cards: mod.cards, operatives: mod.operatives }
+  cache[id] = { cards: mod.cards, operatives: mod.operatives, datacards: mod.datacards }
   return cache[id]
+}
+
+const words = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+
+/**
+ * The datacard for a roster operative, or undefined.
+ *
+ * The join is by name because the two conventions differ and neither can move: the preset six
+ * keep the SHORT hand-curated `CATALOGUE` names the default rosters are built from ("Aegis"),
+ * while the PDFs print the full one ("Deathwatch Aegis Veteran"). So a name matches when its
+ * words appear as a contiguous run in the datacard's, and the SHORTEST such datacard wins —
+ * without that, "Boy" matches every Kommando from Breacha to Snipa.
+ *
+ * Verified against the real data: every `CATALOGUE` entry and every `DEFAULT_ROSTER` operative
+ * across all six preset factions resolves to exactly one datacard.
+ */
+export const datacardOf = (data: FactionData | undefined, name: string): Datacard | undefined => {
+  const cards = data?.datacards
+  if (!cards?.length) return undefined
+  // a roster duplicate is "Warrior 2"; its datacard is just "Warrior"
+  const want = words(name.replace(/\s+\d+$/, ''))
+  if (!want.length) return undefined
+
+  let best: Datacard | undefined
+  let bestLen = Infinity
+  for (const c of cards) {
+    const have = words(c.name)
+    if (have.length >= bestLen) continue
+    if (have.some((_, i) => want.every((w, k) => have[i + k] === w))) {
+      best = c
+      bestLen = have.length
+    }
+  }
+  return best
 }

@@ -15,9 +15,20 @@
 //
 // The allegiance trait text is NOT in the dossier — the book defers to separate allegiance cards.
 // It came from KTDash's API (see CLAUDE.md).
-import type { RefCard } from '../compendium'
+import type { Datacard, RefCard } from '../compendium'
 import type { Operative } from '../rules'
 import { nemesisCore } from './nemesis'
+
+// Each trait is written once and used by both the Rules card and the datacard below. Two
+// copies of a rules paragraph is two things to keep in step — the same reason nemesis.ts exists.
+const ALLEGIANCE = {
+  name: 'Let the Galaxy Burn',
+  text: 'Allegiance trait — CHAOS.\nWhenever a friendly CHAOS NEMESIS operative is wholly within enemy territory, its weapons have the Balanced weapon rule.',
+}
+const TRAIT = {
+  name: 'Fury',
+  text: 'Nemesis trait.\nThis operative’s melee weapons have the Ceaseless weapon rule; if a weapon already has that rule, it has the Relentless weapon rule instead. Worsen the Hit stat of this operative’s ranged weapons by 1 — Angron carries none, so this costs him nothing.',
+}
 
 export const cards: RefCard[] = [
   {
@@ -26,15 +37,30 @@ export const cards: RefCard[] = [
     text: 'CONTROL 6 · MOVE 6" · SAVE 4+ · 75 WOUNDS.\nKeywords: CHAOS, KHORNE, DAEMON, NEMESIS, ANGRON.\n— Spinegrinder (chain weapon): ATK 5, HIT 3+, DMG 5/6. Brutal, Rending.\n— Samni’arius (power weapon): ATK 4, HIT 3+, DMG 5/7. Lethal 5+.\nHis third weapon selection is Paired weapon: Spinegrinder’s ATK already includes the +1 it grants. Both weapons are chained to his wrists in true Nucerian style.',
   },
   nemesisCore('Large'),
+  { kind: 'faction', ...ALLEGIANCE },
+  { kind: 'faction', ...TRAIT },
+]
+
+// The same shape the extractor emits for a printed datacard, so the player's Ops deck shows
+// Angron the way it shows everyone else. Without this the two bosses — the operatives whose
+// rules matter most — would be the only ones reduced to four bare numbers.
+export const datacards: Datacard[] = [
   {
-    kind: 'faction',
-    name: 'Let the Galaxy Burn',
-    text: 'Allegiance trait — CHAOS.\nWhenever a friendly CHAOS NEMESIS operative is wholly within enemy territory, its weapons have the Balanced weapon rule.',
-  },
-  {
-    kind: 'faction',
-    name: 'Fury',
-    text: 'Nemesis trait.\nThis operative’s melee weapons have the Ceaseless weapon rule; if a weapon already has that rule, it has the Relentless weapon rule instead. Worsen the Hit stat of this operative’s ranged weapons by 1 — Angron carries none, so this costs him nothing.',
+    name: 'Angron',
+    weapons: [
+      { name: 'Spinegrinder (chain weapon)', atk: 5, hit: '3+', dmg: '5/6', wr: 'Brutal, Rending' },
+      { name: 'Samni’arius (power weapon)', atk: 4, hit: '3+', dmg: '5/7', wr: 'Lethal 5+' },
+    ],
+    abilities: [
+      TRAIT,
+      ALLEGIANCE,
+      {
+        name: 'Paired Weapon',
+        text: 'His third weapon selection. Spinegrinder’s ATK already includes the +1 it grants — both weapons are chained to his wrists in true Nucerian style.',
+      },
+    ],
+    actions: [],
+    keywords: ['CHAOS', 'KHORNE', 'DAEMON', 'NEMESIS', 'ANGRON'],
   },
 ]
 
