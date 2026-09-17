@@ -40,6 +40,8 @@ export const FACTIONS: FactionMeta[] = [
   // NEMESIS operatives, built with the official Custom Builder. See src/factions/nemesis.ts.
   { id: 'angron', name: 'Angron (Large Nemesis)', archetypes: ['Seek & Destroy'], color: '#8a1111', custom: true },
   { id: 'farsight', name: 'Commander Farsight (Medium Nemesis)', archetypes: ['Seek & Destroy'], color: '#b8621a', custom: true },
+  // Homebrew kill team from KTDash. See the header of src/factions/companions.ts.
+  { id: 'companions', name: 'Companions of the Emperor', archetypes: ['Seek & Destroy', 'Security'], color: '#c8a03c', custom: true },
   { id: 'aod', name: "Angels of Death", archetypes: ['Security', 'Seek & Destroy'], color: '#0066a5', preset: true },
   { id: 'battleclade', name: "Battleclade", archetypes: ['Infiltration', 'Recon'], color: '#5a5a7a' },
   { id: 'blades-of-khaine', name: "Blades of Khaine", archetypes: ['Seek & Destroy', 'Security', 'Infiltration', 'Recon'], color: '#5a5a7a' },
@@ -103,6 +105,7 @@ const BUNDLED: Record<string, FactionData> = {
 
 const CHUNKS: Record<string, () => Promise<FactionData>> = {
   angron: () => import('./angron'),
+  companions: () => import('./companions'),
   farsight: () => import('./farsight'),
   'battleclade': () => import('./battleclade'),
   'blades-of-khaine': () => import('./blades-of-khaine'),

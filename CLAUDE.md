@@ -740,6 +740,17 @@ Things that are easy to get wrong, and were:
 - **Allegiance trait text is not in the dossier.** It lives on separate cards; KTDash's API is
   where this repo got it.
 
+**Companions of the Emperor** (`companions.ts`) is the third hand-written module — a homebrew
+Adeptus Custodes team transcribed from KTDash's JSON API, plus a **Custodian Warden** designed here
+and labelled as such on its own card. Two things its faction rule decides rather than the author:
+*The Emperor's Finest* says operatives activate **twice** per turning point (`acts: 2`) and that a
+dead one "counts as two operatives" for Kill Op scoring (`kv: 2`) — the rule states the kill value
+outright, where the house rule of thumb (wounds ÷ 7) would have said 3.
+
+Its source listed 17 equipment entries, 13 of them the **universal** equipment the app already
+ships and concatenates onto every deck; only the four faction ones were imported. Check that before
+importing any KTDash team, or every barricade appears twice.
+
 `src/factions/nemesis.ts` holds the shared core-rules card so the two bosses cannot drift apart.
 It exports no `cards`/`operatives`, so the faction loader never sees it.
 
