@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { type Operative, tacOp, teamTacOps } from '../rules'
 import { cardsOfKind, type Datacard, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, weaponRules } from '../compendium'
-import { datacardOf, FACTIONS } from '../factions'
+import { datacardOf } from '../factions'
 import { allTeams, injured, type OpState, teamOps } from '../state'
 import { KtCard, Rules } from './kit'
 import { type Game, useFaction } from './shared'
@@ -130,7 +130,7 @@ export function OperativeCard({
               ? 'Cannot Shoot, Charge or counteract; not a valid target while in cover.'
               : 'Acts normally, and can counteract.'}
             {/* Towering Size, Sneaky Zogger, Stoopid — the order is a stat here, not a choice. */}
-            {o.lockOrder && <b className="text-flare"> Always — a rule on its datacard locks it.</b>}
+            {o.lockOrder && <b className="text-flare"> Always in Engage Order.</b>}
           </span>
         </p>
       )}
@@ -196,7 +196,17 @@ export function OperativeCard({
           push the operative's OWN abilities below the fold. `<details>` rather than state
           because it is native, and because this view still takes no `dispatch`. */}
       {!!glossary.length && (
-        <details className="mt-2.5 border-t border-black/15 pt-1.5">
+        <details
+          className="mt-2.5 border-t border-black/15 pt-1.5"
+          // Opening a disclosure has to REVEAL it. This sits at the bottom of the tallest card in
+          // the app, so expanding it almost always lands the new text below the fold — and the
+          // `more ▾` pill only tells you it is there, which is not the same as showing you. The
+          // slide is the nearest scroll container, so `block: 'nearest'` scrolls it the minimum
+          // needed and does nothing when the content already fits.
+          onToggle={(e) =>
+            e.currentTarget.open && e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+          }
+        >
           <summary className="display cursor-pointer text-[11px] tracking-wider text-flare">
             Weapon rules ({glossary.length})
           </summary>
@@ -262,6 +272,12 @@ function Slide({ children }: { children: React.ReactNode }) {
     check()
     const ro = new ResizeObserver(check)
     ro.observe(el)
+    // ...and the CARD, which is the only thing that grows when a `<details>` inside it opens. The
+    // slide's own box never changes then, and a native toggle re-renders no React, so neither the
+    // `children` key nor an observer on `el` fires — measured: 33px below the fold with the hint
+    // still down, on the one interaction that most needs it. Watching both covers content growing
+    // (the card) and the viewport changing under it (the slide).
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
     return () => ro.disconnect()
   }, [children])
 
@@ -459,41 +475,43 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
   )
 }
 
-/** The GM's copy: same cards, any team, tucked in a collapsible beside the ops browser. */
+/** The GM's copy: same cards, any team, in the reference drawer's Ploys & equipment tab. */
 export function CompendiumBrowser({ game }: { game: Game }) {
   const teams = allTeams(game)
   const [pick, setTeamId] = useState('')
   // Validated at render, not once at mount: setup can delete the team under us.
   const teamId = teams.some((t) => t.id === pick) ? pick : (teams[0]?.id ?? '')
-  const total = FACTIONS.length
 
   return (
-    <details className="mx-4 mb-4 overflow-hidden border border-rule bg-paper shadow-sm">
-      <summary className="display cursor-pointer kt-rule bg-card px-3 py-2 text-xl text-white">
-        Ploys &amp; equipment ({total} factions)
-      </summary>
-      <div className="p-3">
-        <div className="mb-3 flex flex-wrap items-center gap-1">
-          {teams.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTeamId(t.id)}
-              className="display rounded px-2 py-1 text-sm"
-              style={
-                teamId === t.id
-                  ? { background: t.color, color: t.ink ? '#282c34' : '#fff' }
-                  : { background: 'rgba(0,0,0,.05)', color: '#282c34' }
-              }
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
-        {/* The carousel is flex-1, so inside a collapsible it needs a height to fill. */}
-        <div className="flex h-[26rem]">
-          <Compendium game={game} teamId={teamId} />
-        </div>
+    <div className="p-3">
+      <div className="mb-3 flex flex-wrap items-center gap-1">
+        {teams.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTeamId(t.id)}
+            className="display rounded px-2 py-1 text-sm"
+            style={
+              teamId === t.id
+                ? { background: t.color, color: t.ink ? '#282c34' : '#fff' }
+                : { background: 'rgba(0,0,0,.05)', color: '#282c34' }
+            }
+          >
+            {t.name}
+          </button>
+        ))}
       </div>
-    </details>
+      {/*
+        The phone gives `Compendium` a fixed viewport because the page there must not scroll. The
+        GM's console already scrolls, so a fixed box here only ever hid card from him: at 26rem a
+        third of Angron's Ops card was below the fold, and even at 40rem the Intercessor Sergeant
+        (nine weapons and two long abilities) overflowed by 90px with nothing but a tiny `more`
+        pill sitting on top of a line of body text to say so. No fixed height — the drawer grows to
+        the card and the page takes the scroll, which is what a reference drawer should do. The cap
+        is only so one pathological card cannot fill the screen.
+      */}
+      <div className="flex max-h-[85vh]">
+        <Compendium game={game} teamId={teamId} />
+      </div>
+    </div>
   )
 }

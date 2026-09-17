@@ -870,7 +870,13 @@ test('the NEMESIS bosses carry a datacard with their weapons and traits', async 
     // the nemesis trait and the allegiance trait, the same objects the Rules cards use
     expect(card!.abilities.length).toBeGreaterThanOrEqual(2)
     expect(card!.keywords).toContain('NEMESIS')
-    for (const a of card!.abilities) expect(f.cards.some((c) => c.text === a.text) || a.name === 'Paired Weapon').toBe(true)
+    // The invariant is ANTI-DRIFT, not coverage: an ability that also has a Rules card must be the
+    // same object, which is why each trait is declared once in the module and spread into both. An
+    // ability with no card is legitimate — Angron's No Escape is deliberately datacard-only.
+    for (const a of card!.abilities) {
+      const twin = f.cards.find((c) => c.name === a.name)
+      if (twin) expect([id, a.name, twin.text]).toEqual([id, a.name, a.text])
+    }
   }
 })
 

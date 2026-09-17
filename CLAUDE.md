@@ -904,11 +904,23 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
   - **The effect keys on `children`, not `[]`.** Slides are keyed by index, so switching deck
     swaps the card inside the *same* slide, and `flex-1` stretches most cards to an identical box
     — so a `ResizeObserver` fires nothing and a stale `more` carries across. The observer is kept
-    only for the viewport changing under a card that did not re-render, i.e. rotating the phone.
+    for the viewport changing under a card that did not re-render, i.e. rotating the phone — **and
+    it observes the CARD as well as the slide.** A `<details>` opening inside the card (the weapon
+    rules glossary) grows the card and nothing else: the slide's own box is unchanged, and a native
+    toggle re-renders no React, so neither the `children` key nor an observer on the slide fires.
+    Measured: 33px below the fold with the hint still down, on the one interaction that most needs
+    it. Watching both covers content growing *and* the viewport changing under it.
   - `MORE_SLACK` is 24px, one line: several cards clear the fold by two or three pixels of
     rounding, and promising more when there is none is worse than staying quiet.
 
-- **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`). The page itself never
+- **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`), and that fixed viewport is
+  **correct here and wrong in the GM drawer** — a phone's page must not scroll, a console's already
+  does. Re-verified after the drawer was un-fixed, at 360x740 / 390x844 / 430x932 across all six
+  decks: `scrollWidth - clientWidth` **0** and `scrollHeight - clientHeight` **0** at every size,
+  nothing clipped anywhere. Only the Ops deck overflows its slide (operative cards are the tallest
+  in the app) and the `more ▾` pill shows on exactly those — 2 cards at 360, 1 at 390, 1 at 430.
+  Opening the weapon-rules `<details>` at 390 scrolls itself in and the **last** of seven rules is
+  fully visible. The page itself never
   scrolls on a phone — re-measured at 390 with three alliances: `scrollWidth` 390, and the only
   elements extending past the viewport are the carousel's own slides inside the horizontally
   scrolling rail, which is the swipe surface working as intended.
@@ -962,9 +974,46 @@ and this did not need to be the first: what sits behind the picker is the deck t
 reading by mistake, so replacing it outright is the point.
 
 The GM reaches the same decks through `CompendiumBrowser`: one collapsible in the console with a
-team chip row above the same `Compendium`, **wrapped in a fixed `h-[26rem]`** because the
+team chip row above the same `Compendium`, **wrapped in `h-[min(40rem,75vh)]`** because the
 carousel is `flex-1` and needs a height to fill inside a collapsible. Shared component,
 different frame — the GM is looking things up for other people, not playing a hand.
+
+**The GM drawer had a fixed height for three versions and it was wrong every time.** It was
+`h-[26rem]`, then `h-[min(40rem,75vh)]`, and the user reported card still hidden after both —
+correctly. The mistake was treating it as a sizing number to tune: **the phone needs a fixed
+viewport because its page must not scroll, and the GM's console scrolls already**, so any fixed box
+here can only ever hide card from him. There is now no height, just `max-h-[85vh]` so one
+pathological card cannot fill the screen. Measured across 3 teams x 5 decks: at 1512x982 **every**
+deck is 0 hidden, 0 clipped, 0 pills; at 1280x720 only the Intercessor Sergeant still overflows and
+the pill correctly appears.
+
+Two things this cost, worth remembering:
+
+- **The Intercessor Sergeant, not a boss, is the tallest card in the app** — nine weapons plus
+  *Doctrine Warfare* and *Chapter Veteran*, 651px. Size this frame against him, not against Angron.
+- **A measurement said the pill was rendering and the user still could not find it.** Screenshotting
+  the slide showed why: it is a small dark chip that lands **on top of a line of body text**, where
+  it reads as a smudge rather than an affordance. `pill: true` answers "did it render", never "did
+  anyone see it" — look at the pixels before trusting a boolean about a UI hint.
+
+**Measure the pill with `span.sticky`, not `textContent.includes('more')`.** The naive check reports
+a false positive on any card whose prose contains the word — it claimed a pill on cards that had
+none, which nearly sent this fix the wrong way.
+
+**Opening a disclosure scrolls it into view, and that is the fix the other two only set up for.**
+The weapon-rules `<details>` sits at the bottom of the tallest card in the app, so expanding it
+almost always lands the new text below the fold. A taller drawer and a working `more ▾` pill both
+help, but neither *shows* you what you just clicked — the user reported it still hidden after both.
+`onToggle` → `scrollIntoView({ block: 'nearest' })` on the `<details>`: the slide is the nearest
+scroll container, so it scrolls the minimum needed and does nothing when the content already fits.
+Measured at 1440x900, 1280x720 and 1512x982 — the **last** rule in the list is fully visible after
+opening at all three, including the case where the summary itself was off-screen beforehand.
+
+**Growing the frame is not the general fix, and must not be mistaken for one.** A `<details>` inside
+a card can always push past whatever height the drawer has — at 1280x720 the drawer is 540px and
+Angron's card overflows it even collapsed. The height change stops the *default* state hiding a
+third of a boss card; the `more ▾` pill is what makes any remaining overflow discoverable, which is
+why the observer bug above mattered more than the height did.
 
 ## Nemesis operatives (the bosses)
 
@@ -1095,10 +1144,35 @@ keyword, because a ploy worded "a friendly X operative" could never select him.
 
 | Strategy | Firefight |
 |---|---|
-| *Blood Tithe* — **0CP**, 5 damage → 2CP, once per TP | *Blood for the Blood God* — heal D3+3 on a kill, once per TP |
-| *Heedless Onslaught* — +2" Move and +3" on a Charge, Save worsened by 1 | *No Escape* — free Fight when an enemy Falls Back out of control range |
+| *Blood Tithe* — **0CP**, 5 damage → 2CP, once per TP | *Reborn from Blood* — **0CP**, spend all CP, return at 20W, once per **battle** |
+| *Heedless Onslaught* — +2" Move and +3" on a Charge, Save worsened by 1 | *Blood for the Blood God* — heal D3+3 on a kill, once per TP |
 | *No Sanctuary* — enemies within 6" cannot be given Conceal | *Relentless Carnage* — the wound ladder, below |
-| *Unkillable Rage* — survive incapacitation at 10W, once per **battle** | *Butcher's Frenzy* — +3 Atk for one fight, no Fall Back that TP |
+| *Bring Down the Walls* — D3+3 a turn to anyone sheltering in terrain he cannot enter | *Butcher's Frenzy* — +3 Atk for one fight, no Fall Back that TP |
+
+Plus one **ability**: **No Escape is not a ploy, and it lives ONLY on the Ops datacard.** Always
+on, free, beside *Fury* and *Implacable* — an enemy Falling Back out of his control range eats a
+free Fight action. It was a firefight ploy until the user moved it, which is a real buff (it cost
+1CP at a moment his player rarely had CP spare) and which is what opened the fourth firefight slot
+for *Reborn from Blood*. Its text is labelled "Homebrew ability" outright, because the format's own
+abilities are the two nemesis traits and nothing else.
+
+**It is the one ability not also spread into `cards`,** and that broke a test worth understanding.
+`state.test.ts` asserted every boss datacard ability also appeared as a Rules card, with a
+hardcoded `'Paired Weapon'` exception — stale since Angron dropped that selection. The real
+invariant is **anti-drift**: an ability that *also* has a Rules card must be the same text, which is
+why each trait is declared once per module and spread into both. Coverage was never the point, so
+the test now checks the twin only when a twin exists, and needs no name list to maintain. Fury,
+Implacable and the allegiance trait stay in both places because they are format rules a player reads
+beside the core-rules card; No Escape is just something Angron does, so it belongs with his weapons.
+
+**Bring Down the Walls is the terrain answer, and it exists because of a rules fact.** Towering Size
+lets him through terrain under 2" tall and **hatchways only**; Bulky bars him from Vantage above 2".
+So a Volkus ruin can simply be somewhere a 100mm base cannot go, and pg 14 says as much — *"larger
+bases (in particular 100mm or more) can be awkward as there may be locations where the operative
+cannot be placed"*. Rather than bend a core rule, the ploy lets him collapse the structure: select
+one terrain feature within 6" he cannot move through, and anyone ending an activation wholly inside
+it takes D3+3. It deliberately does **not** overlap *No Sanctuary*, which denies the Conceal *order*
+rather than punishing the position.
 
 **Check every new boss card against `nemesisCore` before writing it.** *Heedless Onslaught*
 shipped granting "move through enemy operatives", which **Bulky already grants** — the user caught
@@ -1131,6 +1205,14 @@ replaced a flat D3+3 area hit the user judged too strong: 3 / 6 / 10 damage to A
 two hits, or two hits at 4" for 0CP (that tier once per turning point). *Blood Tithe* runs it the
 other way, 5 damage for 2CP. Both require he have strictly **more** wounds remaining than the cost,
 so neither can kill him, and both walk a 75W boss toward Injured — the cost is real.
+
+**A boss ploy that says "control range" has to say WHICH one.** Bulky widens control range to 1"
+horizontal / 4" vertical, but only *"whenever this operative would perform the Fight action"* — so
+a ploy triggering at any other moment silently gets the normal 1". *Relentless Carnage* fires at the
+**end of an activation**, which meant Angron could reach up into a window to fight and then have the
+area hit miss the operative he had just punched. It now names the Bulky distances outright. Cards
+that trigger *on* a Fight (*Butcher's Frenzy*, *No Escape*) need no such note, because the Fight
+action carries the reach itself.
 
 **`RefCard.cp` exists because of `Blood Tithe`, and it is not cosmetic.** `RefCardView` dims a ploy
 the team cannot afford and badges it `need 1CP`; a 0CP ploy without the field greys itself out at
@@ -1216,7 +1298,7 @@ every earlier version of this file. Its ranged twin is Twinned weapon (pg 17), g
 holds HIT 3+ on both weapons down to his last wound while Injured still costs him 2" of Move. That
 was the user's pick over *Tenacious* (the mirror: keep the Move, lose the Hit) and over taking both,
 which would have cost a second selection and therefore Samni'arius outright. It matters more than
-it looks, because **two of his ploys wound him on purpose** and *Unkillable Rage* leaves him at 10W
+it looks, because **two of his ploys wound him on purpose** and *Reborn from Blood* leaves him at 20W
 — the Injured band is where this build expects to live.
 
 **The dossier is a scan** — 80 pages from an HP MFP with no text layer, so `pdftotext` returns

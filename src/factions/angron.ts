@@ -33,9 +33,17 @@ const FURY = {
   name: 'Fury',
   text: 'Nemesis trait.\nThis operative’s melee weapons have the Ceaseless weapon rule; if a weapon already has that rule, it has the Relentless weapon rule instead. Worsen the Hit stat of this operative’s ranged weapons by 1 — Angron carries none, so this costs him nothing.',
 }
+// The one ability that is NOT also spread into `cards`. Fury, Implacable and the allegiance trait
+// appear in both because they are format rules a player needs beside the core-rules card; No Escape
+// is just something Angron does, so it lives on his datacard and nowhere else. The Rules deck was
+// six cards deep and this is the one that belongs with his weapons instead.
+const NO_ESCAPE = {
+  name: 'No Escape',
+  text: 'Homebrew ability — not part of the Nemesis format.\nWhenever an enemy operative within this operative’s control range performs the Fall Back action, before that operative moves, this operative can perform a free Fight action against it. Nothing disengages from Angron by walking away.',
+}
 const IMPLACABLE = {
   name: 'Implacable',
-  text: 'Nemesis trait — the second one, bought with his unspent third weapon selection.\nIgnore any changes to this operative’s weapon stats from being injured. Angron keeps HIT 3+ on both weapons all the way down to his last wound; Injured still costs him the 2" of Move.',
+  text: 'Nemesis trait - bought with his unspent third weapon selection.\nIgnore any changes to this operative’s weapon stats from being injured. Angron keeps HIT 3+ on both weapons all the way down to his last wound; Injured still costs him the 2" of Move.',
 }
 
 export const cards: RefCard[] = [
@@ -78,12 +86,19 @@ export const cards: RefCard[] = [
     name: 'No Sanctuary',
     text: 'Use this strategy ploy. Until the end of the turning point, whenever you determine an enemy operative\u2019s order, if it is within 6" of Angron you cannot select Conceal. Nothing hides from the Red Angel.',
   },
+
   {
     kind: 'strategy',
-    name: 'Unkillable Rage',
-    text: 'Use this strategy ploy. The first time Angron would be incapacitated this turning point, he is not: set his wounds remaining to 10 instead. Once per battle.',
+    name: 'Bring Down the Walls',
+    text: 'Use this strategy ploy. Select one terrain feature within 6" of Angron that he cannot move through. Until the end of the turning point, at the end of each enemy operative’s activation, if that operative is wholly within that terrain feature, inflict D3+3 damage on it. He cannot reach them, so he brings the building down on them instead.',
   },
 
+  {
+    kind: 'firefight',
+    cp: 0,
+    name: 'Reborn from Blood',
+    text: 'Use this firefight ploy the first time Angron would be incapacitated during a turning point, before he is removed from the killzone. Spend all your remaining CP. If you do, he is not incapacitated: set his wounds remaining to 20. Once per battle.',
+  },
   {
     kind: 'firefight',
     name: 'Blood for the Blood God',
@@ -91,14 +106,9 @@ export const cards: RefCard[] = [
   },
   {
     kind: 'firefight',
-    name: 'No Escape',
-    text: 'Use this firefight ploy when an enemy operative within Angron’s control range performs the Fall Back action, before it moves. Angron performs a free Fight action against that operative.',
-  },
-  {
-    kind: 'firefight',
     name: 'Relentless Carnage',
     text:
-      'Use this firefight ploy at the end of Angron’s activation. Select one option below, then inflict that many damage on Angron and resolve its effect. You cannot select an option unless he has MORE wounds remaining than it costs — the Butcher’s Nails take their due before the enemy does.\n' +
+      'Use this firefight ploy at the end of Angron’s activation. Select one option below, then inflict that many damage on Angron and resolve its effect. You cannot select an option unless he has MORE wounds remaining than it costs — the Butcher’s Nails take their due before the enemy does. Measure his control range for this ploy using the 1" horizontal and 4" vertical distances from his BULKY rule, so he reaches up into the floor above him as readily as across the one he stands on.\n' +
       '• 3 damage — inflict D3+3 damage on each enemy operative within his control range.\n' +
       '• 6 damage — inflict D3+3 damage TWICE on each enemy operative within his control range.\n' +
       '• 10 damage — as the 6 damage option, but on each enemy operative within 4" of him instead of his control range. This use of the ploy costs 0CP, and you can select this option only once per turning point.',
@@ -119,7 +129,7 @@ export const datacards: Datacard[] = [
       { name: 'Spinegrinder (chain weapon)', atk: 4, hit: '3+', dmg: '5/6', wr: 'Brutal, Rending' },
       { name: 'Samni’arius (power weapon)', atk: 4, hit: '3+', dmg: '5/7', wr: 'Lethal 5+' },
     ],
-    abilities: [FURY, IMPLACABLE, ALLEGIANCE],
+    abilities: [FURY, IMPLACABLE, NO_ESCAPE, ALLEGIANCE],
     actions: [],
     keywords: ['CHAOS', 'KHORNE', 'DAEMON', 'NEMESIS', 'ANGRON', 'TOWERING'],
   },
