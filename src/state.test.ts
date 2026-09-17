@@ -418,9 +418,38 @@ test('operatives start on Conceal and flip individually', () => {
   let g = initialGame()
   const [first] = teamOps(g, 'kom')
   expect(g.ops[first.id].order).toBe('conceal')
-  expect(orderCounts(g, 'kom')).toEqual({ conceal: 11, engage: 0 })
-  g = reduce(g, { type: 'order', opId: first.id, value: 'engage' })
+  // 10 of the 11 Kommandos — the Bomb Squig is Stoopid and can never take a Conceal order
   expect(orderCounts(g, 'kom')).toEqual({ conceal: 10, engage: 1 })
+  g = reduce(g, { type: 'order', opId: first.id, value: 'engage' })
+  expect(orderCounts(g, 'kom')).toEqual({ conceal: 9, engage: 2 })
+})
+
+// Towering Size, Sneaky Zogger and Stoopid are stats on the datacard, not calls the GM makes,
+// so the reducer refuses them outright. A boss quietly left on Conceal after a mis-tap would
+// be barred from counteracting for the rest of the turning point.
+test('an operative locked to one order cannot be moved off it', async () => {
+  let g = initialGame()
+  const grot = teamOps(g, 'kom').find((o) => o.name === 'Grot')!
+  const squig = teamOps(g, 'kom').find((o) => o.name === 'Bomb Squig')!
+  expect([grot.lockOrder, squig.lockOrder]).toEqual(['conceal', 'engage'])
+  expect([g.ops[grot.id].order, g.ops[squig.id].order]).toEqual(['conceal', 'engage'])
+
+  // individually
+  g = reduce(g, { type: 'order', opId: grot.id, value: 'engage' })
+  g = reduce(g, { type: 'order', opId: squig.id, value: 'conceal' })
+  expect([g.ops[grot.id].order, g.ops[squig.id].order]).toEqual(['conceal', 'engage'])
+
+  // and a whole-team sweep leaves them where they are
+  g = reduce(g, { type: 'teamOrder', teamId: 'kom', value: 'engage' })
+  expect(g.ops[grot.id].order).toBe('conceal')
+  g = reduce(g, { type: 'teamOrder', teamId: 'kom', value: 'conceal' })
+  expect(g.ops[squig.id].order).toBe('engage')
+
+  // every NEMESIS operative has Towering Size, whatever its size
+  for (const id of ['angron', 'farsight']) {
+    const o = (await loadFaction(id))!.operatives[0]
+    expect([id, o.lockOrder]).toEqual([id, 'engage'])
+  }
 })
 
 test('setting a team order skips the dead and survives a new turning point', () => {

@@ -94,9 +94,9 @@ Two conventions the split rests on:
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v16`). Any change to
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v17`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-sixteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+seventeen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -822,6 +822,29 @@ weapons and rules whoever wrote it, and scoping that check is exactly what let a
 hand-written factions ship with no datacards while the other 48 had them. 51 factions, 461
 operatives, 1217 weapons, 476 abilities, 159 unique actions, and a test that fails on any gap.
 
+**`Operative.lockOrder` is how an order becomes a stat rather than a call.** Every NEMESIS
+operative has **Towering Size** — *"in the Firefight phase, whenever you determine this operative's
+order, you cannot select Conceal"* — so Angron and Farsight are locked to Engage. The reducer
+refuses `order` and skips them in `teamOrder`, `freshOps` starts them on the locked value, and
+both UIs say so. The GM is the referee everywhere else in this app; this one is on the datacard,
+and a boss quietly left on Conceal after a mis-tap is barred from counteracting for the rest of
+the turning point.
+
+Three operatives have it, and the list is **explicit in `tools/kt_generate.py`, never a regex over
+the ability text**: the Kommando **Grot** (*Sneaky Zogger* — the other way round, locked to
+Conceal) and the **Bomb Squig** (*Stoopid*), plus the two bosses by hand. A Fellgor Ravager's
+prose matches the same phrasing but only loses Conceal *while it holds a Frenzy token*, so a
+heuristic freezes all eleven of them wrongly. Note the preset six field operatives from
+`CATALOGUE` in `rules.ts`, not from the library, so **Grot and the Squig need it in both places** —
+`cat()` takes an optional sixth column for exactly that.
+
+**TOWERING is the core rule's name, not a printed keyword.** The dossier's sample datacard (pg 14)
+prints `KEYWORDS: IMPERIUM, NEMESIS, ARMOURED SENTINEL` with SIZE as a separate field — there is no
+TOWERING keyword in the format. It is on the two bosses' keyword lines because it is the clearest
+flag for a rule that changes how they are played, and it is **not size-gated**: Towering Size sits
+under *7. Core Rules* beside Extra Defence and Bulky, so Medium Farsight has it exactly as much as
+Large Angron.
+
 **Neither has a single strategy or firefight ploy, and that is correct.** A nemesis operative
 *accompanies* a kill team rather than being one — the dossier's own intro says a kill team fielding
 one "will have fewer operatives than normal to accompany it" — so the ploys come from the team it
@@ -834,6 +857,14 @@ in Setup, where the card editor already offers all four card kinds.
 The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46), and the exact
 team-size reduction a nemesis operative imposes — the intro (pg 6) confirms it exists and is keyed
 to the boss's size, but the number itself has not been read.
+
+**The Custom Builder HAS now been read and checks out.** Its seven steps are 1 Allegiance,
+2 Size, 3 Behaviour (NPO only), 4 Weapons, 5 Traits, 6 Name, 7 Core Rules. Verified against what
+this repo already had: the size table is exactly S 4/6"/4+/35/2, M 5/6"/4+/50/2, L 6/6"/4+/75/3
+(pg 15); chain weapon is 4/3+/5/6 Brutal Rending and power weapon 4/3+/5/7 Lethal 5+ (pg 18), so
+Angron's 5 ATK really does come from Paired weapon; and *Fury*, *Close-range Lethality*, *Let the
+Galaxy Burn* and *Supporting Fire* match the trait tables on pg 19 verbatim. The core rules on
+pg 20 are exactly three: Extra Defence, Bulky, Towering Size.
 
 **The dossier is a scan** — 80 pages from an HP MFP with no text layer, so `pdftotext` returns
 nothing at all and the extractor cannot touch it. Read it as page images, or OCR it first.

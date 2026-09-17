@@ -11,6 +11,7 @@ import {
   type OpKind,
   type OwnCard,
   type Operative,
+  type Order,
   PRESET_SIDES,
   PRESET_TEAMS,
   SIDE_PALETTE,
@@ -24,7 +25,10 @@ import {
 } from './rules'
 import type { PhaseId, RefKind } from './compendium'
 
-export type Order = 'conceal' | 'engage'
+// `Order` moved to rules.ts, because `Operative.lockOrder` needs it. Re-exported so the
+// panels that `import type { Order } from '../state'` keep working.
+export type { Order }
+
 export type OpState = {
   hp: number
   /** Activations spent this turning point. Absent means none. `expended` stays the thing
@@ -64,11 +68,14 @@ export type Game = {
   turnIdx: number
 }
 
+/** Everyone starts Concealed, except an operative a rule forbids it to. */
+const startOrder = (o: Operative): Order => o.lockOrder ?? 'conceal'
+
 const freshOps = (roster: Record<string, Operative[]>) =>
   Object.fromEntries(
     Object.values(roster)
       .flat()
-      .map((o) => [o.id, { hp: o.w, used: 0, expended: false, dead: false, order: 'conceal' as Order }]),
+      .map((o) => [o.id, { hp: o.w, used: 0, expended: false, dead: false, order: startOrder(o) }]),
   )
 
 export const initialGame = (): Game => {
@@ -165,6 +172,18 @@ const findOp = (g: Game, opId: string) =>
  *  a prefix of `dw2` — `id.startsWith(teamId)` is ambiguous. */
 export const teamIdOf = (g: Game, opId: string) =>
   Object.keys(g.roster).find((tid) => g.roster[tid].some((o) => o.id === opId))
+
+/** The operative itself, not its live state. `g.ops` is keyed by id but holds only OpState. */
+export const opById = (g: Game, opId: string): Operative | undefined =>
+  Object.values(g.roster)
+    .flat()
+    .find((o) => o.id === opId)
+
+/** Whether a rule forbids this operative that order. See `Operative.lockOrder`. */
+const lockedAgainst = (g: Game, opId: string, value: Order) => {
+  const lock = opById(g, opId)?.lockOrder
+  return !!lock && lock !== value
+}
 
 /* ---------- setup invariants ---------- */
 
@@ -347,12 +366,19 @@ export function reduce(g: Game, a: Action): Game {
       return { ...g, order: { ...g.order, [team.side]: ids }, turnIdx: 0 }
     }
     case 'order': {
+      // A locked operative does not move. The GM is the referee everywhere else in this app,
+      // but this is a stat on the datacard, not a call — and a boss silently sitting on
+      // Conceal after a mis-tap would quietly bar it from counteracting.
+      if (lockedAgainst(g, a.opId, a.value)) return g
       const o = g.ops[a.opId]
       return { ...g, ops: { ...g.ops, [a.opId]: { ...o, order: a.value } } }
     }
     case 'teamOrder': {
       const ops = { ...g.ops }
-      for (const o of teamOps(g, a.teamId)) if (!ops[o.id].dead) ops[o.id] = { ...ops[o.id], order: a.value }
+      for (const o of teamOps(g, a.teamId)) {
+        if (ops[o.id].dead || (o.lockOrder && o.lockOrder !== a.value)) continue
+        ops[o.id] = { ...ops[o.id], order: a.value }
+      }
       return { ...g, ops }
     }
     case 'cp': {
@@ -402,7 +428,7 @@ export function reduce(g: Game, a: Action): Game {
       return {
         ...g,
         roster: { ...g.roster, [a.teamId]: [...g.roster[a.teamId], a.op] },
-        ops: { ...g.ops, [a.op.id]: { hp: a.op.w, used: 0, expended: false, dead: false, order: 'conceal' } },
+        ops: { ...g.ops, [a.op.id]: { hp: a.op.w, used: 0, expended: false, dead: false, order: startOrder(a.op) } },
       }
     case 'removeOp': {
       const { [a.opId]: _gone, ...ops } = g.ops
@@ -680,7 +706,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v16' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v17' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */

@@ -47,10 +47,10 @@ export const datacards: Datacard[] = [
     ],
     abilities: [TRAIT, ALLEGIANCE],
     actions: [],
-    keywords: ['T’AU EMPIRE', 'FARSIGHT ENCLAVES', 'BATTLESUIT', 'NEMESIS', 'COMMANDER FARSIGHT'],
+    keywords: ['T’AU EMPIRE', 'FARSIGHT ENCLAVES', 'BATTLESUIT', 'NEMESIS', 'COMMANDER FARSIGHT', 'TOWERING'],
   },
 ]
 
 export const operatives: Operative[] = [
-  { id: 'farsight:farsight', name: 'Commander Farsight', apl: 5, move: '6"', save: '4+', w: 50, acts: 2, kv: 7 },
+  { id: 'farsight:farsight', name: 'Commander Farsight', apl: 5, move: '6"', save: '4+', w: 50, acts: 2, lockOrder: 'engage', kv: 7 },
 ]

@@ -94,16 +94,18 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
       </button>
       <button
         onClick={() => dispatch({ type: 'order', opId: o.id, value: st.order === 'conceal' ? 'engage' : 'conceal' })}
-        disabled={st.dead}
+        disabled={st.dead || !!o.lockOrder}
         title={`${
           st.order === 'conceal'
             ? 'Conceal — cannot Shoot, Charge or counteract; not a valid target while in cover'
             : 'Engage — acts normally, can counteract'
-        } (click to flip)`}
-        className="display shrink-0 rounded px-1.5 text-xs text-white"
+        }${o.lockOrder ? ' — locked by a rule on its datacard, it can never take the other order' : ' (click to flip)'}`}
+        className={`display shrink-0 rounded px-1.5 text-xs text-white ${o.lockOrder ? 'cursor-default' : ''}`}
         style={{ background: st.order === 'conceal' ? '#0b6be1' : '#f05c22' }}
       >
         {st.order === 'conceal' ? 'CON' : 'ENG'}
+        {/* A locked operative's chip is not a control — say so rather than look broken. */}
+        {o.lockOrder && <span className="ml-0.5 opacity-70">*</span>}
       </button>
       <span className="shrink-0 text-xs tabular-nums text-ink/40" title={`${o.apl}AP · ${o.w}W`}>
         {o.move} {o.save}

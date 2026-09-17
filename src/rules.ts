@@ -11,6 +11,10 @@ import type { RefCard } from './compendium'
 export type SideId = string
 export type OpKind = 'kill' | 'crit' | 'tac'
 
+/** An operative's Firefight-phase order. Lives here, not in state.ts, because `Operative`
+ *  needs it — state.ts re-exports it so existing imports keep working. */
+export type Order = 'conceal' | 'engage'
+
 export type Operative = {
   id: string
   name: string
@@ -25,6 +29,19 @@ export type Operative = {
    *  datacard operative is — so the kill ladders are unchanged by this field existing. Raise
    *  it for a boss, whose death should move the grade further than a Grot's. */
   kv?: number
+  /**
+   * An order some rule locks this operative to; absent means it is free to take either.
+   *
+   * Three real cases: every NEMESIS operative (Towering Size — "whenever you determine this
+   * operative's order, you cannot select Conceal"), the Kommando Grot (Sneaky Zogger, the
+   * other way round) and the Bomb Squig (Stoopid). The reducer refuses to move a locked
+   * operative, so a boss cannot be concealed by a mis-tap mid-game.
+   *
+   * It is a stored field rather than something read out of the datacard text, because the
+   * one other operative whose prose matches — a Fellgor Ravager — only loses Conceal *while
+   * it holds a Frenzy token*, and a heuristic over rules prose gets that wrong.
+   */
+  lockOrder?: Order
 }
 
 /** A boss counts for more than a body. Everything else counts for one. */
@@ -102,12 +119,17 @@ export const PRESET_TEAMS: TeamPreset[] = [
 
 export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-const cat = (teamId: string, rows: [string, number, string, string, number][]): Operative[] =>
-  rows.map(([name, apl, move, save, w]) => ({ id: `${teamId}:${slug(name)}`, name, apl, move, save, w }))
+type Row = [string, number, string, string, number] | [string, number, string, string, number, Order]
+
+const cat = (teamId: string, rows: Row[]): Operative[] =>
+  rows.map(([name, apl, move, save, w, lockOrder]) => ({
+    id: `${teamId}:${slug(name)}`, name, apl, move, save, w,
+    ...(lockOrder ? { lockOrder } : {}),
+  }))
 
 // Two Deathwatch kill teams are in play. They share one catalogue entry, because
 // CATALOGUE is keyed by faction — but not one roster: they field different operatives.
-const DEATHWATCH_ROWS: [string, number, string, string, number][] = [
+const DEATHWATCH_ROWS: Row[] = [
   ['Watch Sergeant', 3, '6"', '3+', 15],
   ['Aegis', 3, '6"', '2+', 15],
   ['Blademaster', 3, '6"', '3+', 15],
@@ -171,8 +193,9 @@ export const CATALOGUE: Record<string, Operative[]> = {
     ['Comms Boy', 2, '6"', '5+', 10],
     ['Burna Boy', 2, '6"', '5+', 10],
     ['Rokkit Boy', 2, '6"', '5+', 10],
-    ['Grot', 2, '6"', '5+', 5],
-    ['Bomb Squig', 2, '6"', '5+', 5],
+    // Sneaky Zogger: this one can never be given an Engage order. Stoopid: the Squig never Conceals.
+    ['Grot', 2, '6"', '5+', 5, 'conceal'],
+    ['Bomb Squig', 2, '6"', '5+', 5, 'engage'],
   ]),
 }
 

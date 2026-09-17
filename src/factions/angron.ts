@@ -60,12 +60,12 @@ export const datacards: Datacard[] = [
       },
     ],
     actions: [],
-    keywords: ['CHAOS', 'KHORNE', 'DAEMON', 'NEMESIS', 'ANGRON'],
+    keywords: ['CHAOS', 'KHORNE', 'DAEMON', 'NEMESIS', 'ANGRON', 'TOWERING'],
   },
 ]
 
 export const operatives: Operative[] = [
   // `apl` carries the CONTROL stat: the app has one stat slot and the datacard card explains
   // the difference. `acts: 2` is the core rule, not a special case.
-  { id: 'angron:angron', name: 'Angron', apl: 6, move: '6"', save: '4+', w: 75, acts: 2, kv: 10 },
+  { id: 'angron:angron', name: 'Angron', apl: 6, move: '6"', save: '4+', w: 75, acts: 2, lockOrder: 'engage', kv: 10 },
 ]

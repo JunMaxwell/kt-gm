@@ -127,6 +127,8 @@ export function OperativeCard({
             {st.order === 'conceal'
               ? 'Cannot Shoot, Charge or counteract; not a valid target while in cover.'
               : 'Acts normally, and can counteract.'}
+            {/* Towering Size, Sneaky Zogger, Stoopid — the order is a stat here, not a choice. */}
+            {o.lockOrder && <b className="text-flare"> Always — a rule on its datacard locks it.</b>}
           </span>
         </p>
       )}

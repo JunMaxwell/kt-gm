@@ -21,13 +21,13 @@ export const cards: RefCard[] = [
 
 export const operatives: Operative[] = [
   { id: "kom:kommando-boss-nob", name: "Kommando Boss Nob", apl: 3, move: "6\"", save: "5+", w: 14 },
-  { id: "kom:kommando-bomb-squig", name: "Kommando Bomb Squig", apl: 2, move: "6\"", save: "5+", w: 5 },
+  { id: "kom:kommando-bomb-squig", name: "Kommando Bomb Squig", apl: 2, move: "6\"", save: "5+", w: 5, lockOrder: 'engage' },
   { id: "kom:kommando-boy", name: "Kommando Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-breacha-boy", name: "Kommando Breacha Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-burna-boy", name: "Kommando Burna Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-comms-boy", name: "Kommando Comms Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-dakka-boy", name: "Kommando Dakka Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
-  { id: "kom:kommando-grot", name: "Kommando Grot", apl: 2, move: "6\"", save: "5+", w: 5 },
+  { id: "kom:kommando-grot", name: "Kommando Grot", apl: 2, move: "6\"", save: "5+", w: 5, lockOrder: 'conceal' },
   { id: "kom:kommando-rokkit-boy", name: "Kommando Rokkit Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-slasha-boy", name: "Kommando Slasha Boy", apl: 2, move: "6\"", save: "5+", w: 10 },
   { id: "kom:kommando-snipa-boy", name: "Kommando Snipa Boy", apl: 2, move: "6\"", save: "5+", w: 10 },

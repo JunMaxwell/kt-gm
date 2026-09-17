@@ -25,6 +25,14 @@ for line in open(f'{SRC}/list.tsv'):
     t, f = line.rstrip('\n').split('\t')
     TITLES[re.sub(r'[^a-z0-9_]','', t.lower().replace(' ','_'))] = t
 
+# Operatives a printed rule locks to one order. Deliberately an explicit list, not a regex over
+# the ability text: a Fellgor Ravager's prose matches too, but it only loses Conceal *while it
+# holds a Frenzy token*, so a heuristic would wrongly freeze all eleven of them.
+LOCK_ORDER = {
+    'kom:kommando-grot': 'conceal',        # Sneaky Zogger
+    'kom:kommando-bomb-squig': 'engage',   # Stoopid
+}
+
 def slugify(s):
     return re.sub(r'[^a-z0-9]+','-', s.lower()).strip('-')
 
@@ -57,7 +65,9 @@ for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
     lines.append("")
     lines.append("export const operatives: Operative[] = [")
     for o in ops:
-        lines.append(f"  {{ id: {ts(o['id'])}, name: {ts(o['name'])}, apl: {o['apl']}, move: {ts(o['move'])}, save: {ts(o['save'])}, w: {o['w']} }},")
+        lock = LOCK_ORDER.get(o['id'])
+        tail = f", lockOrder: '{lock}'" if lock else ""
+        lines.append(f"  {{ id: {ts(o['id'])}, name: {ts(o['name'])}, apl: {o['apl']}, move: {ts(o['move'])}, save: {ts(o['save'])}, w: {o['w']}{tail} }},")
     lines.append("]")
     lines.append("")
     # The rest of the datacard — weapons, abilities, unique actions, keywords. Kept OUT of
