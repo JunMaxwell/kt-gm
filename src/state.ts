@@ -41,8 +41,23 @@ export type OpState = {
 /** Kept as an alias: `TeamDef` absorbed it when teams became runtime data. */
 export type PlayerState = TeamDef
 
+/**
+ * Where the GM is in the flow. This replaced a `setup: boolean` that only ever chose between
+ * one 451-line panel stack and the board — there was no start, no finish, and no "a game".
+ *
+ * `rooms` is a stage rather than device state on purpose: as a stage, every button that
+ * reaches it is an ordinary `dispatch`, where device state would have to thread a setter
+ * through `Net` to `TurnBar` and `RoomBar`. It costs a meaningless `stage: 'rooms'` in the
+ * odd relay snapshot, which no spectator reads — `net.viewer` wins in `App` before any stage
+ * is consulted. The same free ride `phase` got.
+ */
+export type Stage = 'rooms' | 'alliances' | 'teams' | 'config' | 'tacops' | 'play' | 'end'
+
+/** The wizard steps, in order — the rail, the Back/Next cursor and the escape-hatch menu. */
+export const STEPS: Stage[] = ['alliances', 'teams', 'config', 'tacops']
+
 export type Game = {
-  setup: boolean // showing the setup view rather than the console
+  stage: Stage // which view the GM is on; see `Stage`
   sides: SideDef[] // the alliances, in order — order picks the console's columns
   cpPerTp: { lead: number; other: number } // CP granted each turning point
   tp: number
@@ -81,7 +96,7 @@ const freshOps = (roster: Record<string, Operative[]>) =>
 export const initialGame = (): Game => {
   const roster = structuredClone(DEFAULT_ROSTER)
   return {
-    setup: false,
+    stage: 'play',
     sides: structuredClone(PRESET_SIDES),
     cpPerTp: { ...CP_PER_TP },
     tp: 1,
@@ -109,6 +124,24 @@ export const initialGame = (): Game => {
     turnIdx: 0,
   }
 }
+
+/** Two empty alliances, and nothing else. Step 1 of the wizard opens here.
+ *
+ *  NOT zero alliances: `normalize` materialises an "Alliance 1" out of an empty list, and it
+ *  runs on every setup edit and on every `replace` — so `sides: []` would sprout a phantom
+ *  alliance on the first click or the first relay round-trip. Two is the floor `normalize`
+ *  already believes in, and it gives step 1 something to rename rather than a blank page.
+ *
+ *  Built from `initialGame()` through `recast` so its shape cannot drift from `Game`: `recast`
+ *  drops the preset rosters and ops, rebuilds all five per-side records and re-homes
+ *  `initiative`/`sideTurn`. */
+const BLANK_SIDES: SideDef[] = [
+  { id: 'side1', name: 'Alliance 1', color: SIDE_PALETTE[0] },
+  { id: 'side2', name: 'Alliance 2', color: SIDE_PALETTE[1] },
+]
+
+export const blankGame = (): Game =>
+  recast({ ...initialGame(), stage: 'alliances', sides: structuredClone(BLANK_SIDES), teams: {} })
 
 export type Action =
   | { type: 'reset' }
@@ -147,7 +180,7 @@ export type Action =
   | { type: 'editOp'; teamId: string; opId: string; patch: Partial<Operative> }
   | { type: 'resetRoster'; teamId: string }
   // --- setup: the match itself is editable, so these change who is playing ---
-  | { type: 'setup'; value: boolean }
+  | { type: 'stage'; value: Stage }
   | { type: 'sideAdd' }
   | { type: 'sideRemove'; id: SideId }
   | { type: 'sidePatch'; id: SideId; patch: Partial<SideDef> }
@@ -244,8 +277,10 @@ const recast = (g: Game): Game => ({ ...normalize(g), turnIdx: 0, pairUsed: [] }
 
 export function reduce(g: Game, a: Action): Game {
   switch (a.type) {
+    // "New game" is reset now. The preset seven-team match is a button on step 1 instead —
+    // a `replace` over `initialGame()`, which already clears the undo stack.
     case 'reset':
-      return initialGame()
+      return blankGame()
     // Merged over a fresh game the same way a localStorage load is, so a snapshot from an
     // older client can't leave a newer top-level field undefined.
     case 'replace':
@@ -420,8 +455,11 @@ export function reduce(g: Game, a: Action): Game {
         counteracts: blankBySide(g.sides, 0), // a Counteract is a this-turn opportunity
       }
     }
+    // One action, so "End battle" stays one undo step. `finished` is NOT derived from
+    // `stage === 'end'`: the escape hatch lets the GM step off the end screen to fix a dial,
+    // and deriving it would silently revoke the +1 kill bonus in the scoreboard he is reading.
     case 'finish':
-      return { ...g, finished: a.finished }
+      return { ...g, finished: a.finished, stage: a.finished ? 'end' : 'play' }
 
     /* ---------- roster editing ---------- */
     case 'addOp':
@@ -456,8 +494,8 @@ export function reduce(g: Game, a: Action): Game {
     /* ---------- setup ----------
      * Everything below changes who is playing, so every case ends in `normalize`.
      */
-    case 'setup':
-      return { ...g, setup: a.value }
+    case 'stage':
+      return { ...g, stage: a.value }
     case 'sideAdd': {
       const n = g.sides.length
       const id = `side${n + 1}-${Math.random().toString(36).slice(2, 6)}`
@@ -706,8 +744,13 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v17' // bump when the shape changes; old saves are ignored
-const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
+// Bump when the shape changes; old saves are ignored rather than migrated.
+// One game PER ROOM, so switching back to an old room restores it with no network at all.
+// `local` is the no-room fallback — if `POST /rooms` fails the GM still gets a game, because
+// the relay is never a prerequisite for starting one.
+const gameKey = (code = 'local') => `killteam-gm/v18/${code}`
+const ROOM_KEY = 'killteam-gm/room' // the room this device is CURRENTLY in
+const ROOMS_KEY = 'killteam-gm/rooms' // every room this device knows, newest first
 
 /* ---------- rooms ---------- */
 
@@ -721,7 +764,7 @@ const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read th
 export const API = import.meta.env.VITE_API_URL ?? 'https://kt-api.ydothien.work'
 
 /** A GM has the write token. A viewer has only the code, off the URL. */
-export type Room = { code: string; token?: string }
+export type Room = { code: string; token?: string; at?: number }
 export type SaveMeta = { id: string; label: string; saved_at: string }
 
 const read = <T,>(key: string): T | null => {
@@ -732,23 +775,70 @@ const read = <T,>(key: string): T | null => {
   }
 }
 
-/** `#/r/ABCD` in the URL means spectator. Otherwise fall back to the stored GM room. */
+/** `#/r/ABCD` is a spectator; `#/g/ABCD/<uuid>` carries the write token. */
+const HASH = /^#\/(r|g)\/([A-Z0-9]{4})(?:\/([0-9a-f-]{36}))?$/
+
+/** Pure, so the launcher can run it on a *pasted* link without navigating. `readRoom` is a
+ *  lazy `useState` initialiser with no `hashchange` listener, so a paste must reach `setRoom`
+ *  directly rather than going through the address bar. */
+export const parseHash = (hash: string): Room | null => {
+  const m = hash.match(HASH)
+  return m ? (m[1] === 'g' && m[3] ? { code: m[2], token: m[3] } : { code: m[2] }) : null
+}
+
+export const knownRooms = (): Room[] => read<Room[]>(ROOMS_KEY) ?? []
+
+/** Remember a room without losing the ones before it. `createRoom` used to overwrite the one
+ *  slot, which orphaned the previous room's token forever — and the token is the only thing
+ *  that can ever read that room's saves again. */
+export const rememberRoom = (room: Room) => {
+  const list = knownRooms().filter((r) => r.code !== room.code)
+  localStorage.setItem(ROOMS_KEY, JSON.stringify([{ ...room, at: Date.now() }, ...list].slice(0, 20)))
+  localStorage.setItem(ROOM_KEY, JSON.stringify(room))
+}
+
+export const forgetRoom = (code: string) => {
+  localStorage.setItem(ROOMS_KEY, JSON.stringify(knownRooms().filter((r) => r.code !== code)))
+  localStorage.removeItem(gameKey(code))
+  if (read<Room>(ROOM_KEY)?.code === code) localStorage.removeItem(ROOM_KEY)
+}
+
+/** The game this device has stored for a room, if any. The launcher labels its rows from it. */
+export const roomGame = (code: string) => read<Game>(gameKey(code))
+
 const readRoom = (): Room | null => {
-  const viewing = location.hash.match(/^#\/r\/([A-Z0-9]{4})$/)
-  return viewing ? { code: viewing[1] } : read<Room>(ROOM_KEY)
+  const fromUrl = parseHash(location.hash)
+  if (!fromUrl) return read<Room>(ROOM_KEY)
+  // A spectator's hash STAYS — it is what makes them a spectator on reload.
+  if (!fromUrl.token) return fromUrl
+  // A GM link's does not. The realistic leak is not Referer (fragments are never sent); it is
+  // the GM copying the address bar to share the match, or projecting it, and handing seven
+  // people write access. `rememberRoom` has already persisted it, so a reload still lands here.
+  rememberRoom(fromUrl)
+  history.replaceState(null, '', location.pathname + location.search)
+  return fromUrl
 }
 
 export const viewerUrl = (code: string) => `${location.origin}${location.pathname}#/r/${code}`
+export const gmUrl = (r: Room) => `${location.origin}${location.pathname}#/g/${r.code}/${r.token}`
 
-const api = (path: string, token: string, init: RequestInit = {}) =>
-  fetch(`${API}${path}`, {
+/** Throws on a non-2xx. A 401 body is valid JSON, so without this `loadSave` returns
+ *  `{error:'bad token'}` as if it were a Game and `listSaves` hands the UI a non-array to
+ *  `.map`. Every existing caller already tolerates a throw. */
+const api = async (path: string, token: string, init: RequestInit = {}) => {
+  const res = await fetch(`${API}${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
   })
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`)
+  return res
+}
 
 export const createRoom = async (): Promise<Room> => {
-  const room = (await (await fetch(`${API}/rooms`, { method: 'POST' })).json()) as Room
-  localStorage.setItem(ROOM_KEY, JSON.stringify(room))
+  const res = await fetch(`${API}/rooms`, { method: 'POST' })
+  if (!res.ok) throw new Error(`/rooms -> ${res.status}`)
+  const room = (await res.json()) as Room
+  rememberRoom(room)
   return room
 }
 
@@ -760,6 +850,79 @@ export const saveMatch = (r: Room, label: string, game: Game) =>
 
 export const loadSave = async (r: Room, id: string): Promise<Game> =>
   await (await api(`/rooms/${r.code}/saves/${id}`, r.token!)).json()
+
+/**
+ * The game for a room this device does not have: the live snapshot, else the newest save,
+ * else nothing.
+ *
+ * Be honest about the hit rate — `live` on the relay is an in-memory Map lost on every
+ * redeploy and never re-seeded until the owning GM's next tap, so **the save fallback is the
+ * normal path after a restart**, not an edge case. And a room nobody ever clicked "Save match"
+ * on has nothing anywhere; `null` means exactly that, and the launcher says so rather than
+ * inventing a third store.
+ *
+ * A dead relay throws out of `listSaves`, which is what lets the caller distinguish
+ * "offline" from "nothing to resume".
+ */
+export const resume = async (r: Room): Promise<Game | null> => {
+  const snapshot = await api(`/rooms/${r.code}/state`, r.token!)
+    .then((x) => x.json() as Promise<Game>)
+    .catch(() => null)
+  if (snapshot) return snapshot
+  const [newest] = await listSaves(r)
+  return newest ? await loadSave(r, newest.id) : null
+}
+
+/* ---------- export / import ---------- */
+
+/**
+ * A match as a file. The third way out, beside the relay (live, in memory) and "Save match"
+ * (Postgres, room-scoped): this one needs no server at all and crosses origins, which the
+ * other two cannot — localStorage is per-origin, so the deployed copy and localhost keep
+ * entirely separate games and a save made on one is invisible to the other.
+ *
+ * `Blob` + `<a download>` rather than a library: a `Game` is already a serialisable blob, and
+ * `replace` already merges one over `initialGame()` exactly like a localStorage load.
+ */
+export const matchFilename = (g: Game) => {
+  const who = g.sides.map((x) => x.name).join('-v-') || 'match'
+  const when = new Date().toISOString().slice(0, 10)
+  const where = g.stage === 'end' ? 'final' : `tp${g.tp}`
+  return `killteam-${who}-${where}-${when}.json`.replace(/[^\w.-]+/g, '-').toLowerCase()
+}
+
+export const exportGame = (g: Game) => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(g, null, 2)], { type: 'application/json' }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: matchFilename(g) })
+  a.click()
+  // Revoking immediately can race the download in some browsers; a tick is enough and the
+  // object is small anyway.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/**
+ * A match file from anywhere — another device, a chat message, an old backup. That makes it a
+ * TRUST BOUNDARY, so the shape is checked before it reaches the reducer.
+ *
+ * `replace` merges over `initialGame()`, which fills in anything *missing*, and `normalize`
+ * repairs anything dangling. Neither survives a field of the wrong TYPE: `sides: "hello"` has
+ * a `.length` and then explodes on `.map`. These three checks are what stand between a bad
+ * file and a white screen.
+ */
+export const importGame = async (file: File): Promise<Game> => {
+  let raw: unknown
+  try {
+    raw = JSON.parse(await file.text())
+  } catch {
+    throw new Error('that file is not JSON')
+  }
+  const g = raw as Partial<Game>
+  if (!g || typeof g !== 'object' || Array.isArray(g)) throw new Error('that file is not a match')
+  if (!Array.isArray(g.sides)) throw new Error('no alliances in that file — is it a match export?')
+  if (!g.teams || typeof g.teams !== 'object' || Array.isArray(g.teams))
+    throw new Error('no teams in that file — is it a match export?')
+  return g as Game
+}
 
 /* ---------- undo ---------- */
 
@@ -793,17 +956,22 @@ export const withHistory = (h: History, a: UiAction): History => {
 }
 
 export function useGame() {
-  const [hist, dispatch] = useReducer(withHistory, null, () => {
-    const saved = read<Game>(KEY)
-    return { past: [], now: saved ? { ...initialGame(), ...saved } : initialGame() }
+  // Above the reducer, because the reducer's lazy initialiser now needs the room to pick its
+  // storage key. Switching rooms afterwards is NOT a re-init — the launcher dispatches an
+  // explicit `replace` with whatever it resolved.
+  const [room, setRoom] = useState(readRoom)
+  const [hist, dispatch] = useReducer(withHistory, room, (r) => {
+    const saved = read<Game>(gameKey(r?.code))
+    // No stored game at all means a fresh device: start at the launcher, not on an empty board.
+    const fresh: Game = { ...blankGame(), stage: 'rooms' }
+    return { past: [], now: saved ? { ...initialGame(), ...saved } : fresh }
   })
   const game = hist.now
-  const [room, setRoom] = useState(readRoom)
   const viewer = !!room && !room.token
 
   useEffect(() => {
-    if (!viewer) localStorage.setItem(KEY, JSON.stringify(game))
-  }, [game, viewer])
+    if (!viewer) localStorage.setItem(gameKey(room?.code), JSON.stringify(game))
+  }, [game, viewer, room])
 
   // GM → relay. Debounced because player-name and tac-op inputs dispatch per keystroke, and
   // best-effort because localStorage is the source of truth — a dead VPS must not stop the match.

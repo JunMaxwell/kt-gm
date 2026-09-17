@@ -1,11 +1,19 @@
 import { CRIT_OPS, type CritOpId } from '../rules'
+import type { Stage } from '../state'
 import { phaseMeta, PHASES } from '../compendium'
-import { counteract, currentTeamId, enemies, pairEligible, pairTarget, readyCount, sideDef, teamsOf } from '../state'
+import { STEPS, counteract, currentTeamId, enemies, pairEligible, pairTarget, readyCount, sideDef, teamsOf } from '../state'
 import { Btn, BufferedInput, DarkBtn, Label, TeamPill } from './kit'
 import { type Dispatch, type Game, type Net, onInt } from './shared'
 import { RoomBar } from './RoomBar'
 
 /* ---------- header ---------- */
+
+const STEP_LABEL: Record<string, string> = {
+  alliances: 'Alliances',
+  teams: 'Teams',
+  config: 'Objectives',
+  tacops: 'Tac ops',
+}
 
 export function TurnBar({
   game,
@@ -154,13 +162,24 @@ export function TurnBar({
           <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
             {editing ? 'Done editing' : 'Edit rosters'}
           </DarkBtn>
-          <DarkBtn
-            onClick={() => dispatch({ type: 'setup', value: true })}
-            className="display"
-            title="Alliances, teams, rosters and scoring — the match itself"
-          >
+          {/* The escape hatch. Late players arrive and teams get cut, so every wizard step
+              stays one tap away mid-match — each one returns here on its own. */}
+          <label className="display flex items-center gap-1 text-xs text-white/50">
             Setup
-          </DarkBtn>
+            <select
+              value=""
+              aria-label="Jump to a setup step"
+              onChange={(e) => e.target.value && dispatch({ type: 'stage', value: e.target.value as Stage })}
+              className="rounded bg-white/15 px-2 py-1 text-sm text-white"
+            >
+              <option value="">— step —</option>
+              {STEPS.map((s, i) => (
+                <option key={s} value={s} className="text-ink">
+                  {i + 1}. {STEP_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </label>
           <DarkBtn onClick={() => dispatch({ type: 'nextTp' })} className="display">
             Next TP · ready all + CP
           </DarkBtn>
@@ -168,10 +187,11 @@ export function TurnBar({
             End battle
           </DarkBtn>
           <DarkBtn
-            onClick={() => confirm('Reset the whole game?') && dispatch({ type: 'reset' })}
-            className="display text-red-200"
+            onClick={() => dispatch({ type: 'stage', value: 'rooms' })}
+            className="display"
+            title="Rooms and saved games — start another match, or reopen one"
           >
-            Reset
+            Games
           </DarkBtn>
         </div>
       </div>

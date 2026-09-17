@@ -95,6 +95,19 @@ const server = Bun.serve<{ code: string }, Record<string, never>>({
 
     '/rooms/:code/state': {
       OPTIONS: (req) => new Response(null, { status: 204, headers: preflight(req) }),
+      // The live snapshot over HTTP, for a GM resuming a room on a device that never had it.
+      // In memory, so this 404s after a relay restart until the owning GM's next change — the
+      // client then falls back to the newest save. Token-guarded, unlike the WS: that one is
+      // open because every spectator needs it, this one is a GM operation.
+      GET: async (req) => {
+        const { code } = req.params
+        const denied = await guard(req, code)
+        if (denied) return denied
+        const snapshot = live.get(code)
+        return snapshot
+          ? new Response(snapshot, { headers: { 'content-type': 'application/json', ...cors(req) } })
+          : json(req, { error: 'no live state' }, 404)
+      },
       POST: async (req) => {
         const { code } = req.params
         const denied = await guard(req, code)

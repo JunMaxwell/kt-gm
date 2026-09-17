@@ -3,13 +3,15 @@ import { renderToStaticMarkup as R } from 'react-dom/server'
 
 import { blankOperative, presetRoster } from '../rules'
 import { datacardOf, factionData, FACTIONS, loadFaction } from '../factions'
-import { allTeams, initialGame, reduce, teamOps } from '../state'
+import { STEPS, allTeams, blankGame, initialGame, reduce, teamOps } from '../state'
 import { Scoreboard } from './Scoreboard'
 import { Objectives } from './Objectives'
 import { ActivationOrder } from './ActivationOrder'
 import { TurnBar } from './TurnBar'
 import { TeamCard } from './TeamCard'
 import { Setup } from './Setup'
+import { Launcher } from './Launcher'
+import { EndScreen } from './EndScreen'
 import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 import { TeamPicker } from './TeamPicker'
@@ -25,7 +27,11 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     R(<ActivationOrder game={g} dispatch={noop} />),
     R(<OpsBrowser game={g} />),
     R(<CompendiumBrowser game={g} />),
-    R(<Setup game={g} dispatch={noop} />),
+    // Once per wizard step: each one renders a different panel set, and `initialGame()` is
+    // stage `play`, so a single render would only ever exercise the clamped fallback.
+    ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} />)),
+    R(<Launcher game={g} dispatch={noop} net={net} />),
+    R(<EndScreen game={g} dispatch={noop} net={net} />),
     // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
     R(<TeamPicker game={g} me="" onPick={noop} />),
     R(<TeamPicker game={g} me={allTeams(g)[0]?.id ?? ''} code="ABCD" onPick={noop} onClose={noop} />),
@@ -194,4 +200,11 @@ test('the team picker says so when the match has no teams at all', () => {
   for (const t of allTeams(g)) g = reduce(g, { type: 'teamRemove', teamId: t.id })
   const html = R(<TeamPicker game={g} me="" onPick={noop} />)
   expect(html).toContain('No teams yet')
+})
+
+// The wizard now opens on a match with nothing in it, every single new game — which makes a
+// zero-team, zero-roster snapshot through every panel a routine state rather than a curiosity.
+// This is exactly the crash class this file exists for.
+test('every panel renders for a blank new game', () => {
+  expect(() => panels(blankGame())).not.toThrow()
 })

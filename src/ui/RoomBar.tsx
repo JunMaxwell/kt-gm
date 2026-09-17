@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 
-import { createRoom, listSaves, loadSave, saveMatch, type SaveMeta, viewerUrl } from '../state'
+import {
+  createRoom,
+  exportGame,
+  gmUrl,
+  importGame,
+  listSaves,
+  loadSave,
+  saveMatch,
+  type SaveMeta,
+  viewerUrl,
+} from '../state'
 import { DarkBtn } from './kit'
 import { type Dispatch, type Game, type Net } from './shared'
 
@@ -32,9 +42,45 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
     setBusy('')
   }
 
+  /** A file in and out. Deliberately available with or without a room — it is the only
+   *  durable copy that needs no server, and the only one that crosses origins. */
+  const files = (
+    <>
+      <DarkBtn
+        className="display"
+        onClick={() => exportGame(game)}
+        title="Download this match as a file. Works offline, and unlike a save it can be opened on another machine or origin."
+      >
+        Export match
+      </DarkBtn>
+      <label
+        className="display cursor-pointer rounded bg-white/12 px-2 py-1 hover:bg-white/25"
+        title="Open a match file, replacing the current game"
+      >
+        Import match
+        <input
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = '' // so re-picking the same file fires again
+            if (!f || !confirm(`Replace the current game with ${f.name}?`)) return
+            importGame(f)
+              .then((g) => {
+                dispatch({ type: 'replace', game: g })
+                setBusy('')
+              })
+              .catch((err: Error) => setBusy(err.message))
+          }}
+        />
+      </label>
+    </>
+  )
+
   if (!room)
     return (
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-white/50">
         <DarkBtn
           className="display"
           onClick={() => run('opening', async () => setRoom(await createRoom()))}
@@ -42,7 +88,8 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
         >
           Share a room
         </DarkBtn>
-        {busy && <span className="text-xs text-white/50">{busy}</span>}
+        {files}
+        {busy && <span>{busy}</span>}
       </div>
     )
 
@@ -53,8 +100,21 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
       <DarkBtn className="display" onClick={() => navigator.clipboard?.writeText(viewerUrl(room.code))}>
         Copy viewer link
       </DarkBtn>
+      {room.token && (
+        <DarkBtn
+          className="display"
+          title="Take over as GM on another device. This link carries write access — do not give it to the table."
+          onClick={() => navigator.clipboard?.writeText(gmUrl(room))}
+        >
+          Copy GM link
+        </DarkBtn>
+      )}
 
       <span className="ml-2 h-5 w-px bg-white/20" />
+
+      {files}
+
+      <span className="h-5 w-px bg-white/20" />
 
       <input
         value={label}

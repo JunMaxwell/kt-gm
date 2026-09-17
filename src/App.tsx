@@ -6,6 +6,8 @@ import { allTeams, scores, teamsOf, useGame } from './state'
 import { type Dispatch, type Game, type Net, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
+import { EndScreen } from './ui/EndScreen'
+import { Launcher } from './ui/Launcher'
 import { Objectives } from './ui/Objectives'
 import { OpsBrowser } from './ui/OpsBrowser'
 import { Scoreboard } from './ui/Scoreboard'
@@ -162,8 +164,12 @@ export default function App() {
   // venue with no wifi, so a match set up beforehand must not need the network to be read.
   usePrefetchFactions(allTeams(game).map((t) => t.faction))
 
+  // One stage cursor, five GM views. A spectator wins over all of them — `Viewer` is the
+  // whole player experience and never sees a wizard, an end screen or a room list.
   if (net.viewer) return <Viewer game={game} net={net} />
-  if (game.setup) return <Setup game={game} dispatch={dispatch} />
+  if (game.stage === 'rooms') return <Launcher game={game} dispatch={dispatch} net={net} />
+  if (game.stage === 'end') return <EndScreen game={game} dispatch={dispatch} net={net} />
+  if (game.stage !== 'play') return <Setup game={game} dispatch={dispatch} />
 
   return (
     <Console game={game} dispatch={dispatch} net={net} editing={editing} setEditing={setEditing} canUndo={canUndo} />

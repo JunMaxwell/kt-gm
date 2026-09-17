@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 111 tests: the reducer, and a render pass over every panel
+bun test           # 132 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -81,9 +81,11 @@ the section markers that were already in it:
 | `ui/TeamCard.tsx` | A player's card, plus `EditRow` / `PlayRow` |
 | `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
 | `ui/RoomBar.tsx` | Share / save / load |
-| `ui/Setup.tsx` | The pre-game setup view: alliances, teams, scoring dials |
+| `ui/Setup.tsx` | The setup **wizard** — the four steps, and the rail/Back/Next shell over them |
+| `ui/Launcher.tsx` | Step 0: new game, the room list, resume by GM link, watch by code |
+| `ui/EndScreen.tsx` | Step 6: the final scoreboard |
 | `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen |
-| `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides and a degenerate 1-team match |
+| `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
 
 Two conventions the split rests on:
 
@@ -95,15 +97,67 @@ Two conventions the split rests on:
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v17`). Any change to
+Game state persists to `localStorage` under a **versioned key, one game per room**:
+`killteam-gm/v18/<code>`, or `killteam-gm/v18/local` when no room could be opened. Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-seventeen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+eighteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
+
+The `local` key is written even on a fresh device that has never opened a room — the reducer boots
+to `blankGame()` before the launcher creates one. It is one orphan entry, not worth a migration.
+
+## The GM flow
+
+`Game.setup: boolean` used to choose between one 451-line panel stack and the board. It is now
+`Game.stage`, a cursor:
+
+```ts
+export type Stage = 'rooms' | 'alliances' | 'teams' | 'config' | 'tacops' | 'play' | 'end'
+export const STEPS: Stage[] = ['alliances', 'teams', 'config', 'tacops']
+```
+
+| Stage | View | Gate to leave |
+|---|---|---|
+| `rooms` | `Launcher` — new game, the room list, GM link, watch by code | — |
+| `alliances` | Alliances, plus *Load the usual match* while the match is empty | two alliances |
+| `teams` | One add-team picker **per alliance**, then the rosters | every side has a team, every team an operative |
+| `config` | The live objective markers, the scoring dials, the crit op, GM-written cards | none — nudge only |
+| `tacops` | One tac op picker per team, grouped by alliance | none — nudge only |
+| `play` | `Console`, unchanged | — |
+| `end` | `EndScreen` — the final scoreboard | — |
+
+- **`rooms` is a stage rather than device state**, so every button that reaches it is an
+  ordinary `dispatch` instead of a setter threaded through `Net` to `TurnBar` and `RoomBar`. It
+  costs a meaningless `stage: 'rooms'` in the odd relay snapshot, which no spectator reads —
+  `net.viewer` wins in `App` before any stage is consulted. The same free ride `phase` got.
+- **`blankGame()` is two EMPTY alliances, never zero.** `normalize` materialises an "Alliance 1"
+  out of an empty list and runs on every setup edit *and* every `replace`, so `sides: []` would
+  sprout a phantom alliance on the first click or the first relay round-trip. Two is the floor
+  `normalize` already believes in, and it gives step 1 something to rename. It is built as
+  `recast({ ...initialGame(), ... })` so its shape cannot drift from `Game`.
+- **`reset` is "new game" now**, and the preset seven-team match is a *button* rather than an
+  action: `replace` over `initialGame()`, which already clears the undo stack — correct, because
+  a loaded preset is a new starting point.
+- **`finish` sets `finished` AND `stage`** in one reducer case, so "End battle" stays one undo
+  step. `finished` is **not** derived from `stage === 'end'`: the escape hatch lets the GM step
+  off the end screen to fix a dial, and deriving it would silently revoke the +1 kill-op bonus in
+  the scoreboard he is reading. One flag, two readers.
+- **Setup stays reachable mid-match** — late players arrive, teams get cut — through a step menu
+  in the header. Every step offers *To the match* once the gates pass, so the wizard needs no
+  "is a match in progress" concept to double as an escape hatch.
+- The gates are per-step. The old single `blocked` ladder said all of it at once on one screen.
+- **`bun test` does not typecheck**, so the `setup` → `stage` rename broke nothing at runtime and
+  three things under `tsc -b`. `bun run ci` is the gate, not `bun test`.
 
 ## Rooms — live spectating
 
 Five of seven players are watching one screen, so the GM can open a **room** and everyone else
-follows on their own phone. Two features that deliberately do not share a mechanism:
+follows on their own phone. **A room is a game**: every new game mints its own code, and the
+rooms this device has opened are kept as a list (`killteam-gm/rooms`, newest first, capped at 20)
+rather than the single slot that `createRoom` used to overwrite — overwriting it orphaned the
+previous room's token, and the token is the only thing that can ever read that room's saves again.
+
+Two features that deliberately do not share a mechanism:
 
 - **Live sync is an in-memory relay.** The GM POSTs the whole `Game` to `/rooms/:code/state`
   (debounced 400ms — player-name and tac-op fields dispatch per keystroke), the server keeps it in a
@@ -131,8 +185,45 @@ Non-negotiables that this design rests on:
 
   The server still rejects writes without the token and the next relay message overwrites any local
   divergence, so a stray click is harmless regardless. That is the backstop, not the mechanism.
-- **Role comes from the URL.** `#/r/ABCD` means spectator; otherwise the stored `killteam-gm/room`
-  `{ code, token }` means GM. Hash matching, so still no router.
+- **Role comes from the URL.** `#/r/ABCD` means spectator, `#/g/ABCD/<token>` means GM, and
+  otherwise the stored `killteam-gm/room` `{ code, token }` means GM. Hash matching, so still no
+  router.
+- **The GM link carries the write token, and the hash is stripped on arrival.** That is what lets
+  a GM take the console over on another device. `history.replaceState` clears it immediately:
+  the realistic leak is not `Referer` (fragments are never sent) but the GM copying the address
+  bar to share the match, or projecting it, and handing seven people write access. The token is
+  already in `localStorage` by then, so a reload still lands in the room.
+- **Arriving on a GM link auto-resumes.** Setting the room is not enough — the match is not on
+  that device. `resume()` tries `GET /rooms/:code/state`, then the newest save, then gives up and
+  says so. Without the auto-fetch the link lands on an empty launcher and its whole point is lost.
+- **`GET /rooms/:code/state` is token-guarded even though the WebSocket is not.** The open WS is
+  the spectator affordance the whole app rests on; this route is a GM operation.
+  **Its 404 is the normal path, not an edge case** — `live` is an in-memory Map lost on every
+  redeploy and not re-seeded until the owning GM's next tap, so after a restart the Postgres save
+  is what actually answers. A room nobody ever saved has nothing anywhere, and the launcher says
+  exactly that rather than inventing a third store.
+- **There is no room-listing route, on purpose.** The `room` table has no owner column, so a
+  `GET /rooms` would enumerate everybody's. The list is client-side; the GM link is how a room
+  crosses devices.
+- **No `GET /saves/latest`** — it would shadow `/saves/:id` and hand Postgres `where id =
+  'latest'` (uuid cast error, 500). `listSaves` is already `order by saved_at desc`; take `[0]`.
+- **`api()` throws on a non-2xx**, because a 401 body is valid JSON: without it `loadSave`
+  returns `{error:'bad token'}` as if it were a `Game` and `listSaves` hands the UI a non-array
+  to `.map`. A wrong or revoked GM link is a first-class user path now.
+- **Export/import is the third way out, and the only one that needs no server.** The relay is
+  live and in memory; "Save match" is Postgres and room-scoped; a **match file** is neither. It
+  is also the only copy that crosses origins — localStorage is per-origin, so a save made on
+  `localhost` is invisible to `kt.ydothien.work` and vice versa. Native `Blob` + `<a download>`
+  out, `<input type="file">` in; no dependency, because a `Game` is already a serialisable blob
+  and `replace` already merges one over `initialGame()`.
+  - **`importGame` is a trust boundary and checks the shape**, because the file comes from
+    anywhere. `replace` fills in what is *missing* and `normalize` repairs what *dangles*, but
+    neither survives a field of the wrong TYPE: `sides: "hello"` has a `.length` and then dies
+    on `.map`. Three checks — object, `sides` array, `teams` object — stand between a bad file
+    and a white screen, and each failure names itself rather than throwing.
+  - Export sits in `RoomBar` (with or without a room) and on the `EndScreen`, where the result
+    is about to be thrown away by "New game". Import sits in `RoomBar` behind a `confirm`
+    (it replaces a game in progress) and on the `Launcher` without one (nothing to lose there).
 - Room codes drop `I O 0 1` — they get read aloud across a table.
 
 ## Kill Team 2024 rules, as verified
@@ -317,9 +408,10 @@ Team order within `PRESET_TEAMS` is `dw, aod, dw2, sct` for Imperium, which is t
 ## Custom matches
 
 `SideId` used to be the union `'imperium' | 'xenos'` and `TEAMS` a 7-element array in `rules.ts`.
-Both are now **runtime data on `Game`**, so the GM can build any match from the **Setup** view
-(header → *Setup*, or `game.setup`). `initialGame()` still produces exactly the match above, with
-the same team ids and the same side ids — which is why the whole reducer suite survived the change.
+Both are now **runtime data on `Game`**, so the GM can build any match from the **Setup wizard**
+(header → *Setup* → a step, or `game.stage`). `initialGame()` still produces exactly the match
+above, with the same team ids and the same side ids — which is why the whole reducer suite
+survived the change.
 
 | In `rules.ts` | In `Game` |
 |---|---|

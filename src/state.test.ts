@@ -22,8 +22,12 @@ import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
 const preset = (id: string) => PRESET_TEAMS.find((t) => t.id === id)!
 const tacOpsOf = (id: string) => teamTacOps(preset(id).archetypes)
 import {
+  blankGame,
   canMove,
+  importGame,
+  matchFilename,
   counteract,
+  parseHash,
   currentTeamId,
   rotation,
   type Game,
@@ -1231,4 +1235,106 @@ test('a two-activation operative keeps its team ready for a second bite', () => 
   expect(readyCount(g, 'rav')).toBe(1) // one activation spent, still counted ready
   g = reduce(g, { type: 'activate', opId: boss.id })
   expect(readyCount(g, 'rav')).toBe(0)
+})
+
+/* ---------- the wizard: stages, a blank game, and the GM link ---------- */
+
+test('a new game is blank but still a legal match', () => {
+  const g = blankGame()
+  expect(allTeams(g)).toEqual([])
+  // NOT zero sides: `normalize` materialises an "Alliance 1" out of an empty list, so a blank
+  // game with none would sprout a phantom alliance on the first click. Two is the floor.
+  expect(g.sides).toHaveLength(2)
+  expect(g.stage).toBe('alliances')
+  expect(g.roster).toEqual({})
+  expect(g.ops).toEqual({})
+  // Built from initialGame() through recast, so its shape cannot drift from Game's.
+  expect(Object.keys(g).sort()).toEqual(Object.keys(initialGame()).sort())
+  // Every per-side record has a row for both sides, or `scores` reads undefined.reduce.
+  for (const x of g.sides) {
+    expect(g.crit[x.id]).toHaveLength(g.tpCount)
+    expect(g.primary).toHaveProperty(x.id)
+    expect(g.counteracts).toHaveProperty(x.id)
+    expect(g.order).toHaveProperty(x.id)
+  }
+  expect(scores(g, g.sides[0].id).total).toBe(0)
+})
+
+test('"new game" is reset, and the preset match is a `replace` rather than an action', () => {
+  const played = reduce(initialGame(), { type: 'wound', opId: teamOps(initialGame(), 'dw')[0].id, delta: -3 })
+  expect(allTeams(reduce(played, { type: 'reset' }))).toEqual([])
+  // Step 1's "load the usual match" button, verbatim.
+  const usual = reduce(blankGame(), { type: 'replace', game: { ...initialGame(), stage: 'alliances' } })
+  expect(allTeams(usual)).toHaveLength(7)
+  expect(usual.stage).toBe('alliances')
+})
+
+test('ending the battle moves to the end stage without changing how scoring reads it', () => {
+  const g = reduce(initialGame(), { type: 'finish', finished: true })
+  expect(g.stage).toBe('end')
+  expect(g.finished).toBe(true)
+  // Back to the board un-finishes it too — `finished` is a real flag, not `stage === 'end'`,
+  // because stepping off the end screen must not silently revoke the kill bonus mid-look.
+  const back = reduce(g, { type: 'finish', finished: false })
+  expect(back.stage).toBe('play')
+  expect(back.finished).toBe(false)
+})
+
+test('a snapshot from before the wizard lands on a stage rather than undefined', () => {
+  const { stage: _gone, ...old } = initialGame()
+  const g = reduce(initialGame(), { type: 'replace', game: old as Game })
+  expect(g.stage).toBe('play')
+})
+
+test('a GM link carries the write token; a spectator link does not', () => {
+  expect(parseHash('#/g/ABCD/0189d4a1-0000-4000-8000-0123456789ab')).toEqual({
+    code: 'ABCD',
+    token: '0189d4a1-0000-4000-8000-0123456789ab',
+  })
+  expect(parseHash('#/r/ABCD')).toEqual({ code: 'ABCD' })
+  expect(parseHash('#/g/ABCD')).toEqual({ code: 'ABCD' }) // no token ⇒ read only, not GM
+  expect(parseHash('#/nonsense')).toBeNull()
+  expect(parseHash('')).toBeNull()
+})
+
+/* ---------- export / import ---------- */
+
+/** `File` is a web global; bun has it, so no harness is needed to exercise the trust boundary. */
+const asFile = (body: string) => new File([body], 'm.json', { type: 'application/json' })
+
+test('a match survives a round trip through a file', async () => {
+  let g = reduce(initialGame(), { type: 'finish', finished: true })
+  g = reduce(g, { type: 'critVp', side: 'imperium', tp: 2, delta: 2 })
+  const back = await importGame(asFile(JSON.stringify(g)))
+  // `replace` is what the UI actually dispatches, and it normalizes — so compare through it.
+  expect(reduce(initialGame(), { type: 'replace', game: back })).toEqual(g)
+})
+
+test('a match file names itself after the fight, not the clock alone', () => {
+  expect(matchFilename(initialGame())).toMatch(/^killteam-imperium-v-xenos-tp1-\d{4}-\d{2}-\d{2}\.json$/)
+  expect(matchFilename(reduce(initialGame(), { type: 'finish', finished: true }))).toContain('-final-')
+  // No path separators or spaces can reach the filename, whatever an alliance is called.
+  const odd = reduce(initialGame(), { type: 'sidePatch', id: 'imperium', patch: { name: 'a/b c:d' } })
+  expect(matchFilename(odd)).not.toMatch(/[/\\ :]/)
+})
+
+test('importing rejects anything that is not a match, rather than white-screening', async () => {
+  // `replace` fills in MISSING fields and `normalize` repairs DANGLING ones, but neither
+  // survives a field of the wrong type — `sides: "hello"` has a .length and dies on .map.
+  const bad: [string, RegExp][] = [
+    ['not json at all', /not JSON/],
+    ['[1,2,3]', /not a match/],
+    ['"a string"', /not a match/],
+    ['null', /not a match/],
+    ['{}', /no alliances/],
+    ['{"sides":"hello"}', /no alliances/],
+    ['{"sides":[]}', /no teams/],
+    ['{"sides":[],"teams":[]}', /no teams/],
+  ]
+  for (const [body, msg] of bad) {
+    expect(importGame(asFile(body))).rejects.toThrow(msg)
+  }
+  // The minimum that IS a match: empty, but structurally sound, and normalize takes it from there.
+  const ok = await importGame(asFile('{"sides":[],"teams":{}}'))
+  expect(() => reduce(initialGame(), { type: 'replace', game: ok })).not.toThrow()
 })
