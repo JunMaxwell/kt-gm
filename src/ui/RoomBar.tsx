@@ -31,7 +31,9 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
     if (room?.token) listSaves(room).then(setSaves).catch(() => {})
   }, [room])
 
-  const run = async (what: string, fn: () => Promise<unknown>) => {
+  // `done` matters: this used to clear the message on success, so a save flashed "saving" and
+  // then showed NOTHING. "Did that work?" is the one question a save button has to answer.
+  const run = async (what: string, fn: () => Promise<unknown>, done = '') => {
     setBusy(what)
     try {
       await fn()
@@ -39,8 +41,23 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
       setBusy('offline — the match is safe locally')
       return
     }
-    setBusy('')
+    setBusy(done)
   }
+
+  /**
+   * The honest answer to "is it in the database": the server's own list, fetched back after
+   * every save rather than an optimistic local flag. Shown even at zero — hiding it is what
+   * made the first save of a game feel like nothing had happened.
+   */
+  const newest = saves[0]
+  const savedNote = !room?.token ? null : newest ? (
+    <span title={saves.map((x) => `${x.label} · ${new Date(x.saved_at).toLocaleString()}`).join('\n')}>
+      <b className="text-white/80">{saves.length}</b> in the database · last{' '}
+      {new Date(newest.saved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  ) : (
+    <span className="text-amber-300">not saved yet</span>
+  )
 
   /** A file in and out. Deliberately available with or without a room — it is the only
    *  durable copy that needs no server, and the only one that crosses origins. */
@@ -110,31 +127,39 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
         </DarkBtn>
       )}
 
+      {/* Saves come BEFORE the file buttons. Export/import used to sit here, which pushed
+          "Save match" to the eleventh item in a wrapping strip — findable only if you knew. */}
       <span className="ml-2 h-5 w-px bg-white/20" />
-
-      {files}
-
-      <span className="h-5 w-px bg-white/20" />
+      <span className="display">Saves</span>
 
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder="save as…"
         aria-label="Name for this saved match"
-        className="w-36 rounded bg-white/15 px-2 py-1 text-sm text-white placeholder:text-white/40"
+        className="w-28 rounded bg-white/15 px-2 py-1 text-sm text-white placeholder:text-white/40"
       />
       <DarkBtn
         className="display"
+        title="Write a snapshot of this match to the database. The relay never does this — only this button."
         onClick={() =>
-          run('saving', async () => {
-            await saveMatch(room, label || `TP${game.tp}`, game)
-            setLabel('')
-            setSaves(await listSaves(room))
-          })
+          run(
+            'saving…',
+            async () => {
+              await saveMatch(room, label || `TP${game.tp}`, game)
+              setLabel('')
+              setSaves(await listSaves(room))
+            },
+            'saved',
+          )
         }
       >
         Save match
       </DarkBtn>
+
+      {/* Outcome shows where the click happened. `busy` wins while it is transient ("saving…",
+          "saved", "offline — …"); otherwise the persistent count from the server stands. */}
+      {busy ? <span className="text-amber-300">{busy}</span> : savedNote}
 
       {saves.length > 0 && (
         <select
@@ -157,7 +182,9 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
         </select>
       )}
 
-      {busy && <span>{busy}</span>}
+      <span className="h-5 w-px bg-white/20" />
+
+      {files}
     </div>
   )
 }

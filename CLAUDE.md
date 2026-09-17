@@ -164,6 +164,15 @@ Two features that deliberately do not share a mechanism:
   `Map` and `server.publish`es it to every WebSocket on that room's topic. **Postgres is not
   involved.** A relay restart costs nothing: the GM's next tap re-seeds it.
 - **Saving is explicit.** "Save match" inserts a snapshot row. Nothing else writes to Postgres.
+  **The strip says so out loud**, because for a long time it did not: `run()` cleared its message
+  on success, so a save flashed "saving" and then showed nothing, and the `load a save…` select
+  is hidden at zero — meaning the *first* save of a game produced no feedback whatsoever. The
+  readout now reads **`N in the database · last HH:MM`**, or `not saved yet`, and it is derived
+  from `listSaves` — **the server's own list, re-fetched after every save** — rather than an
+  optimistic local flag, so it survives a reload and cannot claim a save that did not land. The
+  outcome renders beside the button that caused it, not at the end of the strip.
+  Saves also come *before* Export/Import in the strip: file buttons there once pushed
+  "Save match" to the eleventh item in a wrapping row.
 
 Non-negotiables that this design rests on:
 
