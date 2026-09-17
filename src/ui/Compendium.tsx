@@ -25,7 +25,8 @@ export function RefCardView({
   className?: string
 }) {
   const ploy = card.kind === 'strategy' || card.kind === 'firefight'
-  const broke = ploy && cp !== undefined && cp < PLOY_CP
+  const cost = card.cp ?? PLOY_CP
+  const broke = ploy && cp !== undefined && cp < cost
 
   return (
     <KtCard
@@ -34,7 +35,7 @@ export function RefCardView({
       name={card.name}
       dim={broke}
       outline={live ? 'var(--color-flare)' : undefined}
-      aside={ploy && <span className="text-white/60">{broke ? `need ${PLOY_CP}CP` : `${PLOY_CP}CP`}</span>}
+      aside={ploy && <span className="text-white/60">{broke ? `need ${cost}CP` : cost === 0 ? 'free' : `${cost}CP`}</span>}
       className={className}
     >
       <Rules text={card.text} />

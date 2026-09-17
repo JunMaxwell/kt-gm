@@ -838,6 +838,17 @@ heuristic freezes all eleven of them wrongly. Note the preset six field operativ
 `CATALOGUE` in `rules.ts`, not from the library, so **Grot and the Squig need it in both places** —
 `cat()` takes an optional sixth column for exactly that.
 
+**Towering Size is what makes a boss killable, and the app understates it.** Printed pg 20 reads
+*"whenever another operative is performing the Shoot action, being within control range of other
+operatives doesn't prevent this operative from being selected as a valid target"* — **other**
+operatives, not just friendly ones. The "in other words" sentence that follows it is an
+illustration, and `nemesisCore` used to carry only that, which reads as "his own allies don't
+shield him" and hides the actual counter-play: **pin the boss with one cheap operative and the rest
+of that alliance keeps shooting into the melee.** Angron's own card now states the rule outright — the
+**rule only**: a first draft spelled the tactic out too ("pin him with one cheap operative and keep
+firing") and the user cut it. These cards print rules, not coaching. Two Towering bullets (Accessible terrain, and temporarily removing a sub-2" terrain feature
+he finishes a move in) were missing outright and are now in.
+
 **TOWERING is the core rule's name, not a printed keyword.** The dossier's sample datacard (pg 14)
 prints `KEYWORDS: IMPERIUM, NEMESIS, ARMOURED SENTINEL` with SIZE as a separate field — there is no
 TOWERING keyword in the format. It is on the two bosses' keyword lines because it is the clearest
@@ -845,18 +856,90 @@ flag for a rule that changes how they are played, and it is **not size-gated**: 
 under *7. Core Rules* beside Extra Defence and Bulky, so Medium Farsight has it exactly as much as
 Large Angron.
 
-**Neither has a single strategy or firefight ploy, and that is correct.** A nemesis operative
-*accompanies* a kill team rather than being one — the dossier's own intro says a kill team fielding
-one "will have fewer operatives than normal to accompany it" — so the ploys come from the team it
-joins, and cannot target the boss anyway because it has **no faction keyword**. The Custom Builder
-has no ploy step. If this match wants ploys for a boss, they are **homebrew**: the GM writes them
-in Setup, where the card editor already offers all four card kinds.
+**The format gives a nemesis operative no ploys at all.** One *accompanies* a kill team rather
+than being one — the dossier's own intro says a kill team fielding one "will have fewer operatives
+than normal to accompany it" — so the ploys come from the team it joins, and cannot target the boss
+anyway because it has **no faction keyword**. The Custom Builder has no ploy step.
+
+**Angron has a full 4/4 ploy deck regardless, and all of it is homebrew.** The app models each boss
+as a standalone team, so there is no accompanying kill team to borrow from and his player would bank
+CP every turning point with nothing to spend it on. Every card names **Angron** rather than a
+keyword, because a ploy worded "a friendly X operative" could never select him.
+
+| Strategy | Firefight |
+|---|---|
+| *Blood Tithe* — **0CP**, 5 damage → 2CP, once per TP | *Blood for the Blood God* — heal D3+3 on a kill, once per TP |
+| *Heedless Onslaught* — +2" Move and +3" on a Charge, Save worsened by 1 | *No Escape* — free Fight when an enemy Falls Back out of control range |
+| *No Sanctuary* — enemies within 6" cannot be given Conceal | *Relentless Carnage* — the wound ladder, below |
+| *Unkillable Rage* — survive incapacitation at 10W, once per **battle** | *Butcher's Frenzy* — +3 Atk for one fight, no Fall Back that TP |
+
+**Check every new boss card against `nemesisCore` before writing it.** *Heedless Onslaught*
+shipped granting "move through enemy operatives", which **Bulky already grants** — the user caught
+it. The core rules card is long and its three rules give away a lot for free: Bulky covers moving
+through operatives, Towering Size covers terrain under 2" tall, and between them they also *take*
+Conceal, cover and Vantage away. *Wings of the Red Angel* — FLY for one Reposition or Charge —
+passed that check but failed the one after it and **has been replaced by *Butcher's Frenzy***: FLY
+bought him only terrain 2" or taller, because Bulky already gave him operatives and Towering Size
+already gave him everything under 2". Technically not a duplicate, practically not worth 1CP.
+
+*Butcher's Frenzy* fills the gap that left: **nothing in the firefight four made a single fight
+decisive.** Relentless Carnage is area damage, No Escape punishes a retreat, Blood for the Blood God
+pays out after a kill — so +3 Atk on one sequence is the only card that wins the melee it is used
+in. Its cost is that he cannot Fall Back for the rest of the turning point, which keeps every card
+in the deck a decision rather than a pure buff.
+
+**Cutting a redundant clause is half a fix — reprice the card too.** *Heedless Onslaught* shipped as
++2" Move **and** move-through-enemies for 1CP and a worsened Save; removing the Bulky duplicate left
+1CP and a Save penalty buying +2" Move, which is strictly worse than not using it. It now reads +2"
+Move and a further +3" on a Charge, so his charge threat goes 8" → **13"** and the Save trade is a
+real decision. Whenever a rules duplicate gets deleted here, check what the card is still worth.
+
+The strategy four each answer a different one of his real weaknesses — he dies crossing open ground
+(Towering means no cover, no Conceal, no obscuring), the enemy hides from him, downing him hands the
+enemy **ten** kills at `kv: 10`, and his player is permanently broke. The set is deliberately **not**
+four wound-trades: bleeding is the theme, but four of them would just kill him.
+
+**Two of them buy their effect with wounds**, which is the whole character. *Relentless Carnage*
+replaced a flat D3+3 area hit the user judged too strong: 3 / 6 / 10 damage to Angron for one hit,
+two hits, or two hits at 4" for 0CP (that tier once per turning point). *Blood Tithe* runs it the
+other way, 5 damage for 2CP. Both require he have strictly **more** wounds remaining than the cost,
+so neither can kill him, and both walk a 75W boss toward Injured — the cost is real.
+
+**`RefCard.cp` exists because of `Blood Tithe`, and it is not cosmetic.** `RefCardView` dims a ploy
+the team cannot afford and badges it `need 1CP`; a 0CP ploy without the field greys itself out at
+exactly 0CP, which is the one moment you would reach for a bleed-for-CP card. Absent means
+`PLOY_CP`, so all 48 extracted factions are untouched. *Relentless Carnage*'s conditional 0CP tier
+is **not** expressible as a flat number and stays 1CP on the badge — correct for its base use, and
+the card text carries the rest. **Farsight still has none**; he is the untouched format baseline,
+and that asymmetry is deliberate rather than an oversight. A GM wanting more can write them in
+Setup, where the card editor already offers all four card kinds.
 
 ### Still unread
 
-The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46), and the exact
-team-size reduction a nemesis operative imposes — the intro (pg 6) confirms it exists and is keyed
-to the boss's size, but the number itself has not been read.
+The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46).
+
+**The team-size reduction HAS now been read** (pg 35, *Kill Team Selection*), and it settles what a
+boss costs. A NEMESIS operative **must share its kill team's allegiance keyword** — Angron is
+CHAOS, so he can only join a CHAOS kill team — and that team then fields a reduced number of
+operatives *alongside* him. Row = the team's normal starting size, column = the boss's size:
+
+| normal | Small | Medium | Large |
+|---|---|---|---|
+| 5 | 4 | 3 | 2 |
+| 6 | 4 | 3 | 2 |
+| 7 | 5 | 4 | 2 |
+| 8 | 5 | 4 | 3 |
+| 9 | 6 | 5 | 3 |
+| 10 | 7 | 5 | 3 |
+| 11 | 7 | 6 | 4 |
+| 12 | 8 | 6 | 4 |
+| 13 | 9 | 7 | 4 |
+| 14 | 9 | 7 | 5 |
+
+This is also the answer to "where are the boss's ploys": **a NEMESIS operative is not a kill team,
+it joins one**, and the ploys are the accompanying team's. The app models Angron and Farsight as
+standalone teams, so there is no kill team attached — which is why Farsight's Strat/Fire tabs are
+empty and why Angron's four are marked homebrew in his own module.
 
 **The Custom Builder HAS now been read and checks out.** Its seven steps are 1 Allegiance,
 2 Size, 3 Behaviour (NPO only), 4 Weapons, 5 Traits, 6 Name, 7 Core Rules. Verified against what
@@ -865,6 +948,24 @@ this repo already had: the size table is exactly S 4/6"/4+/35/2, M 5/6"/4+/50/2,
 Angron's 5 ATK really does come from Paired weapon; and *Fury*, *Close-range Lethality*, *Let the
 Galaxy Burn* and *Supporting Fire* match the trait tables on pg 19 verbatim. The core rules on
 pg 20 are exactly three: Extra Defence, Bulky, Towering Size.
+
+**An unspent weapon selection converts to an extra nemesis trait** — stated twice, on pg 16 and
+again on pg 19: *"each weapon selection you didn't use in the Weapons step grants you an extra
+nemesis trait selection, but you cannot select a nemesis trait the operative already has."*
+
+**Angron spends two of his three selections, and the third buys *Implacable*.** He is Spinegrinder
+(chain weapon, ATK 4) + Samni'arius (power weapon, ATK 4), with *Fury* and *Implacable* as his two
+nemesis traits. He used to spend the third on **Paired weapon** — a selection, not a weapon: the
+melee table (pg 18) prints it with no ATK, HIT or DMG and its whole rule is *"select one other melee
+weapon this operative has and add 1 to its Atk stat"*, which is why Spinegrinder read ATK **5** in
+every earlier version of this file. Its ranged twin is Twinned weapon (pg 17), granting Ceaseless.
+
+*Implacable* is *"ignore any changes to this operative's weapon stats from being injured"*, so he
+holds HIT 3+ on both weapons down to his last wound while Injured still costs him 2" of Move. That
+was the user's pick over *Tenacious* (the mirror: keep the Move, lose the Hit) and over taking both,
+which would have cost a second selection and therefore Samni'arius outright. It matters more than
+it looks, because **two of his ploys wound him on purpose** and *Unkillable Rage* leaves him at 10W
+— the Injured band is where this build expects to live.
 
 **The dossier is a scan** — 80 pages from an HP MFP with no text layer, so `pdftotext` returns
 nothing at all and the extractor cannot touch it. Read it as page images, or OCR it first.
@@ -958,8 +1059,8 @@ the typed absolute into a delta, so the `wound` action and its clamp are unchang
   the ones most likely to read oddly.
 - **Nothing a datacard prints is modelled beyond the card itself.** Weapons, abilities, unique
   actions and keywords are all extracted, and the two NEMESIS bosses carry hand-written ones.
-  Points costs are parsed and then dropped: this app does not do list building. Neither boss has
-  ploys, which is the format, not a gap — see **Nemesis operatives**.
+  Points costs are parsed and then dropped: this app does not do list building. Farsight has no
+  ploys, which is the format, not a gap; Angron's four are homebrew — see **Nemesis operatives**.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.

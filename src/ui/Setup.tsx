@@ -7,6 +7,7 @@ import {
   type CritOpId,
   DEFAULT_ROSTER,
   type OwnCard,
+  STARTING_CP,
   type TeamDef,
   presetRoster,
 } from '../rules'
@@ -53,7 +54,7 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
           ink: f.ink,
           archetypes: [...f.archetypes],
           faction: f.id,
-          cp: 0,
+          cp: STARTING_CP,
           tacOp: '',
           tacVp: 0,
         }
@@ -65,7 +66,7 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
           side,
           color: '#5f5f5f',
           archetypes: ['Seek & Destroy'],
-          cp: 0,
+          cp: STARTING_CP,
           tacOp: '',
           tacVp: 0,
         }

@@ -14,8 +14,15 @@
 export type PhaseId = 'initiative' | 'strategy' | 'firefight'
 export type RefKind = 'faction' | 'strategy' | 'firefight' | 'equipment'
 
-/** One card: a faction rule, a ploy, or a piece of equipment. */
-export type RefCard = { name: string; kind: RefKind; text: string }
+/**
+ * One card: a faction rule, a ploy, or a piece of equipment.
+ *
+ * `cp` overrides `PLOY_CP` for the rare ploy that does not cost the flat 1. Absent means 1,
+ * which is every printed 2024 ploy — the field exists for homebrew, and it is not cosmetic:
+ * `RefCardView` dims a ploy the team cannot afford, so a 0CP ploy without this greys itself out
+ * at exactly 0CP, which is when you would reach for one.
+ */
+export type RefCard = { name: string; kind: RefKind; text: string; cp?: number }
 
 /** One line of an operative's weapon table. `wr` is the weapon rules column, absent when "-". */
 export type Weapon = { name: string; atk: number; hit: string; dmg: string; wr?: string }
