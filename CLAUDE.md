@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 106 tests: the reducer, and a render pass over every panel
+bun test           # 111 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -94,9 +94,9 @@ Two conventions the split rests on:
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v15`). Any change to
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v16`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-fifteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+sixteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -278,9 +278,9 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 106 tests in two files:
+`bun test` is 111 tests in two files:
 
-- `src/state.test.ts` — the reducer and selectors, 97 tests. `withHistory` is exported purely so
+- `src/state.test.ts` — the reducer and selectors, 101 tests. `withHistory` is exported purely so
   undo is testable without a React harness.
 - `src/ui/render.test.tsx` — four `renderToStaticMarkup` smoke tests that mount **every** panel
   against a 2-alliance game, a 3-alliance game with a hand-built team, a one-team-per-side match
@@ -373,6 +373,22 @@ time and a stale `pairUsed` id is inert. Fewer stored invariants, fewer things t
   every render.
 - `teamsWithArchetype(teams, a)` takes the team list now, and `TacOpCard` receives the resulting
   pills as a **prop** — it is a leaf and must not reach for `game`.
+
+### Hand-written factions
+
+`src/factions/*` is generated, **with one exception**: `angron.ts` is homebrew, and its header
+says so. Two things make that safe rather than a trap:
+
+- `tools/kt_generate.py` only writes `<fid>.ts` for factions in its own download list, so it can
+  never clobber a module whose id is not on Warhammer Community's page.
+- **`src/factions/index.ts` is maintained by hand** — the generator does not emit it. That cuts
+  both ways: a hand-written faction registered there survives regeneration, and a newly extracted
+  one has to be added by hand.
+
+`FactionMeta.custom` marks them. It exists because the completeness guards in `state.test.ts`
+encode the *printed* 2024 format — exactly 4 strategy ploys, 4 firefight ploys and 4 equipment —
+and homebrew is not bound by it. Those tests are scoped to `!custom`, and a separate test holds
+custom factions to the weaker bar that actually matters: non-empty, prefixed ids, real text.
 
 ### The faction library
 
@@ -605,8 +621,11 @@ Facts that cost time to establish, and will again if this is redone:
 - **Errata are already folded into the card text.** Each PDF says so: *"Rules changes will be
   updated directly into online documents and then listed below."* Transcribe the cards, ignore
   the update log at the end.
-- **Neither wiki is usable.** Wahapedia 403s automated fetches and KTDash is a JS app with no
-  public API. The PDFs are the primary source and strictly better than both.
+- **Wahapedia 403s automated fetches.** The PDFs are the primary source for team rules.
+- **KTDash DOES have a public JSON API**, contrary to what this file used to say:
+  `https://ktdash.app/api/killteams/<id>` returns a kill team whole, including rules text. It is
+  the only place the NEMESIS *allegiance traits* could be found — the dossier defers to physical
+  cards for those. Useful when a rule exists but is not in any free PDF.
 
 **The completeness check is the 2024 format**: every team has exactly **4 strategy ploys, 4
 firefight ploys and 4 faction equipment**, and `state.test.ts` asserts it for all 48. Faction
@@ -680,9 +699,53 @@ team chip row above the same `Compendium`, **wrapped in a fixed `h-[26rem]`** be
 carousel is `flex-1` and needs a height to fill inside a collapsible. Shared component,
 different frame — the GM is looking things up for other people, not playing a hand.
 
-## Boss fights
+## Nemesis operatives (the bosses)
 
-A boss is an ordinary operative with big numbers, plus two fields that exist only for it.
+Angron and Farsight are **NEMESIS operatives**, built with the official Custom Builder from
+*Kill Team: Nemesis Operatives* — a paid expansion, so none of it is in the free downloads the
+extractor pulls. The dossier PDF is in the repo root.
+
+**The statline is not a design choice.** Size picks it outright:
+
+| SIZE | CONTROL | MOVE | SAVE | WOUNDS | WEAPONS |
+|---|---|---|---|---|---|
+| Small | 4 | 6" | 4+ | 35 | 2 |
+| Medium | 5 | 6" | 4+ | 50 | 2 |
+| Large | 6 | 6" | 4+ | 75 | 3 |
+
+Angron is Large/CHAOS, Farsight Medium/T'AU EMPIRE. **They differ by tier, not by invention** —
+same core rules, same save.
+
+Things that are easy to get wrong, and were:
+
+- **A nemesis operative's durability is wounds plus an extra defence die, never a good save.** All
+  three sizes are 4+. An earlier Angron had 50W and a 2+, which is not a legal nemesis operative
+  and made him far harder to hurt than the format intends.
+- **CONTROL is a distinct stat**, standing in for APL everywhere except spending action points.
+  The app has one stat slot, so `Operative.apl` carries the Control value and the datacard card
+  says so. That was a deliberate call (card text over a new field), not an oversight.
+- **They activate twice per turning point** — that is the core rule, which is why
+  `Operative.acts` exists. A player nemesis operative spends 5AP per turning point.
+- **They have no faction keyword**, so their kill team's faction rules cannot select them. Angron
+  gets nothing from Goremongers.
+- **Behaviour (Brawler / Marksman / Battler / Guardian) is NPO-only.** A player-controlled nemesis
+  has none; its controller chooses its actions. An earlier Angron had an invented "must charge the
+  nearest enemy" rule that the format has no room for.
+- **Allegiance trait text is not in the dossier.** It lives on separate cards; KTDash's API is
+  where this repo got it.
+
+`src/factions/nemesis.ts` holds the shared core-rules card so the two bosses cannot drift apart.
+It exports no `cards`/`operatives`, so the faction loader never sees it.
+
+### Still unread
+
+The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46) and the
+team-size reduction a nemesis operative imposes on the kill team accompanying it. Both are in the
+dossier; neither has been transcribed.
+
+## Boss fights — the app support underneath
+
+The two bosses above are NEMESIS operatives; this is the machinery that lets the app hold one.
 
 - **`Operative.kv`** is how many kills downing it is worth. Absent means 1, and that default is
   the whole reason adding the field changed no existing test: `killValue()` sums `killWorth` over
@@ -691,17 +754,18 @@ A boss is an ordinary operative with big numbers, plus two fields that exist onl
   rather than counting bodies, and **so does the Scoreboard's "N of M down"** — that readout
   computes "the enemy" through its own local closure, separate from `state.ts`, so both have to
   be weighted or the readout and the grade disagree.
-  Rule of thumb when setting one: **kv ≈ wounds ÷ 5**.
+  Rule of thumb when setting one: **kv ≈ wounds ÷ 7** — Angron is 75W/kv 10, Farsight 50W/kv 7.
 - **`TeamDef.cards`** holds cards the GM typed. They live on the team, not in a `Game.cards`
   record, and that is the entire trick: `normalize` already prunes `g.teams`, so deleting a team
   or an alliance takes its cards with it and **no cleanup code was needed**.
 
 Three details that are load-bearing:
 
-- **GM cards are merged ahead of the faction deck**, and when the open deck is empty the view
-  falls back to *the deck the GM's first card is in* rather than to `decks[0]`. Without that a
-  boss's rules sit behind the ten universal equipment cards, which sort earlier — the player
-  opens the app and sees ladders and barricades.
+- **GM cards are merged ahead of the faction deck, and the empty-deck fallback never lands on
+  universal equipment while the team has rules of its own.** Those ten cards belong to everybody
+  and they sort before `faction`, so without the guard a player opening a boss sees ladders and
+  barricades instead of his rules. This bit twice: once for GM-written cards, and again for
+  Angron once he was rebuilt with faction cards only.
 - **`cardAdd`/`cardPatch`/`cardRemove` are their own actions rather than `teamPatch`** so that
   one card edit is one undo step. `teamPatch` coalesces per team, which would merge every card
   edit on a team into a single step.
@@ -710,8 +774,16 @@ Three details that are load-bearing:
   `cardId` — so `teamId` won and edits to two different cards on one team collapsed into one undo
   step. A test pins this.
 
+**`Operative.acts`** is how many times an operative activates in a turning point; absent means 1.
+`OpState.expended` used to be the whole story, and it is still what `readyCount` and Counteract
+eligibility read — `OpState.used` counts activations underneath it and `expended` becomes
+`used >= acts`. The correction path (clicking an expended operative) decrements rather than
+clearing, so a boss can be walked back one activation at a time. Without this a two-activation
+operative is a note in the GM's head, and the reducer would treat its second activation as a
+correction — banking no Counteract and not advancing the turn.
+
 `Stepper` also gained an optional `onSet`, which turns its number into a typed field. Stepping a
-45-wound boss down by a 12-damage hit is twelve clicks with the table waiting. The caller converts
+75-wound boss down by a 12-damage hit is twelve clicks with the table waiting. The caller converts
 the typed absolute into a delta, so the `wound` action and its clamp are unchanged.
 
 ## Known gaps

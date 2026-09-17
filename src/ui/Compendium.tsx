@@ -90,11 +90,14 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
 
   // An empty deck would be a dead tab, so `now` only appears once the phase unlocks something.
   const decks = (['now', 'strategy', 'firefight', 'equipment', 'faction', 'tac'] as Deck[]).filter((d) => size(d) > 0)
-  // Which deck opens when the chosen one is empty. If the GM wrote cards for this team they
-  // are the reason the player is looking, so open on those — otherwise a boss's rules sit
-  // behind the ten universal equipment cards, which sort earlier.
-  const own = team?.cards?.[0]?.kind
-  const fallback = (own && decks.includes(own) ? own : decks[0]) ?? 'strategy'
+  // Which deck opens when the chosen one is empty. Never land on universal equipment while this
+  // team has rules of its own: those ten cards belong to everybody, they sort before `faction`,
+  // and a team whose only cards are faction rules — a NEMESIS operative, say — would otherwise
+  // open on ladders and barricades. GM-written cards win outright; they are why anyone looked.
+  const ownFirst = team?.cards?.[0]?.kind
+  const hasOwn = (d: Deck) => cardsIn(d).some((c) => !UNIVERSAL_EQUIPMENT.includes(c))
+  const fallback =
+    (ownFirst && decks.includes(ownFirst) ? ownFirst : decks.find(hasOwn)) ?? decks[0] ?? 'strategy'
   const live = decks.includes(deck) ? deck : fallback
 
   const slides =

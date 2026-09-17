@@ -39,6 +39,15 @@ export function EditRow({ teamId, o, dispatch }: { teamId: string; o: Operative;
           W
           <BufferedInput className="w-12" inputMode="numeric" value={String(o.w)} onEdit={onInt((w) => edit({ w: Math.max(1, w) }))} />
         </label>
+        <label className="flex items-center gap-1 text-xs text-ink/45" title="Activations per turning point. 1 for a normal model; a boss may get more.">
+          Acts
+          <BufferedInput
+            className="w-10"
+            inputMode="numeric"
+            value={String(o.acts ?? 1)}
+            onEdit={onInt((acts) => edit({ acts: Math.max(1, acts) }))}
+          />
+        </label>
         <label className="flex items-center gap-1 text-xs text-ink/45" title="Kills this operative is worth when it goes down. 1 for a normal model; raise it for a boss.">
           Kill
           <BufferedInput
@@ -57,6 +66,7 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
   const st = game.ops[o.id]
   if (!st) return null
   const injured = !st.dead && st.hp * 2 < o.w
+  const acts = Math.max(1, o.acts ?? 1)
 
   return (
     <li
@@ -68,12 +78,18 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
         onClick={() => dispatch({ type: 'activate', opId: o.id })}
         disabled={st.dead}
         className="min-w-0 flex-1 basis-24 truncate text-left font-medium hover:text-security"
-        title={`${o.name} · ${o.apl}AP · Move ${o.move} · Save ${o.save} · ${o.w}W — ${
-          st.expended ? 'expended, click to ready' : 'click when activated'
-        }`}
+        title={`${o.name} · ${o.apl}AP · Move ${o.move} · Save ${o.save} · ${o.w}W${
+          acts > 1 ? ` · ${acts} activations` : ''
+        } — ${st.expended ? 'expended, click to ready' : 'click when activated'}`}
       >
         {st.expended && !st.dead ? '· ' : ''}
         {o.name}
+        {/* Only a boss has more than one, and then the count is the thing you need to see. */}
+        {acts > 1 && !st.dead && (
+          <span className="display ml-1.5 rounded bg-black/10 px-1 text-[10px] tabular-nums text-ink/60">
+            {st.used ?? 0}/{acts}
+          </span>
+        )}
       </button>
       <button
         onClick={() => dispatch({ type: 'order', opId: o.id, value: st.order === 'conceal' ? 'engage' : 'conceal' })}

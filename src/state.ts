@@ -27,6 +27,9 @@ import type { PhaseId, RefKind } from './compendium'
 export type Order = 'conceal' | 'engage'
 export type OpState = {
   hp: number
+  /** Activations spent this turning point. Absent means none. `expended` stays the thing
+   *  everything else reads — this only exists so an operative can activate more than once. */
+  used?: number
   expended: boolean
   dead: boolean
   order: Order
@@ -65,7 +68,7 @@ const freshOps = (roster: Record<string, Operative[]>) =>
   Object.fromEntries(
     Object.values(roster)
       .flat()
-      .map((o) => [o.id, { hp: o.w, expended: false, dead: false, order: 'conceal' as Order }]),
+      .map((o) => [o.id, { hp: o.w, used: 0, expended: false, dead: false, order: 'conceal' as Order }]),
   )
 
 export const initialGame = (): Game => {
@@ -293,12 +296,17 @@ export function reduce(g: Game, a: Action): Game {
       const o = g.ops[a.opId]
       const teamId = teamIdOf(g, a.opId)
       const spending = !o.expended // readying an operative again is a correction, not an activation
+      // Almost every operative activates once, so `used` tracks the same bit `expended` did.
+      // An operative with `acts: 2` stays ready until it has spent both, which is the only way
+      // a boss's "activates twice" can be true in the app rather than in the GM's head.
+      const acts = Math.max(1, findOp(g, a.opId)?.acts ?? 1)
+      const spent = clamp((o.used ?? 0) + (spending ? 1 : -1), 0, acts)
       // Activating *is* the Firefight phase, so the GM never has to announce that one by hand.
       // Every path below spreads `next`, so setting it here covers all of them.
       const next = {
         ...g,
         phase: spending ? ('firefight' as const) : g.phase,
-        ops: { ...g.ops, [a.opId]: { ...o, expended: spending } },
+        ops: { ...g.ops, [a.opId]: { ...o, used: spent, expended: spent >= acts } },
       }
 
       if (!g.paired) {
@@ -365,7 +373,7 @@ export function reduce(g: Game, a: Action): Game {
     }
     case 'nextTp': {
       // Ready all surviving operatives, hand out CP.
-      const ops = Object.fromEntries(Object.entries(g.ops).map(([id, o]) => [id, { ...o, expended: false }]))
+      const ops = Object.fromEntries(Object.entries(g.ops).map(([id, o]) => [id, { ...o, used: 0, expended: false }]))
       // Iterate the live teams, not the preset list — a team the GM added mid-match
       // would otherwise vanish from `g.teams` here while its roster and ops survived.
       const teams = Object.fromEntries(
@@ -394,7 +402,7 @@ export function reduce(g: Game, a: Action): Game {
       return {
         ...g,
         roster: { ...g.roster, [a.teamId]: [...g.roster[a.teamId], a.op] },
-        ops: { ...g.ops, [a.op.id]: { hp: a.op.w, expended: false, dead: false, order: 'conceal' } },
+        ops: { ...g.ops, [a.op.id]: { hp: a.op.w, used: 0, expended: false, dead: false, order: 'conceal' } },
       }
     case 'removeOp': {
       const { [a.opId]: _gone, ...ops } = g.ops
@@ -669,7 +677,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v15' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v16' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */

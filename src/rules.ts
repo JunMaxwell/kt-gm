@@ -18,6 +18,9 @@ export type Operative = {
   move: string
   save: string
   w: number
+  /** Activations this operative gets each turning point. Absent means 1, which is every
+   *  datacard operative — a boss is the reason the field exists. */
+  acts?: number
   /** How many kills downing this operative is worth. Absent means 1, which is what every
    *  datacard operative is — so the kill ladders are unchanged by this field existing. Raise
    *  it for a boss, whose death should move the grade further than a Grot's. */

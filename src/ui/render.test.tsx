@@ -81,7 +81,10 @@ test('a team on a lazily-loaded faction renders before and after its chunk arriv
 })
 
 test('every faction in the picker can actually be loaded', async () => {
-  for (const f of FACTIONS) expect((await loadFaction(f.id))!.cards.length).toBeGreaterThan(8)
+  for (const f of FACTIONS) {
+    const min = f.custom ? 1 : 8 // homebrew is not held to the printed 4/4/4 format
+    expect((await loadFaction(f.id))!.cards.length).toBeGreaterThan(min)
+  }
 })
 
 test('a GM-authored card reaches the player view, ahead of the faction deck', () => {

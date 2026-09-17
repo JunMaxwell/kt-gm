@@ -37,6 +37,7 @@ import {
   pairTarget,
   reduce,
   scores,
+  readyCount,
   sideOps,
   suggestedCrit,
   teamIdOf,
@@ -205,7 +206,7 @@ test('adding an operative gives it full hp and moves the enemy kill ladder', () 
   const extra = { ...fromCatalogue('kom', 'Boy'), id: 'kom-extra-boy' }
   g = reduce(g, { type: 'addOp', teamId: 'kom', op: extra })
   expect(teamOps(g, 'kom').length).toBe(12)
-  expect(g.ops['kom-extra-boy']).toEqual({ hp: 10, expended: false, dead: false, order: 'conceal' })
+  expect(g.ops['kom-extra-boy']).toEqual({ hp: 10, used: 0, expended: false, dead: false, order: 'conceal' })
   expect(sideOps(g, 'xenos').length).toBe(29)
   // Imperium now needs more kills per grade, since it faces one more Ork
   expect(killThresholds(29)).not.toEqual(before)
@@ -768,8 +769,12 @@ test('every card in every faction is well formed', async () => {
 
 // The 2024 format: every team's card carries exactly four of each ploy kind and four
 // pieces of faction equipment. A short count means the extractor dropped a card.
-test('every faction has 4 strategy ploys, 4 firefight ploys and 4 equipment', async () => {
-  for (const f of FACTIONS) {
+//
+// Scoped to the EXTRACTED factions on purpose — homebrew (`custom`) is not bound by the
+// printed format, and holding it to the same shape would mean padding a boss with ploys
+// nobody wrote. The guard exists to catch extractor regressions, and it still does.
+test('every extracted faction has 4 strategy ploys, 4 firefight ploys and 4 equipment', async () => {
+  for (const f of FACTIONS.filter((x) => !x.custom)) {
     const cards = (await loadFaction(f.id))!.cards
     const n = (k: RefKind) => cards.filter((c) => c.kind === k).length
     expect([f.id, n('strategy'), n('firefight'), n('equipment')]).toEqual([f.id, 4, 4, 4])
@@ -786,6 +791,18 @@ test('operative ids are unique across the whole library', async () => {
     }
   }
   expect(seen.size).toBeGreaterThan(400)
+})
+
+test('a hand-written faction is still well formed, just not to the printed format', async () => {
+  const custom = FACTIONS.filter((f) => f.custom)
+  expect(custom.length).toBeGreaterThan(0)
+  for (const f of custom) {
+    const data = (await loadFaction(f.id))!
+    expect(data.cards.length).toBeGreaterThan(0)
+    expect(data.operatives.length).toBeGreaterThan(0)
+    for (const c of data.cards) expect(c.text.length).toBeGreaterThan(20)
+    for (const o of data.operatives) expect(o.id.startsWith(`${f.id}:`)).toBe(true)
+  }
 })
 
 test('universal equipment is no longer empty', () => {
@@ -1057,4 +1074,54 @@ test('typing two different cards on one team is two undo steps, not one', () => 
   h = withHistory(h, { type: 'undo' })
   expect(cardsOf(h.now, 'rav').find((c) => c.id === b)!.text).toBe('')
   expect(cardsOf(h.now, 'rav').find((c) => c.id === a)!.text).toBe('An') // card A's edit survives
+})
+
+/* ---------- multiple activations ---------- */
+
+test('an operative with no acts field activates exactly once, as it always did', () => {
+  let g = initialGame()
+  const id = ids(g, 'dw')[0]
+  expect(readyCount(g, 'dw')).toBe(5)
+  g = reduce(g, { type: 'activate', opId: id })
+  expect(g.ops[id].expended).toBe(true)
+  expect(readyCount(g, 'dw')).toBe(4)
+})
+
+test('a two-activation operative stays ready until it has spent both', () => {
+  const boss = { ...blankOperative('rav'), name: 'Angron', w: 50, acts: 2 }
+  let g = reduce(initialGame(), { type: 'addOp', teamId: 'rav', op: boss })
+
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(g.ops[boss.id].used).toBe(1)
+  expect(g.ops[boss.id].expended).toBe(false) // still has one left
+
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(g.ops[boss.id].used).toBe(2)
+  expect(g.ops[boss.id].expended).toBe(true)
+
+  // and the correction path walks it back one activation at a time
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(g.ops[boss.id]).toMatchObject({ used: 1, expended: false })
+})
+
+test('a new turning point gives a two-activation operative both back', () => {
+  const boss = { ...blankOperative('rav'), name: 'Angron', w: 50, acts: 2 }
+  let g = reduce(initialGame(), { type: 'addOp', teamId: 'rav', op: boss })
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(g.ops[boss.id].expended).toBe(true)
+  g = reduce(g, { type: 'nextTp' })
+  expect(g.ops[boss.id]).toMatchObject({ used: 0, expended: false })
+})
+
+test('a two-activation operative keeps its team ready for a second bite', () => {
+  const boss = { ...blankOperative('rav'), name: 'Angron', w: 50, acts: 2 }
+  let g = reduce(initialGame(), { type: 'addOp', teamId: 'rav', op: boss })
+  const solo = teamOps(g, 'rav').filter((o) => o.id !== boss.id)
+  for (const o of solo) g = reduce(g, { type: 'dead', opId: o.id, dead: true })
+  expect(readyCount(g, 'rav')).toBe(1) // only the boss left standing
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(readyCount(g, 'rav')).toBe(1) // one activation spent, still counted ready
+  g = reduce(g, { type: 'activate', opId: boss.id })
+  expect(readyCount(g, 'rav')).toBe(0)
 })
