@@ -772,8 +772,27 @@ extractor pulls. The dossier PDF is in the repo root.
 | Medium | 5 | 6" | 4+ | 50 | 2 |
 | Large | 6 | 6" | 4+ | 75 | 3 |
 
-Angron is Large/CHAOS, Farsight Medium/T'AU EMPIRE. **They differ by tier, not by invention** —
+Angron is Large/CHAOS, Farsight **Small**/T'AU EMPIRE. **They differ by tier, not by invention** —
 same core rules, same save.
+
+**Farsight is Small because the dossier says so about this exact model.** Its worked example
+(pgs 26-31 are the examples section pg 14 points at) is an **XV8 Crisis Battlesuit** on the same
+50mm base, built at Size: Small, 4/6"/4+/35, *"as it will be fighting alongside an XV26 STEALTH
+BATTLESUIT kill team"* — and it takes **Shielded** for its countermeasures, which is the swap
+`farsight.ts` already suggested. He was Medium here only while he was a solo one-model team.
+
+**The size is priced against the escort, and that is the whole point.** Sizes are costed by the
+team-size reduction table (pg 35): a Small boss costs its kill team only a couple of operatives
+because it fights *alongside* one. Farsight is now paired with **XV26**, whose normal starting size
+of 7 drops to **5** beside him. Angron stays Large *and* alone, which is why 75W is not excessive
+for him and 35W is not fragile for Farsight.
+
+**The app cannot put a boss inside another team's roster.** `TeamCard`'s picker offers only
+`CATALOGUE[team.faction] ?? faction.operatives`, so Farsight cannot be added to the XV26 roster.
+The pairing is expressed instead by keeping him his own team in XV26's alliance and giving **both
+teams the same `player`** — `teams[].player` is free text, and one person runs both. No code change
+was needed for that, and the three ploys worded "an operative from Farsight's alliance" are exactly
+the ones the pairing switches on.
 
 Things that are easy to get wrong, and were:
 
@@ -853,7 +872,7 @@ he finishes a move in) were missing outright and are now in.
 prints `KEYWORDS: IMPERIUM, NEMESIS, ARMOURED SENTINEL` with SIZE as a separate field — there is no
 TOWERING keyword in the format. It is on the two bosses' keyword lines because it is the clearest
 flag for a rule that changes how they are played, and it is **not size-gated**: Towering Size sits
-under *7. Core Rules* beside Extra Defence and Bulky, so Medium Farsight has it exactly as much as
+under *7. Core Rules* beside Extra Defence and Bulky, so Small Farsight has it exactly as much as
 Large Angron.
 
 **The format gives a nemesis operative no ploys at all.** One *accompanies* a kill team rather
@@ -910,9 +929,34 @@ the team cannot afford and badges it `need 1CP`; a 0CP ploy without the field gr
 exactly 0CP, which is the one moment you would reach for a bleed-for-CP card. Absent means
 `PLOY_CP`, so all 48 extracted factions are untouched. *Relentless Carnage*'s conditional 0CP tier
 is **not** expressible as a flat number and stays 1CP on the badge — correct for its base use, and
-the card text carries the rest. **Farsight still has none**; he is the untouched format baseline,
-and that asymmetry is deliberate rather than an oversight. A GM wanting more can write them in
-Setup, where the card editor already offers all four card kinds.
+the card text carries the rest. **Farsight has a 4/4 deck too, and it is deliberately
+nothing like Angron's.** A GM wanting more can write them in Setup, where the card editor already
+offers all four card kinds.
+
+| Farsight — strategy | Farsight — firefight |
+|---|---|
+| *Mont'ka* — mark a target; his alliance shoots it with Balanced | *Unerring Aim* — retain one attack dice as a crit unrolled |
+| *Thrust Vector* — Fall Back for 1 less AP and +3" | *Dawn Blade* — Brutal + Rending for one sequence |
+| *Interposing Drones* — retain a defence dice unrolled vs shooting | *Covering Volley* — interrupt a Charge on an ally with a free Shoot |
+| *Command Uplink* — **0CP**, +1CP while within 3" of an ally, once per TP | *Reactive Protocols* — counteract twice, no 2" cap on the first |
+
+**Angron pays in blood, Farsight pays in position.** That split is the whole point of having two
+bosses: Angron's deck wounds him and reaches nobody else, while half of Farsight's reaches other
+teams. Three of his cards say **"an operative from Farsight's alliance"** rather than "a friendly
+operative", and that wording is load-bearing — a boss is his own one-model team, so "friendly"
+would mean only himself and the card would do nothing. `Game.sides` is what an alliance means here.
+
+Two of his cards exist because of facts about *this app's* model of a boss, not about Farsight:
+
+- ***Interposing Drones* is cover, bought back.** Towering Size denies him cover outright, which is
+  the same weakness the shot-in-melee line advertises; the ploy restores it by another route for a
+  turning point. It is not a duplicate of the **Shielded** nemesis trait — check every new boss
+  card against the pg 19 trait table as well as `nemesisCore`, or you write a trait he could simply
+  have taken.
+- ***Reactive Protocols* is the one that reads oddly and is actually the strongest.** A one-model
+  kill team runs dry the moment it activates, so both bosses bank Counteracts every time the enemy
+  activates into an empty side — far more than a seven-model team ever would. Angron's deck ignores
+  that resource entirely; Farsight's spends it.
 
 ### Still unread
 
@@ -1011,7 +1055,7 @@ The two bosses above are NEMESIS operatives; this is the machinery that lets the
   rather than counting bodies, and **so does the Scoreboard's "N of M down"** — that readout
   computes "the enemy" through its own local closure, separate from `state.ts`, so both have to
   be weighted or the readout and the grade disagree.
-  Rule of thumb when setting one: **kv ≈ wounds ÷ 7** — Angron is 75W/kv 10, Farsight 50W/kv 7.
+  Rule of thumb when setting one: **kv ≈ wounds ÷ 7** — Angron is 75W/kv 10, Farsight 35W/kv 5.
 - **`TeamDef.cards`** holds cards the GM typed. They live on the team, not in a `Game.cards`
   record, and that is the entire trick: `normalize` already prunes `g.teams`, so deleting a team
   or an alliance takes its cards with it and **no cleanup code was needed**.
