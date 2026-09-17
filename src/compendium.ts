@@ -96,3 +96,75 @@ export const cardsOfKind = (cards: RefCard[] | undefined, kind: RefKind) =>
 /** What this phase unlocks, in the order the cards should be read. */
 export const phaseCards = (cards: RefCard[] | undefined, phase: PhaseId) =>
   phaseMeta(phase).use.flatMap((kind) => cardsOfKind(cards, kind))
+
+/**
+ * The universal weapon rules, from the 2024 Appendix
+ * (https://wahapedia.ru/kill-team3/the-rules/appendix/).
+ *
+ * These are NOT in any faction PDF — the extractor never sees them, which is why a datacard
+ * prints "Piercing 1, Saturate" and nothing anywhere said what that meant. Restated rather
+ * than transcribed: the source was read through a fetch tool that caps verbatim quoting, so
+ * every stat name, distance and keyword is exact but the connective prose is ours.
+ *
+ * Two clauses that apply to all of them and are not worth repeating per card: a weapon gains
+ * nothing from carrying the same rule twice UNLESS the rule has an x, in which case you pick
+ * which x to use; and when several would take effect at once, you choose the order.
+ *
+ * Keyed by the bare name. A weapon prints them with x filled in ("Blast 2""), sometimes with a
+ * leading distance ("1" Devastating 2"), and marks a faction's OWN bespoke rule with a trailing
+ * asterisk ("Poison*") — that one is written out in the operative's abilities, so `weaponRules`
+ * skips it rather than guessing.
+ */
+export const WEAPON_RULES: Record<string, string> = {
+  Accurate: 'Retain up to x of your attack dice as normal successes without rolling them.',
+  Balanced: 'Re-roll one of your attack dice.',
+  Blast:
+    'The operative you select is the primary target. After shooting it, shoot this weapon against each secondary target in an order of your choice — every other operative visible to and within x of the primary. They are valid targets regardless of a Conceal order, and are in cover and obscured if the primary was.',
+  Brutal: 'Your opponent can only block with critical successes.',
+  Ceaseless: 'Re-roll any of your attack dice that rolled one particular result (e.g. all your 2s).',
+  Devastating:
+    'Each retained critical success immediately inflicts x damage, and is not discarded for it — the same success can still be resolved later in the sequence. Written with a leading distance (1" Devastating 2) it also inflicts that damage on each other operative visible to and within that distance.',
+  Heavy:
+    'Cannot be used in an activation or counteraction in which the operative moved, and it cannot move in one in which it used this weapon. Heavy (Dash only) permits that one move.',
+  Hot: 'After using this weapon, roll one D6. On a result lower than the weapon’s Hit stat, it inflicts twice that result in damage on the operative using it. One D6 however many times the weapon was used in that action.',
+  Lethal: 'Your successes of x or more are critical successes.',
+  Limited:
+    'Once the operative has used this weapon x times in the battle, it no longer has it. Several uses in one action count as one.',
+  Piercing:
+    'The defender collects x fewer defence dice. Piercing Crits x only comes into effect if you retained a critical success.',
+  Punishing: 'If you retained any critical success, retain one of your fails as a normal success instead of discarding it.',
+  Range: 'Only operatives within x can be valid targets.',
+  Relentless: 'Re-roll any of your attack dice.',
+  Rending: 'If you retained any critical success, retain one of your normal successes as a critical success instead.',
+  Saturate: 'The defender cannot retain cover saves.',
+  Seek:
+    'When selecting a valid target, operatives cannot use terrain for cover — Seek Light, only Light terrain. That can make them targetable if they are visible, but it does not remove their cover save.',
+  Severe:
+    'If you retained no critical successes, change one of your normal successes into one. Devastating and Piercing Crits still take effect; Punishing and Rending do not.',
+  Shock:
+    'The first time you strike with a critical success in each sequence, also discard one of your opponent’s unresolved normal successes — or a critical success if they have no normal ones left.',
+  Silent: 'The operative can perform the Shoot action with this weapon while it has a Conceal order.',
+  Stun: 'If you retained any critical success, subtract 1 from the APL stat of the operative this weapon is used against, until the end of its next activation.',
+  Torrent:
+    'Select a valid target as normal as the primary, then any number of other valid targets within x of it that are not within control range of friendly operatives. Shoot against all of them in an order of your choice.',
+}
+
+const RULE_NAMES = Object.keys(WEAPON_RULES)
+// Matched as a whole word anywhere in the token, not as a prefix: several weapons print the
+// distance first ("1" Devastating 3"), and "Piercing Crits 1" and "Seek Light" are variants
+// folded into their parent rule's text rather than entries of their own.
+const RULE_RE = new RegExp(`\\b(${RULE_NAMES.join('|')})\\b`, 'i')
+
+/** The universal rules one operative's weapons use, deduped, in the order declared above. */
+export const weaponRules = (weapons: Weapon[] = []): [string, string][] => {
+  const used = new Set<string>()
+  for (const w of weapons)
+    for (const token of (w.wr ?? '').split(',')) {
+      const t = token.trim()
+      if (t.endsWith('*')) continue // a faction's own rule; its text is on the operative
+      const hit = RULE_RE.exec(t)
+      const name = hit && RULE_NAMES.find((n) => n.toLowerCase() === hit[1].toLowerCase())
+      if (name) used.add(name)
+    }
+  return RULE_NAMES.filter((n) => used.has(n)).map((n) => [n, WEAPON_RULES[n]])
+}

@@ -56,7 +56,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 | File | Holds |
 |---|---|
 | `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula and cheat-sheet text |
-| `src/compendium.ts` | The three turning-point phases, the `RefCard` type, and universal equipment. The per-faction cards moved to `src/factions/` |
+| `src/compendium.ts` | The three turning-point phases, the `RefCard` type, universal equipment, and the universal **weapon rules** glossary. The per-faction cards moved to `src/factions/` |
 | `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1196 weapons, 617 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
@@ -250,7 +250,20 @@ almost every item here corrected a wrong first answer.**
 - **Nothing scores in TP1.** Every crit op bars its mission action during the first turning point and
   scores "at the end of each turning point after the first". Tac ops likewise.
 - **The cards cap crit VP at 2 per turning point.** This game homebrews 3 — but it's a GM-editable
-  field, not a constant.
+  field, not a constant. The 3 is verified as the official **Multiplayer Ops** cap, verbatim: "to a
+  maximum of 3VP per turning point".
+- **Multiplayer Ops is the official precedent for two things this app invented**, and it is worth
+  knowing where it disagrees:
+  - It weights kills by durability — operatives with **Wounds 12 or more count as two**. That is far
+    coarser than this app's `kv` rule of thumb (wounds ÷ 7), which would put Angron at 10 where the
+    official rule puts him at 2.
+  - It scores N sides by **rank, not by pool**: at the end of each turning point after the first,
+    1st = 2VP, 2nd = 1VP, 3rd and 4th = 0, and ties share the rank at the higher end. This app keeps
+    per-side pools instead, which is a deliberate divergence, not an oversight.
+- **"Nothing scores in TP1" is enforced per-op, not by a blanket rule** — every crit op's mission
+  action is barred during the first turning point and every end-of-TP trigger reads "after the
+  first". **The kill op is the exception**: its VP fires "whenever you move to a new kill grade",
+  with no turning-point-1 exclusion stated anywhere.
 - **Tac ops: 12 total, 3 per archetype.** A team may only take one from the two archetypes on its own
   datacard. There is no 24-op universal pool — an earlier version of this app had one, built from a
   Wahapedia page that describes an older edition. Names like Headhunter, Challenge, Execution and
@@ -263,8 +276,21 @@ almost every item here corrected a wrong first answer.**
     Death draw from the same six. Tac ops are per-*archetype*, not faction-unique.
 - **Archetypes still exist in 2024.** They no longer gate team building, but they categorise tac ops.
 - **There is no Overwatch in 2024.** The equivalent is **Counteract**: available only when you have no
-  ready operatives, it performs *any* single 1AP action (not just a Shoot) with a 2" movement cap, and
-  only an **Engage** operative can do it.
+  ready operatives, it performs any single 1AP action **excluding Guard** (so not just a Shoot) with a
+  2" movement cap, and only an **Engage** operative can do it. The 2" is explicitly *not* a Move stat
+  change and takes precedence over everything. Counteracting is "instead of activating", not an
+  activation, so the no-repeating-an-action restriction does not apply to it.
+- **Guard is not a universal action**, despite the cheat sheet listing it beside Shoot and Fight. It
+  lives under Killzones → Close Quarters — Gallowdark/Tomb World-style boards, not a 44"×30" open
+  table. Its text could not be retrieved verbatim (Wahapedia truncates that page past ~39k chars and
+  its own link for it points at a stale 2nd-edition page), so **the cheat sheet's Guard line is
+  unverified**. Everything else about it is confirmed: there is a GUARD TOKEN in the marker guide, the
+  Heavy weapon rule says it "has no effect on preventing the Guard action", and Counteract excludes it.
+- **Two stat floors nobody remembers, and both bind homebrew ploys.** A **Move stat can never be
+  changed to less than 4"**, and **APL changes can never total more than −1 or +1** from an
+  operative's normal APL. Both are stated as taking precedence over all other stat changes. Also:
+  stat changes that occur *during* an action apply once the action completes, but changes to **weapon
+  rules** apply immediately.
 - **Injured** (below half starting wounds) is **−2" Move and −1 to the weapon's Hit stat** — not an APL
   penalty.
 - **Defence** is always 3 dice against a numeric Save; the old Df stat is gone. Cover trades one die
@@ -394,10 +420,10 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 111 tests in two files:
+`bun test` is 135 tests in two files:
 
-- `src/state.test.ts` — the reducer and selectors, 101 tests. `withHistory` is exported purely so
-  undo is testable without a React harness.
+- `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
+  exported purely so undo is testable without a React harness.
 - `src/ui/render.test.tsx` — four `renderToStaticMarkup` smoke tests that mount **every** panel
   against a 2-alliance game, a 3-alliance game with a hand-built team, a one-team-per-side match
   with no faction cards, and a snapshot naming a team that no longer exists. Not a React test
@@ -742,11 +768,48 @@ Facts that cost time to establish, and will again if this is redone:
 - **Errata are already folded into the card text.** Each PDF says so: *"Rules changes will be
   updated directly into online documents and then listed below."* Transcribe the cards, ignore
   the update log at the end.
-- **Wahapedia 403s automated fetches.** The PDFs are the primary source for team rules.
+- **Wahapedia no longer 403s automated fetches** — this file used to say it did. `core-rules`,
+  `appendix`, `killzones` and `the-missions` all return 200. Two caveats that cost time: pages are
+  **truncated at ~39.4k characters** and the cut point is deterministic across re-fetches, so the
+  tail of `core-rules` (Markers through Visible) and of `killzones` (Close Quarters, Guard, Setting
+  Up Killzones) is unreachable that way; and the site is now labelled **Edition 3, Version 3** with
+  update logs dated February and June 2026, so it has moved on from what this section was written
+  against. The PDFs remain the primary source for *team* rules; Wahapedia is the source for the core
+  rules and the Appendix, which are in no team PDF.
 - **KTDash DOES have a public JSON API**, contrary to what this file used to say:
   `https://ktdash.app/api/killteams/<id>` returns a kill team whole, including rules text. It is
   the only place the NEMESIS *allegiance traits* could be found — the dossier defers to physical
   cards for those. Useful when a rule exists but is not in any free PDF.
+
+
+### The weapon rules glossary
+
+`WEAPON_RULES` in `compendium.ts` is the 2024 Appendix's universal weapon rules — Accurate
+through Torrent, 22 of them. They are in **no faction PDF**, which is why the extractor never
+produced them and why a datacard printed `Piercing 1, Saturate` with nothing anywhere in the app
+saying what either did. `OperativeCard` renders the ones an operative's own weapons use, in a
+`<details>` at the very bottom of the card.
+
+- **Restated, not transcribed**, and the module comment says so. The source
+  (`wahapedia.ru/kill-team3/the-rules/appendix/`) was read through a fetch tool that caps verbatim
+  quoting, so every stat name, distance and keyword is exact but the connective prose is ours. This
+  is the one place in the app where rules text is not a transcription — the generated card text
+  still is.
+- **`weaponRules(weapons)` is a matcher, not a parser.** It splits the `wr` column on commas and
+  looks for a rule name as a **whole word anywhere in the token**, not as a prefix: several weapons
+  print the distance first (`1" Devastating 3`). `Piercing Crits x`, `Seek Light` and
+  `Heavy (Dash only)` are variants folded into their parent rule's text rather than entries of
+  their own, so longest-match is not needed and no key is a word-substring of another.
+- **A trailing asterisk means the faction's own rule** (`Poison*`, `Soulstrike*` — 30-odd of them),
+  written out in that operative's abilities. Those are skipped rather than guessed at.
+- **Last on the card, and collapsed.** A four-weapon operative pulls in eight rules; open by
+  default that wall pushes the operative's *own* abilities below the fold. `<details>` rather than
+  state because it is native — and because this view still takes no `dispatch`, which is what keeps
+  the spectator read-only structurally.
+- A test walks every statically-imported faction's `wr` columns and fails on a token the glossary
+  cannot resolve, so a PDF printing a rule this list misses is caught rather than silently shown as
+  a bare keyword. Two known non-rules are filtered: the bare `PSYCHIC` keyword, and the extractor's
+  "no weapon rules" dash, which it sometimes leaves in place of dropping the field.
 
 ### The datacards
 

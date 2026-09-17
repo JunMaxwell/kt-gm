@@ -15,7 +15,7 @@ import {
   teamTacOps,
   teamsWithArchetype,
 } from './rules'
-import { PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT } from './compendium'
+import { PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
 import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
@@ -1337,4 +1337,50 @@ test('importing rejects anything that is not a match, rather than white-screenin
   // The minimum that IS a match: empty, but structurally sound, and normalize takes it from there.
   const ok = await importGame(asFile('{"sides":[],"teams":{}}'))
   expect(() => reduce(initialGame(), { type: 'replace', game: ok })).not.toThrow()
+})
+
+/* ---------- weapon rules glossary ---------- */
+
+test('a weapon rules column resolves to the universal rules it names', () => {
+  const wr = (s: string) => weaponRules([{ name: 'w', atk: 4, hit: '3+', dmg: '3/4', wr: s }]).map(([n]) => n)
+
+  expect(wr('Range 8"')).toEqual(['Range'])
+  // x, a leading distance, and a parenthesised variant all resolve to the parent rule.
+  expect(wr('Lethal 5+, Piercing 1')).toEqual(['Lethal', 'Piercing'])
+  expect(wr('1" Devastating 3')).toEqual(['Devastating'])
+  expect(wr('Heavy (Dash only)')).toEqual(['Heavy'])
+  // Variants fold into their parent rather than resolving twice or to the wrong entry.
+  expect(wr('Piercing Crits 1')).toEqual(['Piercing'])
+  expect(wr('Seek Light')).toEqual(['Seek'])
+  // A faction's own rule is starred and written out on the operative, so it is not ours to define.
+  expect(wr('Poison*')).toEqual([])
+  expect(wr('-')).toEqual([])
+  expect(weaponRules(undefined)).toEqual([])
+})
+
+test('the glossary dedupes across an operative and keeps one declared order', () => {
+  const w = (wr: string) => ({ name: wr, atk: 4, hit: '3+', dmg: '3/4', wr })
+  const got = weaponRules([w('Saturate, Balanced'), w('Balanced, Range 6"')])
+  expect(got.map(([n]) => n)).toEqual(['Balanced', 'Range', 'Saturate'])
+  expect(got.every(([n, text]) => text === WEAPON_RULES[n] && text.length > 20)).toBe(true)
+})
+
+test('every universal weapon rule the generated factions print has a definition', () => {
+  // The extractor is the source of the vocabulary: if a PDF ever prints a rule this list does
+  // not cover, a player reads a bare keyword again. Starred faction rules are out of scope.
+  const seen = new Set<string>()
+  for (const f of FACTIONS) {
+    const data = factionData(f.id)
+    for (const d of data?.datacards ?? [])
+      for (const weapon of d.weapons)
+        for (const token of (weapon.wr ?? '').split(','))
+          if (token.trim() && !token.trim().endsWith('*')) seen.add(token.trim())
+  }
+  // Only the statically-imported factions are loaded synchronously, so this is a sample, not all
+  // 51 — enough to catch a vocabulary drift without making the suite async.
+  expect(seen.size).toBeGreaterThan(0)
+  const orphans = [...seen].filter((t) => !weaponRules([{ name: 'w', atk: 1, hit: '3+', dmg: '1/1', wr: t }]).length)
+  // Known non-rules the column also carries: the bare PSYCHIC keyword, and the extractor's
+  // "no weapon rules" dash, which it sometimes leaves in rather than dropping the field.
+  expect(orphans.filter((t) => !/^[-\u2010-\u2015\s]+$/.test(t) && t !== 'PSYCHIC')).toEqual([])
 })

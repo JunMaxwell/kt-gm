@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { type Operative, tacOp, teamTacOps } from '../rules'
-import { cardsOfKind, type Datacard, KIND_LABEL, phaseCards, PLOY_CP, type RefCard } from '../compendium'
+import { cardsOfKind, type Datacard, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, weaponRules } from '../compendium'
 import { datacardOf, FACTIONS } from '../factions'
 import { allTeams, injured, type OpState, teamOps } from '../state'
 import { KtCard, Rules } from './kit'
@@ -73,6 +73,7 @@ export function OperativeCard({
   className?: string
 }) {
   const acts = Math.max(1, o.acts ?? 1)
+  const glossary = weaponRules(card?.weapons)
   const hurt = !!st && injured(o, st)
   const hp = st?.hp ?? o.w
   // A boss is the only operative that activates more than once, and then the count is the thing
@@ -184,6 +185,30 @@ export function OperativeCard({
         <p className="opname mt-2.5 border-t border-black/15 pt-1.5 text-[10px] text-fade">
           {card.keywords.join(' \u00b7 ')}
         </p>
+      )}
+
+      {/* What the weapon table's rules column actually means. These are the 2024 Appendix's
+          universal rules, which are in no faction PDF — so before this the card printed
+          "Piercing 1, Saturate" and nothing in the app said what either one did.
+
+          Last on the card and collapsed, because it is the least urgent thing on it: a
+          four-weapon operative can pull in eight rules, and open by default that wall would
+          push the operative's OWN abilities below the fold. `<details>` rather than state
+          because it is native, and because this view still takes no `dispatch`. */}
+      {!!glossary.length && (
+        <details className="mt-2.5 border-t border-black/15 pt-1.5">
+          <summary className="display cursor-pointer text-[11px] tracking-wider text-flare">
+            Weapon rules ({glossary.length})
+          </summary>
+          <dl className="mt-1 space-y-1 text-fade">
+            {glossary.map(([name, text]) => (
+              <div key={name}>
+                <dt className="inline font-bold text-card">{name}</dt>{' '}
+                <dd className="inline">{text}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
       )}
     </KtCard>
   )
