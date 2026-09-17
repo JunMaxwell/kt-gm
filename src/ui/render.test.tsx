@@ -47,8 +47,11 @@ test('every panel renders for a three-alliance match with a custom team', () => 
   const html = panels(g)
   expect(html).toContain('Chaos')
   expect(html).toContain('Homebrew')
-  // one scoreboard column per alliance
-  expect(html).toContain('4.25rem repeat(3, minmax(0,1fr))')
+  // The scoreboard is one BLOCK per alliance now, not one column: every side's name appears
+  // as its own heading, which is what stops three alliances squeezing into a fixed panel.
+  for (const side of g.sides) expect(html).toContain(side.name)
+  // and a team that is not up is collapsed to its summary strip rather than a full card
+  expect(html).toContain('Click to open')
 })
 
 test('every panel renders for a one-team-per-side match with no cards', () => {

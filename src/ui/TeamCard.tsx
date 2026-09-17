@@ -1,5 +1,7 @@
+import { useState } from 'react'
+
 import { blankOperative, CATALOGUE, killWorth, type Operative, slug, tacOp, teamTacOps } from '../rules'
-import { currentTeamId, type Order, orderCounts, pairEligible, readyCount, teamOps } from '../state'
+import { currentTeamId, type Order, orderCounts, pairEligible, pairTarget, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
 import { type Dispatch, type Game, onInt, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -148,9 +150,64 @@ export function TeamCard({
   const ops = teamOps(game, teamId)
   const counts = orderCounts(game, teamId)
   const selectedTacOp = tacOp(p.tacOp)
+  // Auto-expand is capped at the pair target rather than every eligible team: a side with
+  // four players had all four open at once, which is the crowding this redesign is for, and
+  // the Buddy System only ever spends two. The rest are one click away and collapse again
+  // as `pairUsed` fills.
   const isCurrent =
     !editing &&
-    (game.paired ? pairEligible(game).some((t) => t.id === teamId) : currentTeamId(game) === teamId)
+    (game.paired
+      ? pairEligible(game)
+          .slice(0, pairTarget(game))
+          .some((t) => t.id === teamId)
+      : currentTeamId(game) === teamId)
+
+  /**
+   * Collapsed is the default, because nine expanded cards is the clutter. A card opens when
+   * it can act — `pairEligible` / `currentTeamId` already decide that — so the console
+   * follows the turn rather than showing every roster at once. `open` only ever *forces* a
+   * card open; the GM can pin one without it snapping shut on the next hand-off.
+   */
+  const [open, setOpen] = useState(false)
+  const expanded = editing || open || isCurrent
+  const ready = readyCount(game, teamId)
+  const live = ops.filter((o) => game.ops[o.id] && !game.ops[o.id].dead)
+  const hp = live.reduce((n, o) => n + game.ops[o.id].hp, 0)
+  const maxHp = live.reduce((n, o) => n + o.w, 0)
+  // A nemesis operative's activation count is the thing you need on a collapsed card; for
+  // everyone else the ready count says it.
+  const multi = ops.find((o) => (o.acts ?? 1) > 1)
+
+  if (!expanded)
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className={`flex w-full items-center gap-2 border border-rule bg-paper px-2.5 py-2 text-left shadow-sm transition-colors hover:bg-black/[0.03] ${
+          ready ? '' : 'opacity-50'
+        }`}
+        title={`${team.name} — ${team.player}. Click to open.`}
+      >
+        <span className="h-6 w-2 shrink-0 rounded-sm" style={{ background: team.color }} />
+        <span className="display min-w-0 flex-1 truncate text-base">{team.name}</span>
+        <span className="shrink-0 text-[10px] text-ink/45">
+          {team.player} ·{' '}
+          {multi
+            ? `${game.ops[multi.id]?.used ?? 0}/${multi.acts} acts`
+            : ready
+              ? `${ready} ready`
+              : 'nothing ready'}
+        </span>
+        {maxHp > 0 && (
+          <span
+            className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-black/10"
+            title={`${hp} of ${maxHp} wounds`}
+          >
+            <span className="block h-full" style={{ width: `${(hp / maxHp) * 100}%`, background: team.color }} />
+          </span>
+        )}
+        <span className="display shrink-0 text-xs text-ink/40">+</span>
+      </button>
+    )
 
   const add = (value: string) => {
     if (!value) return
@@ -169,8 +226,13 @@ export function TeamCard({
       className={isCurrent ? 'ring-4 ring-amber-300' : ''}
       title={team.name}
       aside={
-        <span className="display shrink-0 text-xs opacity-80">
+        <span className="display flex shrink-0 items-center gap-2 text-xs opacity-80">
           {team.archetypes.join(' · ')}
+          {!editing && !isCurrent && (
+            <button onClick={() => setOpen(false)} title="Collapse" className="px-1 text-sm leading-none">
+              –
+            </button>
+          )}
         </span>
       }
     >

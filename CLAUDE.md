@@ -72,7 +72,7 @@ the section markers that were already in it:
 
 | File | Holds |
 |---|---|
-| `ui/shared.ts` | `Dispatch` / `Game` / `Net`, `ROW`, `rowVars`, `onInt`, the faction hooks |
+| `ui/shared.ts` | `Dispatch` / `Game` / `Net`, `onInt`, the faction hooks |
 | `ui/kit.tsx` | `Btn`, `DarkBtn`, `BufferedInput`, `Stepper`, `Card`, `TeamPill`, `Label` |
 | `ui/TurnBar.tsx` | The sticky header, plus `SingleTurn` / `PairedTurn` |
 | `ui/Scoreboard.tsx`, `ui/Objectives.tsx`, `ui/ActivationOrder.tsx` | The three left-column panels |
@@ -358,12 +358,16 @@ time and a stale `pairUsed` id is inert. Fewer stored invariants, fewer things t
 
 - **`SIDE_IDS` is gone**; panels iterate `game.sides`. `Scoreboard` was already `SIDE_IDS.map(...)`
   throughout, so most of the sweep was mechanical.
-- **Tailwind's JIT cannot see an interpolated track list**, and an inline `style` cannot carry the
-  `xl:` breakpoint the layout needs. Both grids therefore pass their columns as a **CSS variable**:
-  `rowVars(n)` on the scoreboard body feeding `grid-cols-(--kt-row)`, and `columns(n)` on `<main>`
-  feeding `xl:grid-cols-(--kt-cols)`. Team columns flank the sticky centre, even-indexed sides left
-  and odd right, placed with inline `order`. At two sides this is the original three-column layout
-  exactly. Past four alliances the columns are unreadable, so it just stacks.
+- **The console is a command strip over a team grid, and nothing is a fixed track.** It used to be
+  team columns flanking a **fixed 26rem centre**, placed with a CSS-variable track list
+  (`columns(n)`) and inline `order`. At three alliances on a 1280px screen that centre took 416px
+  and left ~261px per team column, and inside it the scoreboard's per-alliance columns fell to
+  ~102px — too narrow for a Stepper, a five-number threshold field and three primary buttons.
+  Both `columns(n)` and `rowVars(n)`/`ROW` are gone.
+  Two bugs went with them: the inline `order` **beat `xl:order-none` at every width**, so below
+  1280px the scoreboard sank below two columns of team cards rather than hoisting to the top; and
+  the sticky centre's hardcoded `xl:top-32` under-shot a header that grows with alliance count
+  (an extra initiative button, up to `n−1` counteract banners).
 - **`--color-imperium` / `--color-xenos` in `index.css` are no longer side identity.** They survive
   as palette values, and the remaining `text-xenos` / `bg-xenos` uses in `TeamCard` mean
   "red = destructive", not "Xenos".
@@ -666,7 +670,9 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
 ```
 
 - **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`). The page itself never
-  scrolls on a phone — verified at 390×664.
+  scrolls on a phone — re-measured at 390 with three alliances: `scrollWidth` 390, and the only
+  elements extending past the viewport are the carousel's own slides inside the horizontally
+  scrolling rail, which is the swipe surface working as intended.
 - **The carousel is CSS scroll-snap, not a library and not touch handlers.** `snap-x
   snap-mandatory` on the rail, `w-full shrink-0 snap-center` on each slide. That buys real
   momentum swiping on a phone, trackpad swiping on a laptop and keyboard scrolling for free. The
@@ -742,6 +748,36 @@ It exports no `cards`/`operatives`, so the faction loader never sees it.
 The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46) and the
 team-size reduction a nemesis operative imposes on the kill team accompanying it. Both are in the
 dossier; neither has been transcribed.
+
+## The console layout
+
+Header, then a **command strip** (scoreboard + objectives, full width), then **one team column per
+alliance**, then a single reference drawer. Three things carry the density:
+
+- **The scoreboard is one block per alliance, stacked.** Rows scale to any alliance count; columns
+  inside a fixed panel did not.
+- **Team cards collapse to a 40px strip** — colour, name, player, ready count or a nemesis
+  operative's `used/acts`, and a wound bar — and expand themselves while the team can act.
+  Auto-expand is **capped at `pairTarget`**, not every eligible team: a four-player side had all
+  four open at once, which was the crowding this was meant to fix, and the Buddy System only ever
+  spends two. `open` in `TeamCard` only ever *forces* a card open, so pinning one does not make it
+  snap shut on the next hand-off.
+- **One tabbed `Reference` drawer** (`App.tsx`) holds the ops browser, the compendium browser, the
+  activation order and the cheat sheet. These were three separate `<details>` stacked under
+  `<main>`, so reaching any of them meant scrolling past every roster. **Activation order moved in
+  here** — the collapsed team strips already show ready/gone per team grouped by alliance, so the
+  panel's remaining job is its reorder controls.
+
+**The `<main>` track list is a CSS variable, never an inline `grid-template-columns`.** An inline
+style cannot be gated by `xl:`, so it would force one ~110px column per alliance onto a phone —
+this file warned about exactly that, and the first cut of this layout did it anyway. One column
+below `md`, two from `md`, one per alliance from `xl`. Measured, not assumed: an iframe probe at
+390 / 414 / 768 / 1280 showed `scrollWidth` equal to the viewport at every step, with the grid
+resolving to `358px`, `382px`, `360px 360px`, and `405px × 3`.
+
+`Scoreboard` reads `game.crit[side.id] ?? []`. `normalize` guarantees the row exists, but a missing
+one would white-screen the whole console mid-game, and that is not a trade worth making for one
+`??`.
 
 ## Boss fights — the app support underneath
 

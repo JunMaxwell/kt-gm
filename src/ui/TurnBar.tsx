@@ -134,7 +134,7 @@ export function TurnBar({
           </select>
         </label>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <DarkBtn
             onClick={() => dispatch({ type: 'undo' })}
             disabled={!canUndo}
@@ -284,7 +284,7 @@ export function PairedTurn({ game, dispatch }: { game: Game; dispatch: Dispatch 
       {dry.map((foe) => {
         const banked = game.counteracts[foe] ?? 0
         return (
-          <p key={foe} className="flex items-center gap-2 rounded bg-amber-300 px-2 py-1 text-sm text-ink">
+          <p key={foe} className="flex flex-wrap items-center gap-2 rounded bg-amber-300 px-2 py-1 text-sm text-ink">
             <b>{sideDef(game, foe)?.name} is out — Counteract:</b> per enemy activation, one expended <b>Engage</b>{' '}
             operative may perform any single 1AP action, moving at most 2".
             <span className="display">banked {banked}</span>

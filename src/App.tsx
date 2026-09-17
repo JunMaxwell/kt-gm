@@ -17,14 +17,6 @@ import { TurnBar } from './ui/TurnBar'
 
 const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part of `Game`
 
-/** Team columns either side of the fixed 26rem centre column. */
-const columns = (n: number) =>
-  [
-    ...Array(Math.ceil(n / 2)).fill('minmax(0,1fr)'),
-    '26rem',
-    ...Array(Math.floor(n / 2)).fill('minmax(0,1fr)'),
-  ].join(' ')
-
 /**
  * The spectator's phone. Five of seven players watch on one of these, so the console's three
  * columns are the wrong shape — they get their own cards and nothing else.
@@ -90,6 +82,59 @@ function Viewer({ game, net }: { game: Game; net: Net }) {
   )
 }
 
+/**
+ * One reference drawer instead of three stacked collapsibles. Ops, ploys, the activation
+ * order and the cheat sheet used to sit under `<main>` as separate `<details>`, so reaching
+ * any of them meant scrolling past every roster. One panel, one tab row, closed by default.
+ */
+function Reference({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
+  const [tab, setTab] = useState<'ops' | 'cards' | 'order' | 'cheat' | null>(null)
+  const tabs = [
+    ['ops', 'Crit & tac ops'],
+    ['cards', 'Ploys & equipment'],
+    ['order', 'Activation order'],
+    ['cheat', 'Cheat sheet'],
+  ] as const
+
+  return (
+    <section className="mx-4 mb-8 overflow-hidden border border-rule bg-paper shadow-sm">
+      <nav className="flex flex-wrap items-stretch kt-rule bg-card">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(tab === id ? null : id)}
+            className={`display px-3.5 py-2 text-lg ${tab === id ? 'text-flare' : 'text-white/55 hover:text-white/85'}`}
+          >
+            {label}
+          </button>
+        ))}
+        {tab && (
+          <button onClick={() => setTab(null)} className="display ml-auto px-3.5 py-2 text-xs text-white/35">
+            close
+          </button>
+        )}
+      </nav>
+      {tab === 'ops' && <OpsBrowser game={game} />}
+      {tab === 'cards' && <CompendiumBrowser game={game} />}
+      {tab === 'order' && <ActivationOrder game={game} dispatch={dispatch} />}
+      {tab === 'cheat' && (
+        <div className="grid gap-4 p-3 md:grid-cols-2 xl:grid-cols-3">
+          {CHEAT_SHEET.map((s) => (
+            <div key={s.title}>
+              <h4 className="display border-b border-rule pb-1 text-base">{s.title}</h4>
+              <ul className="mt-1 space-y-0.5 text-sm text-ink/70">
+                {s.lines.map((l, i) => (
+                  <li key={i}>{l}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function App() {
   const [game, dispatch, net, canUndo] = useGame()
   const [editing, setEditing] = useState(false)
@@ -125,38 +170,32 @@ function Console({
       <TurnBar game={game} dispatch={dispatch} editing={editing} setEditing={setEditing} net={net} canUndo={canUndo} />
 
       {/*
-        One team column per alliance, flanking the sticky scoreboard: even-indexed sides to
-        its left, odd to its right. At two sides that is exactly the original three-column
-        layout. Tailwind's JIT cannot see an interpolated track list, so the columns arrive
-        as a CSS variable — which, unlike an inline style, the `xl:` breakpoint can still gate.
-        Past four alliances the columns are too narrow to read, so it just stacks.
+        The command strip: everything the GM watches, full width, above the rosters. The old
+        layout put these in a FIXED 26rem centre column with team columns either side, which
+        is what crowded at three alliances — 416px of the 1280 went to the strip no matter
+        what, leaving ~261px per team column. Nothing here is a fixed track any more.
+      */}
+      <div className="grid gap-4 p-4 pb-0 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        <Scoreboard game={game} dispatch={dispatch} />
+        <Objectives game={game} dispatch={dispatch} />
+      </div>
+
+      {/*
+        One column per alliance, full width. Cards collapse themselves — see TeamCard.
+        The track list is a CSS VARIABLE, not an inline `grid-template-columns`: an inline
+        style cannot be gated by `xl:`, so it would force three ~110px columns onto a phone.
+        One column on a phone, two from `md`, one per alliance from `xl`.
       */}
       <main
-        className={`grid gap-4 p-4 ${game.sides.length <= 4 ? 'xl:grid-cols-(--kt-cols)' : ''}`}
-        style={{ '--kt-cols': columns(game.sides.length) } as React.CSSProperties}
+        className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-(--kt-cols)"
+        style={{ '--kt-cols': `repeat(${Math.min(game.sides.length, 3)}, minmax(0,1fr))` } as React.CSSProperties}
       >
-        <div
-          className="order-1 mx-auto w-full min-w-0 max-w-xl xl:order-none xl:max-w-none"
-          style={{ order: Math.ceil(game.sides.length / 2) }}
-        >
-          <div className="space-y-4 xl:sticky xl:top-32">
-            <Scoreboard game={game} dispatch={dispatch} />
-            <Objectives game={game} dispatch={dispatch} />
-            <ActivationOrder game={game} dispatch={dispatch} />
-          </div>
-        </div>
-
-        {game.sides.map((side, i) => (
-          <div
-            key={side.id}
-            className="grid min-w-0 content-start gap-4 sm:grid-cols-2 xl:grid-cols-1"
-            style={{ order: i % 2 ? Math.ceil(game.sides.length / 2) + 1 + Math.floor(i / 2) : Math.floor(i / 2) }}
-          >
-            {game.sides.length > 2 && (
-              <p className="display kt-rule px-1 text-sm" style={{ color: side.color }}>
-                {side.name}
-              </p>
-            )}
+        {game.sides.map((side) => (
+          <div key={side.id} className="flex min-w-0 flex-col gap-2">
+            <p className="display kt-rule px-1 pb-0.5 text-sm" style={{ color: side.color }}>
+              {side.name}
+              {side.id === game.sideTurn && <span className="text-ink/45"> · activating</span>}
+            </p>
             {teamsOf(game, side.id).map((t) => (
               <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} />
             ))}
@@ -164,25 +203,7 @@ function Console({
         ))}
       </main>
 
-      <OpsBrowser game={game} />
-
-      <CompendiumBrowser game={game} />
-
-      <details className="mx-4 mb-8 overflow-hidden border border-rule bg-paper shadow-sm">
-        <summary className="display cursor-pointer kt-rule bg-card px-3 py-2 text-xl text-white">Rules cheat sheet</summary>
-        <div className="grid gap-4 p-3 md:grid-cols-2 xl:grid-cols-3">
-          {CHEAT_SHEET.map((s) => (
-            <div key={s.title}>
-              <h4 className="display border-b border-rule pb-1 text-base">{s.title}</h4>
-              <ul className="mt-1 space-y-0.5 text-sm text-ink/70">
-                {s.lines.map((l, i) => (
-                  <li key={i}>{l}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </details>
+      <Reference game={game} dispatch={dispatch} />
 
       <footer className="mx-4 mb-8 text-center text-xs leading-relaxed text-ink/45">
         Card styling after the official Kill Team rules cards; side and archetype colours after{' '}
