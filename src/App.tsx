@@ -10,6 +10,7 @@ import { Objectives } from './ui/Objectives'
 import { OpsBrowser } from './ui/OpsBrowser'
 import { Scoreboard } from './ui/Scoreboard'
 import { Setup } from './ui/Setup'
+import { TeamPicker } from './ui/TeamPicker'
 import { TeamCard } from './ui/TeamCard'
 import { TurnBar } from './ui/TurnBar'
 
@@ -28,40 +29,59 @@ const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part
 function Viewer({ game, net }: { game: Game; net: Net }) {
   const teams = allTeams(game)
   const [saved, setSaved] = useState(() => localStorage.getItem(ME_KEY) ?? '')
+  const [picking, setPicking] = useState(false)
   // Checked every render: the GM can delete a team in setup, and the relay will ship that
-  // snapshot straight to this phone. A stale pick must fall back, not crash.
-  const me = teams.some((t) => t.id === saved) ? saved : (teams[0]?.id ?? '')
+  // snapshot straight to this phone. A stale pick falls back to NOTHING, not to the first team —
+  // a silent default is how a first-time player reads someone else's cards for a whole match.
+  const me = teams.some((t) => t.id === saved) ? saved : ''
   const ph = phaseMeta(game.phase)
 
   const pick = (id: string) => {
     setSaved(id)
     localStorage.setItem(ME_KEY, id)
+    setPicking(false)
   }
+
+  // Nothing chosen yet, or they tapped the band to change it. The picker IS the screen, the way
+  // `Setup` is for the GM — no overlay, because what sits behind it is the deck they may be
+  // reading by mistake. Without `onClose` it cannot be dismissed, which is the first-run case.
+  if (!me || picking)
+    return (
+      <TeamPicker
+        game={game}
+        me={me}
+        code={net.room?.code}
+        onPick={pick}
+        onClose={me ? () => setPicking(false) : undefined}
+      />
+    )
+
+  const team = game.teams[me]
 
   // The shell owns the viewport and only the active tab scrolls, so the phase banner and the
   // deck chips never leave the screen. A player should be reading, not hunting.
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
       <div className="shrink-0 bg-card text-white">
-        <p className="display flex items-center gap-2 bg-amber-400 px-3 py-1 text-xs text-ink">
-          <span className="truncate">Room {net.room!.code} — read only</span>
-          <select
-            value={me}
-            onChange={(e) => pick(e.target.value)}
-            className="display ml-auto min-w-0 max-w-[55%] rounded bg-black/15 px-1.5 py-0.5 text-xs text-ink"
-          >
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} — {t.player}
-              </option>
-            ))}
-          </select>
-        </p>
+        {/* Who you are, in your own team's colour, filling the top edge — the same way a team's
+            colour identifies it everywhere else. It is also the button back to the picker; the
+            old control was an unlabelled `select` in the corner that nobody found. */}
+        <button
+          onClick={() => setPicking(true)}
+          className="kt-band flex w-full items-baseline gap-2 px-3 pt-1.5 pb-3 text-left"
+          style={{ background: team.color, color: team.ink ? '#282c34' : '#fff' }}
+        >
+          <b className="display min-w-0 flex-1 truncate text-lg">{team.name}</b>
+          <span className="shrink-0 truncate text-[10px] opacity-70">
+            {team.player} · {net.room!.code} · read only
+          </span>
+          <span className="display shrink-0 rounded bg-black/20 px-2 py-0.5 text-[10px]">Change</span>
+        </button>
 
         <div className="flex items-baseline gap-x-2 px-3 pt-1.5">
           <b className="display text-2xl text-amber-300">{ph.label}</b>
           <span className="display text-xs text-white/55">
-            TP{game.tp}/{game.tpCount} · {game.teams[me]?.cp ?? 0} CP
+            TP{game.tp}/{game.tpCount} · {team.cp} CP
           </span>
           <span className="display ml-auto flex shrink-0 gap-1 text-xs">
             {game.sides.map((x) => (

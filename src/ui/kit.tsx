@@ -186,8 +186,14 @@ export function KtCard({
     <div
       // `min-h-fit` is load-bearing: the carousel gives every card `flex-1` inside a fixed-height
       // slide, and a flex item will happily shrink below its content. With `overflow-hidden` on
-      // this card that silently CLIPS a long one — two equipment cards and most datacards were
-      // losing their bottom third. Now the card grows instead and the slide scrolls.
+      // this card that silently CLIPS a long one, and the slide is then left with nothing to
+      // scroll — so the bottom is unreachable, not merely awkward.
+      //
+      // Re-measured at 430x780 with the Custodes deck, all three ways: with no `min-height` two
+      // cards are clipped and the slide scrolls 0px; `min-h-fit` and `min-h-max` are byte
+      // identical, 0 clipped and 163px of scroll. `fit-content` does NOT clamp to the available
+      // space here, so there is nothing to fix — measure the CARD, never the slide, because a
+      // clamped card makes the slide report no overflow at all.
       className={`flex min-h-fit min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
       style={{ borderColor: outline ?? '#2a2a2a' }}
     >

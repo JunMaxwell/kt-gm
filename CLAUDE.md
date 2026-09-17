@@ -82,6 +82,7 @@ the section markers that were already in it:
 | `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
 | `ui/RoomBar.tsx` | Share / save / load |
 | `ui/Setup.tsx` | The pre-game setup view: alliances, teams, scoring dials |
+| `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides and a degenerate 1-team match |
 
 Two conventions the split rests on:
@@ -251,8 +252,17 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
   `flex-1` inside a fixed-height slide, and a flex item will happily shrink below its content —
   which, with `overflow-hidden` on the card, silently **clips** a long one. Two equipment cards
   were already losing their bottom third before anyone noticed; the datacards made it obvious.
-  With `min-h-fit` the card grows instead and the slide's `overflow-y-auto` takes over. Measured
-  at 390: zero clipped cards across every deck.
+  With `min-h-fit` the card grows instead and the slide's `overflow-y-auto` takes over.
+
+  Re-measured against the Custodes deck at 430x780, all three ways: **no `min-height`** clips two
+  cards and leaves the slide 0px to scroll; **`min-h-fit`** and **`min-h-max`** are byte
+  identical, 0 clipped and 163px of scroll. So `fit-content` does *not* clamp to the available
+  space here and there is nothing to "fix" — `min-h-max` was tried and reverted as a no-op.
+  **Measure the CARD, never the slide**: a clamped card makes the slide report no overflow at
+  all, which is exactly how the original "zero clipped cards" check would have missed a
+  regression.
+
+  What this does *not* buy is anyone noticing. See `Slide` in **The player's phone**.
 - **Panels are square-cornered**, controls stay rounded. The printed cards have no radius.
 - **The live card outline is the accent orange**, not a per-kind colour. The printed cards carry
   no coloured outline at all, so an invented palette read as off-brand; orange already means
@@ -698,7 +708,7 @@ earlier cut gave spectators a "Score" tab holding the whole `Console`, which mad
 identical — that is gone, and `Console` is now GM-only.
 
 ```
-Room ABCD — read only        [ Deathwatch — Player 1 ▾ ]
+ DEATHWATCH      Player 1 · ABCD · read only   [Change]   ← the team's own colour, tappable
 STRATEGY   TP1/4 · 2CP                    IMP 0 · XEN 0
 Gain CP, then alternate Strategy Ploys, initiative side first.
 ┌──────────────────────────────┐
@@ -708,11 +718,31 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
 │   │ THE LONG VIGIL         │ │
 │   └────────────────────────┘ │
 │   Whenever an operative is…  │
+│          ( more ▾ )          │   ← only when the card runs past the fold
 └──────────────────────────────┘
           ○ ▬ ○ ○   2/4
  NOW  OPS  STRAT  FIRE  GEAR  RULES  TAC OP   ← bottom navigation
   4    5     4     4     4      2      1
 ```
+
+- **`Slide` owns the vertical scroll, and the `more ▾` pill is the whole reason it is a
+  component.** Nothing is ever clipped — `min-h-fit` already sees to that — but a long card is
+  cut flush with the bottom edge while the deck's primary gesture is a *horizontal* swipe, so a
+  player swipes sideways and never learns the card continued. Measured at 430x780 on the Custodes
+  deck, Venatari keeps 163px, 22% of its card, below the fold with nothing to say so.
+  Three things about it are load-bearing, and each was a bug first:
+  - **The pill has `h-0` and hangs its content off a sticky anchor.** With real height it is a
+    flex sibling of a `flex-1` card, so showing it reflows the card and changes the measurement
+    that decided to show it — the hint flickers against its own layout.
+  - **Overflow is measured on the card's rect, not `scrollTop + clientHeight < scrollHeight`.**
+    The pill lives in the same scroll container, so a `scrollHeight` test counts the pill itself
+    as content and keeps the hint up on six cards that fit.
+  - **The effect keys on `children`, not `[]`.** Slides are keyed by index, so switching deck
+    swaps the card inside the *same* slide, and `flex-1` stretches most cards to an identical box
+    — so a `ResizeObserver` fires nothing and a stale `more` carries across. The observer is kept
+    only for the viewport changing under a card that did not re-render, i.e. rotating the phone.
+  - `MORE_SLACK` is 24px, one line: several cards clear the fold by two or three pixels of
+    rounding, and promising more when there is none is worse than staying quiet.
 
 - **The shell owns the viewport** (`h-[100dvh]`, `overflow-hidden`). The page itself never
   scrolls on a phone — re-measured at 390 with three alliances: `scrollWidth` 390, and the only
@@ -752,6 +782,20 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
 **Which team you are playing is a per-device choice**, stored under `killteam-gm/me` and never
 in `Game`. `teams[].player` is a free-text label, not an identity — putting the selection in the
 snapshot would mean seven players fighting over one field through the relay.
+
+**It is chosen on its own screen, `ui/TeamPicker.tsx`, and a fresh phone cannot skip it.** `me`
+falls back to `''`, not to `teams[0]`, and `Viewer` early-returns the picker while it is empty.
+The old control was an unlabelled `<select>` in the corner of the room strip, and the silent
+default behind it meant a player who never found that corner read *someone else's cards for the
+whole match* with nothing to signal it — the worst kind of bug for a table where five of seven
+players are new. The picker takes `onClose` only once a team is set, which is what makes the
+first pass unskippable; afterwards the team is the coloured band across the top of the screen and
+that band is the way back.
+
+It is a **screen, not a modal** — an early return, exactly as `Setup` is one for the GM. There is
+no `fixed`, no `inset-0`, no `<dialog>`, no portal and nothing above `z-10` anywhere in `src/`,
+and this did not need to be the first: what sits behind the picker is the deck they may be
+reading by mistake, so replacing it outright is the point.
 
 The GM reaches the same decks through `CompendiumBrowser`: one collapsible in the console with a
 team chip row above the same `Compendium`, **wrapped in a fixed `h-[26rem]`** because the

@@ -12,6 +12,7 @@ import { TeamCard } from './TeamCard'
 import { Setup } from './Setup'
 import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
+import { TeamPicker } from './TeamPicker'
 
 const noop = () => {}
 const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, save: noop, saves: [], load: noop } as never
@@ -25,6 +26,9 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     R(<OpsBrowser game={g} />),
     R(<CompendiumBrowser game={g} />),
     R(<Setup game={g} dispatch={noop} />),
+    // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
+    R(<TeamPicker game={g} me="" onPick={noop} />),
+    R(<TeamPicker game={g} me={allTeams(g)[0]?.id ?? ''} code="ABCD" onPick={noop} onClose={noop} />),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} />)),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing />)),
     ...allTeams(g).map((t) => R(<Compendium game={g} teamId={t.id} />)),
@@ -160,4 +164,34 @@ test('a boss operative renders in the roster editor with its kill value', () => 
   const html = R(<TeamCard teamId="rav" game={g} dispatch={noop} editing />)
   expect(html).toContain('Angron')
   expect(html).toContain('45')
+})
+
+test('the team picker lists every team under its own alliance', () => {
+  let g = reduce(initialGame(), { type: 'sideAdd' })
+  const third = g.sides[2].id
+  g = reduce(g, { type: 'sidePatch', id: third, patch: { name: 'Chaos', color: '#7b4fa8' } })
+  g = reduce(g, { type: 'teamPatch', teamId: 'sct', patch: { side: third } })
+  const html = R(<TeamPicker game={g} me="" onPick={noop} />)
+  for (const s of g.sides) expect(html).toContain(s.name)
+  // renderToStaticMarkup escapes the apostrophe in "T'au XV26".
+  for (const t of allTeams(g)) expect(html).toContain(t.name.replace(/'/g, '&#x27;'))
+  // No pick yet means no way out: that is what stops a fresh phone defaulting into someone
+  // else's deck, which is the bug this screen exists to kill.
+  expect(html).not.toContain('Cancel')
+  expect(html).not.toContain('>You<')
+})
+
+test('the team picker marks the current team and can be dismissed once one is chosen', () => {
+  const g = initialGame()
+  const html = R(<TeamPicker game={g} me="dw" code="ABCD" onPick={noop} onClose={noop} />)
+  expect(html).toContain('>You<')
+  expect(html).toContain('Cancel')
+  expect(html).toContain('Room ABCD')
+})
+
+test('the team picker says so when the match has no teams at all', () => {
+  let g = initialGame()
+  for (const t of allTeams(g)) g = reduce(g, { type: 'teamRemove', teamId: t.id })
+  const html = R(<TeamPicker game={g} me="" onPick={noop} />)
+  expect(html).toContain('No teams yet')
 })

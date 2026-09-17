@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { type Operative, tacOp, teamTacOps } from '../rules'
 import { cardsOfKind, type Datacard, KIND_LABEL, phaseCards, PLOY_CP, type RefCard } from '../compendium'
@@ -189,6 +189,79 @@ export function OperativeCard({
   )
 }
 
+/**
+ * Is there still card below the fold? Measured on the CARD against the slide's visible bottom,
+ * deliberately NOT as `scrollTop + clientHeight < scrollHeight`: the hint pill is a sibling in
+ * this same scroll container, so a scrollHeight test counts the pill's own height as content and
+ * the hint keeps itself on screen for a card that fits. Measured: that kept it up on 6 cards
+ * with nothing to show.
+ *
+ * The 24px is one line of body text: several cards clear the fold by two or three pixels of
+ * rounding, and a hint promising more when there is no more is worse than no hint.
+ */
+const MORE_SLACK = 24
+const cardOverflows = (el: HTMLElement | null) => {
+  const card = el?.firstElementChild
+  return (
+    !!el && !!card && card.getBoundingClientRect().bottom > el.getBoundingClientRect().bottom + MORE_SLACK
+  )
+}
+
+/**
+ * One slide of the carousel, and the scroll container for any card taller than the screen.
+ *
+ * The pill is the whole point of this component. `KtCard`'s `min-h-fit` already makes a long card
+ * grow and the slide scroll, so nothing is ever clipped — but the card is cut flush with the
+ * bottom edge and this deck's primary gesture is a HORIZONTAL swipe, so a player swipes sideways
+ * and never learns the card continued. Measured at 430x780 on the Custodes deck: Venatari keeps
+ * 163px, 22% of its card, below the fold with no sign of it.
+ *
+ * `sticky` is what makes it self-removing: the pill un-pins once its own position scrolls into
+ * view, which is exactly the bottom of the card.
+ */
+function Slide({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+
+  // Keyed on `children`, which is a fresh element every render, so this re-measures whenever the
+  // card changes — and it has to. Measuring once on mount is wrong twice over: a dynamically
+  // imported faction grows the card a tick later, and switching deck swaps the card inside the
+  // SAME slide (the slides are keyed by index), so a stale `more` would carry across. Watching
+  // the card for resize instead is not enough either — `flex-1` stretches most cards to the same
+  // box height, so the swap fires no resize at all. The observer is only for the viewport
+  // changing under a card that did not re-render, i.e. rotating the phone.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setMore(cardOverflows(el))
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [children])
+
+  return (
+    <div
+      ref={ref}
+      onScroll={(e) => setMore(cardOverflows(e.currentTarget))}
+      className="flex w-full shrink-0 snap-center flex-col overflow-y-auto p-2"
+    >
+      {children}
+      {/* Zero-height on purpose. The pill is a flex sibling of a `flex-1` card, so anything with
+          real height reflows the card the moment it appears, which changes the very measurement
+          that decided to show it — the hint then flickers against its own layout. An `h-0` sticky
+          anchor contributes nothing and the pill hangs off it. */}
+      {more && (
+        <span className="pointer-events-none sticky bottom-0 h-0 self-stretch">
+          <span className="display absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-card/85 px-2 py-0.5 text-[10px] whitespace-nowrap text-white shadow">
+            more &#9662;
+          </span>
+        </span>
+      )}
+    </div>
+  )
+}
+
 /** One item in the bottom bar. `now` is whatever the current phase unlocks. */
 type Deck = 'now' | 'ops' | 'strategy' | 'firefight' | 'equipment' | 'faction' | 'tac'
 
@@ -307,11 +380,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
         className="no-bar flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain"
       >
         {slides.length ? (
-          slides.map((slide, i) => (
-            <div key={i} className="flex w-full shrink-0 snap-center flex-col overflow-y-auto p-2">
-              {slide}
-            </div>
-          ))
+          slides.map((slide, i) => <Slide key={i}>{slide}</Slide>)
         ) : (
           <p className="p-3 text-sm text-ink/55">Nothing here.</p>
         )}
