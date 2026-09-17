@@ -1,5 +1,5 @@
 import { type OpKind } from '../rules'
-import { enemies, killGrade, kills, maxTeamsPerSide, scores, sideOps, sideDef, suggestedCrit, teamsOf, thresholds } from '../state'
+import { enemies, killGrade, kills, killValue, maxTeamsPerSide, scores, sideOps, sideDef, suggestedCrit, teamsOf, thresholds } from '../state'
 import { Btn, BufferedInput, Label, Stepper, TeamPill } from './kit'
 import { type Dispatch, type Game, ROW, rowVars } from './shared'
 
@@ -8,7 +8,9 @@ import { type Dispatch, type Game, ROW, rowVars } from './shared'
 export function Scoreboard({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
   const sides = game.sides
   const s = Object.fromEntries(sides.map((x) => [x.id, scores(game, x.id)]))
-  const foeOps = (side: string) => enemies(game, side).reduce((n, e) => n + sideOps(game, e).length, 0)
+  // Weighted, not counted — the ladder is derived the same way, so a boss must raise both
+  // or the readout and the grade disagree.
+  const foeOps = (side: string) => enemies(game, side).reduce((n, e) => n + killValue(sideOps(game, e)), 0)
 
   return (
     <section className="overflow-hidden border border-rule bg-paper shadow-sm">

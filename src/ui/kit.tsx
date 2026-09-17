@@ -57,12 +57,41 @@ export function BufferedInput({
   )
 }
 
-export const Stepper = ({ value, onChange, max }: { value: number; onChange: (d: number) => void; max?: number }) => (
+/**
+ * – / value / +. Pass `onSet` and the number becomes typable, which is the only sane way to
+ * take 12 damage off a 45-wound boss: stepping it costs twelve clicks with the table waiting.
+ * `onSet` is given the new absolute value; callers turn that into whatever delta their action
+ * wants, so the reducer keeps its own clamp.
+ */
+export const Stepper = ({
+  value,
+  onChange,
+  max,
+  onSet,
+}: {
+  value: number
+  onChange: (d: number) => void
+  max?: number
+  onSet?: (v: number) => void
+}) => (
   <span className="inline-flex items-center gap-1">
     <Btn onClick={() => onChange(-1)} disabled={value <= 0} className="w-7 disabled:opacity-25">
       –
     </Btn>
-    <span className="w-6 text-center font-semibold tabular-nums">{value}</span>
+    {onSet ? (
+      <BufferedInput
+        className="w-8 font-semibold"
+        inputMode="numeric"
+        aria-label="Set value"
+        value={String(value)}
+        onEdit={(raw) => {
+          const v = parseInt(raw, 10)
+          if (Number.isFinite(v)) onSet(v)
+        }}
+      />
+    ) : (
+      <span className="w-6 text-center font-semibold tabular-nums">{value}</span>
+    )}
     <Btn onClick={() => onChange(1)} disabled={max !== undefined && value >= max} className="w-7 disabled:opacity-25">
       +
     </Btn>

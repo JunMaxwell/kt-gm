@@ -1,3 +1,5 @@
+import type { RefCard } from './compendium'
+
 // All tunable data lives here. Stats are the official 2024 datacards (via KTDash).
 // CATALOGUE is every operative a team may field; DEFAULT_ROSTER is the starting
 // picks for this match. Both are only seeds — the live roster is editable in the
@@ -9,7 +11,21 @@
 export type SideId = string
 export type OpKind = 'kill' | 'crit' | 'tac'
 
-export type Operative = { id: string; name: string; apl: number; move: string; save: string; w: number }
+export type Operative = {
+  id: string
+  name: string
+  apl: number
+  move: string
+  save: string
+  w: number
+  /** How many kills downing this operative is worth. Absent means 1, which is what every
+   *  datacard operative is — so the kill ladders are unchanged by this field existing. Raise
+   *  it for a boss, whose death should move the grade further than a Grot's. */
+  kv?: number
+}
+
+/** A boss counts for more than a body. Everything else counts for one. */
+export const killWorth = (o: Operative) => o.kv ?? 1
 
 /** An alliance. `color` is a hex value, used as an inline background — never a class. */
 export type SideDef = { id: SideId; name: string; color: string }
@@ -23,6 +39,13 @@ export type SideDef = { id: SideId; name: string; color: string }
  * and CARDS. Two teams may share one; the match's two Deathwatch teams do. A team built
  * by hand has none, and simply gets an empty catalogue and no compendium cards.
  */
+/**
+ * A card the GM wrote, as opposed to one extracted from a datacard PDF. Same shape as a
+ * `RefCard` plus an id, because the editor has to address one card among several and the
+ * generated cards are only ever read in bulk.
+ */
+export type OwnCard = RefCard & { id: string }
+
 export type TeamDef = {
   id: string
   player: string
@@ -36,6 +59,10 @@ export type TeamDef = {
   cp: number
   tacOp: string
   tacVp: number
+  /** GM-authored rules, shown ahead of the faction deck. A boss lives here: the app has no
+   *  other way to tell a player anything, since the player view is the card deck and nothing
+   *  else. Optional, so `TeamPreset` and every stale save stay valid. */
+  cards?: OwnCard[]
 }
 
 /** A team before it has play state. `initialGame` adds the CP and tac op columns. */

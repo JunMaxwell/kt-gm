@@ -72,22 +72,30 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
 
   // A non-preset faction's deck arrives a tick later; until then every deck is empty.
   const faction = useFaction(team?.faction)
+  // The GM's own cards come first: a boss's rules matter more than the stock deck, and for a
+  // hand-built team they are the only cards there are.
+  const cards = [...(team?.cards ?? []), ...(faction?.cards ?? [])]
 
   const [deck, setDeck] = useState<Deck>('now')
   const [at, setAt] = useState(0)
   const rail = useRef<HTMLDivElement>(null)
 
   const cardsIn = (d: Deck): RefCard[] => {
-    if (d === 'now') return phaseCards(faction?.cards, game.phase)
+    if (d === 'now') return phaseCards(cards, game.phase)
     if (d === 'tac') return []
-    if (d === 'equipment') return [...cardsOfKind(faction?.cards, 'equipment'), ...UNIVERSAL_EQUIPMENT]
-    return cardsOfKind(faction?.cards, d)
+    if (d === 'equipment') return [...cardsOfKind(cards, 'equipment'), ...UNIVERSAL_EQUIPMENT]
+    return cardsOfKind(cards, d)
   }
   const size = (d: Deck) => (d === 'tac' ? tacs.length : cardsIn(d).length)
 
   // An empty deck would be a dead tab, so `now` only appears once the phase unlocks something.
   const decks = (['now', 'strategy', 'firefight', 'equipment', 'faction', 'tac'] as Deck[]).filter((d) => size(d) > 0)
-  const live = decks.includes(deck) ? deck : (decks[0] ?? 'strategy')
+  // Which deck opens when the chosen one is empty. If the GM wrote cards for this team they
+  // are the reason the player is looking, so open on those — otherwise a boss's rules sit
+  // behind the ten universal equipment cards, which sort earlier.
+  const own = team?.cards?.[0]?.kind
+  const fallback = (own && decks.includes(own) ? own : decks[0]) ?? 'strategy'
+  const live = decks.includes(deck) ? deck : fallback
 
   const slides =
     live === 'tac'

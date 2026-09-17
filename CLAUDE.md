@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 96 tests: the reducer, and a render pass over every panel
+bun test           # 106 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -94,9 +94,9 @@ Two conventions the split rests on:
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
-Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v14`). Any change to
+Game state persists to `localStorage` under a **versioned key** (`killteam-gm/v15`). Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-fourteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+fifteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 ## Rooms — live spectating
@@ -278,9 +278,9 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 96 tests in two files:
+`bun test` is 106 tests in two files:
 
-- `src/state.test.ts` — the reducer and selectors, 90 tests. `withHistory` is exported purely so
+- `src/state.test.ts` — the reducer and selectors, 97 tests. `withHistory` is exported purely so
   undo is testable without a React harness.
 - `src/ui/render.test.tsx` — four `renderToStaticMarkup` smoke tests that mount **every** panel
   against a 2-alliance game, a 3-alliance game with a hand-built team, a one-team-per-side match
@@ -680,6 +680,40 @@ team chip row above the same `Compendium`, **wrapped in a fixed `h-[26rem]`** be
 carousel is `flex-1` and needs a height to fill inside a collapsible. Shared component,
 different frame — the GM is looking things up for other people, not playing a hand.
 
+## Boss fights
+
+A boss is an ordinary operative with big numbers, plus two fields that exist only for it.
+
+- **`Operative.kv`** is how many kills downing it is worth. Absent means 1, and that default is
+  the whole reason adding the field changed no existing test: `killValue()` sums `killWorth` over
+  a list, so a roster of plain operatives sums to its own length and the published ladders
+  (5/9/14/19/23 and 4/8/13/17/21) are untouched. `kills` and `thresholds` both fold over value
+  rather than counting bodies, and **so does the Scoreboard's "N of M down"** — that readout
+  computes "the enemy" through its own local closure, separate from `state.ts`, so both have to
+  be weighted or the readout and the grade disagree.
+  Rule of thumb when setting one: **kv ≈ wounds ÷ 5**.
+- **`TeamDef.cards`** holds cards the GM typed. They live on the team, not in a `Game.cards`
+  record, and that is the entire trick: `normalize` already prunes `g.teams`, so deleting a team
+  or an alliance takes its cards with it and **no cleanup code was needed**.
+
+Three details that are load-bearing:
+
+- **GM cards are merged ahead of the faction deck**, and when the open deck is empty the view
+  falls back to *the deck the GM's first card is in* rather than to `decks[0]`. Without that a
+  boss's rules sit behind the ten universal equipment cards, which sort earlier — the player
+  opens the app and sees ladders and barricades.
+- **`cardAdd`/`cardPatch`/`cardRemove` are their own actions rather than `teamPatch`** so that
+  one card edit is one undo step. `teamPatch` coalesces per team, which would merge every card
+  edit on a team into a single step.
+- **`stepKey` now composes every id the action carries.** It used to be
+  `'teamId' in a ? … : 'id' in a ? … : a.type`, and `cardPatch` carries *both* a `teamId` and a
+  `cardId` — so `teamId` won and edits to two different cards on one team collapsed into one undo
+  step. A test pins this.
+
+`Stepper` also gained an optional `onSet`, which turns its number into a typed field. Stepping a
+45-wound boss down by a 12-damage hit is twelve clicks with the table waiting. The caller converts
+the typed absolute into a delta, so the `wound` action and its clamp are unchanged.
+
 ## Known gaps
 
 - Seven of the nine crit ops accumulate per-marker points, track a named marker, or count actions
@@ -696,7 +730,8 @@ different frame — the GM is looking things up for other people, not playing a 
   the ones most likely to read oddly.
 - **Operative weapons are still not modelled.** The extractor reads APL/Move/Save/Wounds off a
   datacard but skips the weapon table, so nothing in the app can tell a player what they are
-  shooting with.
+  shooting with. A GM card is the workaround — and for a boss it is the only channel at all,
+  since the player view shows no operative stats.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
 - **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.

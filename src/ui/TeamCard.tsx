@@ -1,4 +1,4 @@
-import { blankOperative, CATALOGUE, type Operative, slug, tacOp, teamTacOps } from '../rules'
+import { blankOperative, CATALOGUE, killWorth, type Operative, slug, tacOp, teamTacOps } from '../rules'
 import { currentTeamId, type Order, orderCounts, pairEligible, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
 import { type Dispatch, type Game, onInt, useFaction } from './shared'
@@ -38,6 +38,15 @@ export function EditRow({ teamId, o, dispatch }: { teamId: string; o: Operative;
         <label className="flex items-center gap-1 text-xs text-ink/45">
           W
           <BufferedInput className="w-12" inputMode="numeric" value={String(o.w)} onEdit={onInt((w) => edit({ w: Math.max(1, w) }))} />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-ink/45" title="Kills this operative is worth when it goes down. 1 for a normal model; raise it for a boss.">
+          Kill
+          <BufferedInput
+            className="w-10"
+            inputMode="numeric"
+            value={String(killWorth(o))}
+            onEdit={onInt((kv) => edit({ kv: Math.max(1, kv) }))}
+          />
         </label>
       </div>
     </li>
@@ -83,7 +92,12 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
         {o.move} {o.save}
       </span>
       {injured && <span className="display shrink-0 rounded bg-recon px-1 text-xs text-white">inj</span>}
-      <Stepper value={st.hp} max={o.w} onChange={(delta) => dispatch({ type: 'wound', opId: o.id, delta })} />
+      <Stepper
+        value={st.hp}
+        max={o.w}
+        onChange={(delta) => dispatch({ type: 'wound', opId: o.id, delta })}
+        onSet={(v) => dispatch({ type: 'wound', opId: o.id, delta: v - st.hp })}
+      />
       <Btn
         on={st.dead}
         onClick={() => dispatch({ type: 'dead', opId: o.id, dead: !st.dead })}

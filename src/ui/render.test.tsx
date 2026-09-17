@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup as R } from 'react-dom/server'
 
-import { presetRoster } from '../rules'
+import { blankOperative, presetRoster } from '../rules'
 import { FACTIONS, loadFaction } from '../factions'
 import { allTeams, initialGame, reduce } from '../state'
 import { Scoreboard } from './Scoreboard'
@@ -82,4 +82,41 @@ test('a team on a lazily-loaded faction renders before and after its chunk arriv
 
 test('every faction in the picker can actually be loaded', async () => {
   for (const f of FACTIONS) expect((await loadFaction(f.id))!.cards.length).toBeGreaterThan(8)
+})
+
+test('a GM-authored card reaches the player view, ahead of the faction deck', () => {
+  let g = initialGame()
+  g = reduce(g, { type: 'cardAdd', teamId: 'rav', kind: 'faction' })
+  const id = g.teams.rav.cards![0].id
+  g = reduce(g, {
+    type: 'cardPatch',
+    teamId: 'rav',
+    cardId: id,
+    patch: { name: 'Angron', text: 'The Red Angel strikes twice.' },
+  })
+  // Compendium is the whole player view now, so this is the only channel a boss has
+  const html = R(<Compendium game={g} teamId="rav" />)
+  expect(html).toContain('Angron')
+  expect(html).toContain('The Red Angel strikes twice.')
+})
+
+test('a hand-built team with only GM cards gets a working deck instead of a dead one', () => {
+  const team = {
+    id: 'boss', player: 'GM', name: 'Angron', short: 'ANG', side: 'xenos',
+    color: '#8a1111', archetypes: [], cp: 0, tacOp: '', tacVp: 0,
+  }
+  let g = reduce(initialGame(), { type: 'teamAdd', team, roster: [] })
+  expect(R(<Compendium game={g} teamId="boss" />)).not.toContain('Blood for')
+  g = reduce(g, { type: 'cardAdd', teamId: 'boss', kind: 'faction' })
+  const id = g.teams.boss.cards![0].id
+  g = reduce(g, { type: 'cardPatch', teamId: 'boss', cardId: id, patch: { name: 'Butcher', text: 'Blood for the Blood God.' } })
+  expect(R(<Compendium game={g} teamId="boss" />)).toContain('Blood for the Blood God.')
+})
+
+test('a boss operative renders in the roster editor with its kill value', () => {
+  const boss = { ...blankOperative('rav'), name: 'Angron', w: 45, kv: 8 }
+  const g = reduce(initialGame(), { type: 'addOp', teamId: 'rav', op: boss })
+  const html = R(<TeamCard teamId="rav" game={g} dispatch={noop} editing />)
+  expect(html).toContain('Angron')
+  expect(html).toContain('45')
 })

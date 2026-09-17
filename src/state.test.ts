@@ -42,6 +42,7 @@ import {
   teamIdOf,
   teamOps,
   teamsOf,
+  killValue,
   thresholds,
   withHistory,
 } from './state'
@@ -965,4 +966,95 @@ test('replace repairs a snapshot missing a side, without moving the turn cursor'
   const h = reduce(g, { type: 'replace', game: stale as Game })
   expect(h.crit[third]).toEqual([0, 0, 0, 0])
   expect(h.turnIdx).toBe(3) // a spectator must not be knocked off the live turn
+})
+
+/* ---------- kill value ---------- */
+
+test('an operative with no kill value is worth exactly one, so the ladders are unchanged', () => {
+  const g = initialGame()
+  // 25 Imperium vs 28 Xenos, every operative worth 1 — the published ladders
+  expect(thresholds(g, 'imperium')).toEqual([5, 9, 14, 19, 23])
+  expect(thresholds(g, 'xenos')).toEqual([4, 8, 13, 17, 21])
+  expect(killValue(sideOps(g, 'imperium'))).toBe(25)
+})
+
+test('a boss raises the ladder it is added to and scores its full value when it dies', () => {
+  let g = initialGame()
+  const boss = { ...blankOperative('rav'), name: 'Angron', w: 45, kv: 8 }
+  g = reduce(g, { type: 'addOp', teamId: 'rav', op: boss })
+  // Xenos is now worth 28 + 8 = 36 to the Imperium
+  expect(killValue(sideOps(g, 'xenos'))).toBe(36)
+  expect(thresholds(g, 'imperium')).toEqual(killThresholds(36))
+
+  expect(kills(g, 'imperium')).toBe(0)
+  g = reduce(g, { type: 'dead', opId: boss.id, dead: true })
+  expect(kills(g, 'imperium')).toBe(8) // one body, eight kills
+  expect(killGrade(g, 'imperium')).toBe(1) // ladder for 36 is [6,12,18,24,30]
+
+  // the point of the field: the same single body is worth a grade, where an ordinary
+  // operative would have been worth nothing
+  const plain = reduce(initialGame(), { type: 'dead', opId: ids(initialGame(), 'rav')[0], dead: true })
+  expect(kills(plain, 'imperium')).toBe(1)
+  expect(killGrade(plain, 'imperium')).toBe(0)
+})
+
+test('kill value survives an edit and can be lowered back to one', () => {
+  let g = initialGame()
+  const id = ids(g, 'dw')[0]
+  g = reduce(g, { type: 'editOp', teamId: 'dw', opId: id, patch: { kv: 5 } })
+  expect(killValue(sideOps(g, 'imperium'))).toBe(29) // 25 bodies, one of them worth 5
+  g = reduce(g, { type: 'editOp', teamId: 'dw', opId: id, patch: { kv: 1 } })
+  expect(killValue(sideOps(g, 'imperium'))).toBe(25)
+})
+
+/* ---------- GM-authored cards ---------- */
+
+const cardsOf = (g: Game, teamId: string) => g.teams[teamId].cards ?? []
+
+test('a GM card is added, edited and removed on one team', () => {
+  let g = initialGame()
+  expect(cardsOf(g, 'rav')).toEqual([])
+  g = reduce(g, { type: 'cardAdd', teamId: 'rav', kind: 'faction' })
+  expect(cardsOf(g, 'rav').length).toBe(1)
+
+  const id = cardsOf(g, 'rav')[0].id
+  g = reduce(g, { type: 'cardPatch', teamId: 'rav', cardId: id, patch: { name: 'Angron', text: 'Blood for the Blood God.' } })
+  expect(cardsOf(g, 'rav')[0]).toMatchObject({ id, kind: 'faction', name: 'Angron', text: 'Blood for the Blood God.' })
+  expect(cardsOf(g, 'dw')).toEqual([]) // no other team gains one
+
+  g = reduce(g, { type: 'cardRemove', teamId: 'rav', cardId: id })
+  expect(cardsOf(g, 'rav')).toEqual([])
+})
+
+test('a card patch cannot rewrite the card id, and a missing team is a no-op', () => {
+  let g = reduce(initialGame(), { type: 'cardAdd', teamId: 'rav', kind: 'strategy' })
+  const id = cardsOf(g, 'rav')[0].id
+  g = reduce(g, { type: 'cardPatch', teamId: 'rav', cardId: id, patch: { id: 'hacked' } as never })
+  expect(cardsOf(g, 'rav')[0].id).toBe(id)
+  expect(reduce(g, { type: 'cardAdd', teamId: 'nope', kind: 'faction' })).toBe(g)
+})
+
+test('deleting a team takes its GM cards with it', () => {
+  let g = reduce(initialGame(), { type: 'cardAdd', teamId: 'rav', kind: 'faction' })
+  expect(cardsOf(g, 'rav').length).toBe(1)
+  g = reduce(g, { type: 'teamRemove', teamId: 'rav' })
+  expect(g.teams.rav).toBeUndefined() // normalize needs no extra rule: cards ride on the team
+})
+
+test('typing two different cards on one team is two undo steps, not one', () => {
+  let h = { past: [] as Game[], now: reduce(initialGame(), { type: 'cardAdd', teamId: 'rav', kind: 'faction' }) }
+  h = withHistory(h, { type: 'cardAdd', teamId: 'rav', kind: 'strategy' })
+  const [a, b] = cardsOf(h.now, 'rav').map((c) => c.id)
+
+  // two keystrokes into card A coalesce into one step
+  h = withHistory(h, { type: 'cardPatch', teamId: 'rav', cardId: a, patch: { text: 'A' } })
+  h = withHistory(h, { type: 'cardPatch', teamId: 'rav', cardId: a, patch: { text: 'An' } })
+  const afterA = h.past.length
+  // but a keystroke into card B must start a new one
+  h = withHistory(h, { type: 'cardPatch', teamId: 'rav', cardId: b, patch: { text: 'B' } })
+  expect(h.past.length).toBe(afterA + 1)
+
+  h = withHistory(h, { type: 'undo' })
+  expect(cardsOf(h.now, 'rav').find((c) => c.id === b)!.text).toBe('')
+  expect(cardsOf(h.now, 'rav').find((c) => c.id === a)!.text).toBe('An') // card A's edit survives
 })

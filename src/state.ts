@@ -9,6 +9,7 @@ import {
   OBJECTIVE_MARKERS,
   OP_CAP,
   type OpKind,
+  type OwnCard,
   type Operative,
   PRESET_SIDES,
   PRESET_TEAMS,
@@ -19,8 +20,9 @@ import {
   type TeamDef,
   TURNING_POINTS,
   killThresholds,
+  killWorth,
 } from './rules'
-import type { PhaseId } from './compendium'
+import type { PhaseId, RefKind } from './compendium'
 
 export type Order = 'conceal' | 'engage'
 export type OpState = {
@@ -144,6 +146,10 @@ export type Action =
   | { type: 'teamRemove'; teamId: string }
   | { type: 'teamPatch'; teamId: string; patch: Partial<TeamDef> }
   | { type: 'cpPerTp'; patch: Partial<{ lead: number; other: number }> }
+  // --- GM-authored cards: the only way to put a boss's rules on a player's phone ---
+  | { type: 'cardAdd'; teamId: string; kind: RefKind }
+  | { type: 'cardPatch'; teamId: string; cardId: string; patch: Partial<Omit<OwnCard, 'id'>> }
+  | { type: 'cardRemove'; teamId: string; cardId: string }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
 
@@ -460,6 +466,23 @@ export function reduce(g: Game, a: Action): Game {
       // Only a change of alliance moves slots; a rename or a recolour must not rewind the turn.
       return a.patch.side && a.patch.side !== t.side ? recast(next) : normalize(next)
     }
+    case 'cardAdd': {
+      const t = g.teams[a.teamId]
+      if (!t) return g
+      const card: OwnCard = { id: `c-${crypto.randomUUID().slice(0, 8)}`, kind: a.kind, name: 'New card', text: '' }
+      return { ...g, teams: { ...g.teams, [a.teamId]: { ...t, cards: [...(t.cards ?? []), card] } } }
+    }
+    case 'cardPatch': {
+      const t = g.teams[a.teamId]
+      if (!t) return g
+      const cards = (t.cards ?? []).map((c) => (c.id === a.cardId ? { ...c, ...a.patch, id: c.id } : c))
+      return { ...g, teams: { ...g.teams, [a.teamId]: { ...t, cards } } }
+    }
+    case 'cardRemove': {
+      const t = g.teams[a.teamId]
+      if (!t) return g
+      return { ...g, teams: { ...g.teams, [a.teamId]: { ...t, cards: (t.cards ?? []).filter((c) => c.id !== a.cardId) } } }
+    }
     case 'cpPerTp': {
       const c = { ...g.cpPerTp, ...a.patch }
       return { ...g, cpPerTp: { lead: clamp(c.lead, 0, 10), other: clamp(c.other, 0, 10) } }
@@ -496,9 +519,12 @@ export const sideOps = (g: Game, s: SideId) => sideTeams(g, s).flatMap((t) => te
 /** Everything the side is fighting — one alliance's operatives, or several. */
 const foeOps = (g: Game, s: SideId) => enemies(g, s).flatMap((e) => sideOps(g, e))
 
-export const thresholds = (g: Game, s: SideId) => g.killOverride[s] ?? killThresholds(foeOps(g, s).length)
+/** What a side is worth in kills: one per operative, more for a boss. */
+export const killValue = (ops: Operative[]) => ops.reduce((n, o) => n + killWorth(o), 0)
 
-export const kills = (g: Game, s: SideId) => foeOps(g, s).filter((o) => g.ops[o.id]?.dead).length
+export const thresholds = (g: Game, s: SideId) => g.killOverride[s] ?? killThresholds(killValue(foeOps(g, s)))
+
+export const kills = (g: Game, s: SideId) => killValue(foeOps(g, s).filter((o) => g.ops[o.id]?.dead))
 
 export const killGrade = (g: Game, s: SideId) => thresholds(g, s).filter((t) => kills(g, s) >= t).length
 
@@ -643,7 +669,7 @@ export const counteract = (g: Game, s: SideId) => {
 
 /* ---------- persistence ---------- */
 
-const KEY = 'killteam-gm/v14' // bump when the shape changes; old saves are ignored
+const KEY = 'killteam-gm/v15' // bump when the shape changes; old saves are ignored
 const ROOM_KEY = 'killteam-gm/room' // the GM's { code, token }; viewers read the URL instead
 
 /* ---------- rooms ---------- */
@@ -709,10 +735,12 @@ export type UiAction = Action | { type: 'undo' }
 export type History = { past: Game[]; now: Game; last?: string }
 
 /** Keystroke-level actions coalesce, or typing one player name eats the whole stack. */
-const COALESCE = new Set(['player', 'tacOp', 'teamPatch', 'sidePatch'])
+const COALESCE = new Set(['player', 'tacOp', 'teamPatch', 'sidePatch', 'cardPatch'])
 // Keyed per subject, so editing two different teams (or sides) never merges into one step.
+// Every id the action carries is part of the key: `cardPatch` has BOTH a teamId and a cardId,
+// and keying on teamId alone would collapse edits to two different cards into one undo step.
 const stepKey = (a: Action) =>
-  'teamId' in a ? `${a.type}:${a.teamId}` : 'id' in a ? `${a.type}:${a.id}` : a.type
+  [a.type, 'teamId' in a ? a.teamId : '', 'cardId' in a ? a.cardId : '', 'id' in a ? a.id : ''].join(':')
 
 export const withHistory = (h: History, a: UiAction): History => {
   if (a.type === 'undo') return h.past.length ? { past: h.past.slice(0, -1), now: h.past[h.past.length - 1] } : h

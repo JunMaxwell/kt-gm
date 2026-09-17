@@ -6,10 +6,12 @@ import {
   CRIT_OPS,
   type CritOpId,
   DEFAULT_ROSTER,
+  type OwnCard,
   type TeamDef,
   presetRoster,
 } from '../rules'
 import { FACTIONS } from '../factions'
+import { KIND_LABEL, type RefKind } from '../compendium'
 import { allTeams, teamOps, teamsOf } from '../state'
 import { Btn, BufferedInput, Label } from './kit'
 import { type Dispatch, type Game, onInt } from './shared'
@@ -27,7 +29,10 @@ const EDGE = ['top edge', 'bottom edge', 'left edge', 'right edge']
 
 export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
   const [add, setAdd] = useState('')
+  const [cardPick, setCardTeam] = useState('')
   const teams = allTeams(game)
+  // Validated at render, not once at mount: a team can be deleted from the panel above.
+  const cardTeam = teams.some((t) => t.id === cardPick) ? cardPick : (teams[0]?.id ?? '')
 
   /** A new team, from a preset faction or blank. Ids are minted here — the reducer never
    *  invents one, so two teams of the same faction can never collide in `g.ops`. */
@@ -250,6 +255,41 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
             ))}
           </Panel>
 
+          <Panel title="Cards">
+            <p className="mb-3 text-xs text-ink/50">
+              Rules you write yourself, shown to that team's players ahead of its faction deck. This is the only way
+              to tell a player anything the app does not already know — a boss's statline and weapons included, since
+              nothing else in the player view shows operative stats.
+            </p>
+            <div className="mb-3 flex flex-wrap items-center gap-1">
+              {teams.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setCardTeam(t.id)}
+                  className="display rounded px-2 py-1 text-sm"
+                  style={
+                    cardTeam === t.id
+                      ? { background: t.color, color: t.ink ? '#282c34' : '#fff' }
+                      : { background: 'rgba(0,0,0,.05)', color: '#282c34' }
+                  }
+                >
+                  {t.name}
+                  {(game.teams[t.id].cards?.length ?? 0) > 0 && ` (${game.teams[t.id].cards!.length})`}
+                </button>
+              ))}
+            </div>
+            {cardTeam &&
+              (game.teams[cardTeam].cards ?? []).map((c) => (
+                <CardRow key={c.id} dispatch={dispatch} teamId={cardTeam} card={c} />
+              ))}
+            {cardTeam && !(game.teams[cardTeam].cards ?? []).length && (
+              <p className="mb-2 text-xs text-ink/40">No cards yet.</p>
+            )}
+            {cardTeam && (
+              <Btn onClick={() => dispatch({ type: 'cardAdd', teamId: cardTeam, kind: 'faction' })}>+ Add card</Btn>
+            )}
+          </Panel>
+
           <Panel title="Rosters">
             <p className="mb-3 text-xs text-ink/50">
               Add, remove and restat operatives. A team built from a faction can be reset back to its datacard picks;
@@ -360,5 +400,51 @@ function Num({
       {label}
       <BufferedInput className="w-14" inputMode="numeric" aria-label={label} value={String(value)} onEdit={onInt(onEdit)} />
     </label>
+  )
+}
+
+
+/** One GM-authored card. The body is a plain textarea — `BufferedInput` exists to make a
+ *  reducer-clamped *number* editable, and its centred tabular styling is wrong for prose. */
+function CardRow({ dispatch, teamId, card }: { dispatch: Dispatch; teamId: string; card: OwnCard }) {
+  const patch = (p: Partial<Omit<OwnCard, 'id'>>) => dispatch({ type: 'cardPatch', teamId, cardId: card.id, patch: p })
+  return (
+    <div className="mb-2 border border-rule bg-white p-1.5">
+      <div className="flex items-center gap-1.5">
+        <select
+          value={card.kind}
+          onChange={(e) => patch({ kind: e.target.value as RefKind })}
+          className="shrink-0 rounded border border-rule bg-white px-1 py-1 text-xs"
+          aria-label="Card kind"
+        >
+          {(Object.keys(KIND_LABEL) as RefKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <BufferedInput
+          className="min-w-0 flex-1 text-left"
+          value={card.name}
+          aria-label="Card name"
+          onEdit={(name) => patch({ name })}
+        />
+        <Btn
+          className="w-6 shrink-0 px-0 text-xenos"
+          title="Remove this card"
+          onClick={() => confirm(`Remove ${card.name}?`) && dispatch({ type: 'cardRemove', teamId, cardId: card.id })}
+        >
+          ×
+        </Btn>
+      </div>
+      <textarea
+        value={card.text}
+        onChange={(e) => patch({ text: e.target.value })}
+        rows={4}
+        aria-label="Card text"
+        placeholder="Rules text. Blank lines separate paragraphs; ALL-CAPS words are highlighted, as on the printed cards."
+        className="mt-1 w-full rounded border border-rule bg-white px-2 py-1 text-xs leading-relaxed"
+      />
+    </div>
   )
 }
