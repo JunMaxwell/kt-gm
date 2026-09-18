@@ -27,11 +27,11 @@ import { nemesisCore } from './nemesis'
 // copies of a rules paragraph is two things to keep in step — the same reason nemesis.ts exists.
 const ALLEGIANCE = {
   name: 'Let the Galaxy Burn',
-  text: 'Allegiance trait — CHAOS.\nWhenever a friendly CHAOS NEMESIS operative is wholly within enemy territory, its weapons have the Balanced weapon rule.',
+  text: 'Allegiance trait — CHAOS.\nWhenever a friendly CHAOS operative is wholly within enemy territory, its weapons have the Balanced weapon rule.',
 }
 const FURY = {
   name: 'Fury',
-  text: 'Nemesis trait.\nThis operative’s melee weapons have the Ceaseless weapon rule; if a weapon already has that rule, it has the Relentless weapon rule instead. Worsen the Hit stat of this operative’s ranged weapons by 1 — Angron carries none, so this costs him nothing.',
+  text: 'Nemesis trait.\nThis operative’s melee weapons have the Ceaseless weapon rule; if a weapon already has that rule, it has the Relentless weapon rule instead. Worsen the Hit stat of this operative’s ranged weapons by 1.',
 }
 // The one ability that is NOT also spread into `cards`. Fury, Implacable and the allegiance trait
 // appear in both because they are format rules a player needs beside the core-rules card; No Escape
@@ -39,11 +39,11 @@ const FURY = {
 // six cards deep and this is the one that belongs with his weapons instead.
 const NO_ESCAPE = {
   name: 'No Escape',
-  text: 'Homebrew ability — not part of the Nemesis format.\nWhenever an enemy operative within this operative’s control range performs the Fall Back action, before that operative moves, this operative can perform a free Fight action against it. Nothing disengages from Angron by walking away.',
+  text: 'Whenever an enemy operative within this operative’s control range performs the Fall Back action, before that operative moves, this operative can perform a free Fight action against it. Nothing disengages from Angron by walking away.',
 }
 const IMPLACABLE = {
   name: 'Implacable',
-  text: 'Nemesis trait - bought with his unspent third weapon selection.\nIgnore any changes to this operative’s weapon stats from being injured. Angron keeps HIT 3+ on both weapons all the way down to his last wound; Injured still costs him the 2" of Move.',
+  text: 'Ignore any changes to this operative’s weapon stats from being injured. Angron keeps HIT 3+ on both weapons all the way down to his last wound; Injured still costs him the 2" of Move.',
 }
 
 export const cards: RefCard[] = [
