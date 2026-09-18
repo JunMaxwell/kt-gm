@@ -214,9 +214,11 @@ export function Pack({ id, onBack }: { id: string; onBack: () => void }) {
  * The kill teams in the current match, pinned above the rest.
  *
  * Teams map MANY-TO-ONE onto factions — the preset seven are six entries, because `dw` and
- * `dw2` both carry `faction: 'dw'` — so a row is a faction and the useful label is the teams
- * using it. At the table the question is "which deck is Player 7 reading?", not "which faction
- * exists?". A hand-built team has no `faction` and therefore no page here, so it is skipped
+ * `dw2` both carry `faction: 'dw'` — so a row is a faction. The tile reads the same as every
+ * other one (archetypes), and the team names are appended ONLY when more than one team shares
+ * the faction: with one team the label just repeated the band above it. At the table the
+ * question is "which deck is Player 7 reading?", and that only needs asking when two teams
+ * share a deck. A hand-built team has no `faction` and therefore no page here, so it is skipped
  * rather than shown as a row that cannot be opened.
  */
 const inMatch = (game: Game): [FactionMeta, string][] => {
@@ -225,7 +227,7 @@ const inMatch = (game: Game): [FactionMeta, string][] => {
     if (!t.faction || !factionMeta(t.faction)) continue
     used.set(t.faction, [...(used.get(t.faction) ?? []), t.name])
   }
-  return [...used].map(([id, names]) => [factionMeta(id)!, names.join(' · ')])
+  return [...used].map(([id, names]) => [factionMeta(id)!, names.length > 1 ? names.join(' · ') : ''])
 }
 
 function FactionTile({ f, note, onPick }: { f: FactionMeta; note?: string; onPick: () => void }) {
@@ -238,12 +240,9 @@ function FactionTile({ f, note, onPick }: { f: FactionMeta; note?: string; onPic
         <p className="display truncate text-lg">{f.name}</p>
       </div>
       <p className="truncate px-3 py-1.5 text-[10px] text-ink/50">
-        {note ?? (
-          <>
-            {f.archetypes.join(' · ')}
-            {f.custom && <span className="text-flare"> · homebrew</span>}
-          </>
-        )}
+        {f.archetypes.join(' · ') || '—'}
+        {f.custom && <span className="text-flare"> · homebrew</span>}
+        {note && <span className="text-ink/70">{` · ${note}`}</span>}
       </p>
     </button>
   )
