@@ -216,26 +216,50 @@ export function KtCard({
 // Words the cards print in caps but never highlight — stats and table headers, not keywords.
 const NOISE = new Set(['APL', 'ATK', 'HIT', 'DMG', 'NAME', 'AND', 'THE', 'FOR', 'ALL'])
 
-/**
- * Card rules text with the faction keywords picked out in the accent orange, the way the
- * printed cards do it. A run of three or more capitals is a keyword unless it's a stat name.
- *
- * ponytail: a heuristic, not a parser. If it ever mis-highlights, add the word to NOISE — the
- * alternative is tagging every keyword by hand across 97 cards.
- */
-export function Rules({ text, className = '' }: { text: string; className?: string }) {
+/** The keyword pass: orange every run of three or more capitals that is not a stat name. */
+function keywords(text: string, tag: string): React.ReactNode[] {
   const out: React.ReactNode[] = []
   let last = 0
   for (const m of text.matchAll(/[A-Z][A-Z'’]{2,}(?: [A-Z][A-Z'’]{1,})*/g)) {
     if (NOISE.has(m[0]) || m.index === undefined) continue
     out.push(text.slice(last, m.index))
     out.push(
-      <b key={m.index} className="font-bold text-flare">
+      <b key={`${tag}k${m.index}`} className="font-bold text-flare">
         {m[0]}
       </b>,
     )
     last = m.index + m[0].length
   }
   out.push(text.slice(last))
+  return out
+}
+
+/**
+ * Card rules text with the faction keywords picked out in the accent orange, the way the
+ * printed cards do it. A run of three or more capitals is a keyword unless it's a stat name.
+ *
+ * ponytail: a heuristic, not a parser. If it ever mis-highlights, add the word to NOISE — the
+ * alternative is tagging every keyword by hand across 97 cards.
+ *
+ * `**bold**` is the ONE bit of markdown that survives into card text, and it is not decoration:
+ * the hand-written factions use it to head the sub-options inside a long ability — Anvil of
+ * War's *Hammers of Nocturne* and *Drake Shields*, the Custodes stances. The 697 generated
+ * cards carry none, because they come from PDFs. Rendered literally it put asterisks on the
+ * card; stripping it instead would have thrown away the structure the author meant.
+ */
+export function Rules({ text, className = '' }: { text: string; className?: string }) {
+  const out: React.ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
+    if (m.index === undefined) continue
+    out.push(...keywords(text.slice(last, m.index), `${last}-`))
+    out.push(
+      <b key={`b${m.index}`} className="font-bold text-card">
+        {keywords(m[1], `b${m.index}-`)}
+      </b>,
+    )
+    last = m.index + m[0].length
+  }
+  out.push(...keywords(text.slice(last), `${last}-`))
   return <p className={`whitespace-pre-line ${className}`}>{out}</p>
 }

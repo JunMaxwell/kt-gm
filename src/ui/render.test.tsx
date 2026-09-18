@@ -16,6 +16,7 @@ import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 import { TeamPicker } from './TeamPicker'
 import { Glossary, Pack } from './Glossary'
+import { Rules } from './kit'
 
 const noop = () => {}
 const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, save: noop, saves: [], load: noop } as never
@@ -241,4 +242,28 @@ test('a datacard prints its weapons, its keywords and the rules its weapons use'
   expect(html).toContain('ADEPTUS ASTARTES') // the keyword bar
   expect(html).toContain('Piercing') // the weapon-rules appendix the official sheets omit
   expect(html).toContain('Adaptable Armoury') // an ability, name run into its text
+})
+
+test('**bold** in a card renders bold, and the keyword pass still runs around it', () => {
+  const html = R(<Rules text="Select one: **Drake Shields:** improve the SALAMANDERS save." />)
+  expect(html).toContain('<b class="font-bold text-card">Drake Shields:</b>')
+  expect(html).toContain('<b class="font-bold text-flare">SALAMANDERS</b>') // outside the bold
+  expect(html).not.toContain('**')
+  // and inside it — a keyword wrapped in bold gets both
+  expect(R(<Rules text="**the SALAMANDERS rite**" />)).toContain('text-flare')
+})
+
+test('no card anywhere leaks a literal ** onto the page', async () => {
+  // Markdown only ever reaches card text through a HAND-WRITTEN faction; the 697 generated ones
+  // come from PDFs. That is exactly why it goes unnoticed — it is rare, and it renders as
+  // asterisks rather than failing. One unbalanced pair is all it takes.
+  for (const f of FACTIONS) await loadFaction(f.id)
+  for (const f of FACTIONS) {
+    const data = factionData(f.id)
+    const texts = [
+      ...(data?.cards ?? []).map((c) => c.text),
+      ...(data?.datacards ?? []).flatMap((d) => [...d.abilities, ...d.actions].map((a) => a.text)),
+    ]
+    for (const text of texts) expect(R(<Rules text={text} />)).not.toContain('**')
+  }
 })

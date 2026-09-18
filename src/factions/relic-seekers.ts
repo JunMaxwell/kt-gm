@@ -14,7 +14,8 @@
 //     expanded to the glossary's own names so `weaponRules` can resolve them.
 //
 // Otherwise verbatim, minus two edits: the `MPERIUM` typo in two keyword lines, and the markdown
-// table in Promethean Tooth Dagger, flattened to a line because card bodies render plain text.
+// TABLE in Promethean Tooth Dagger, flattened to a line — `Rules` renders `**bold**` (which is
+// why Anvil of War's sub-options are kept as written) but nothing richer than that.
 //
 // No `acts`/`kv`: nothing in this team's rules doubles activations or kill value, unlike the
 // Custodes. No DEFAULT_ROSTER either — the composition offers choices, so the GM picks.

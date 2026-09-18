@@ -375,6 +375,14 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
 - **Keywords are highlighted by heuristic**, not by hand: `Rules` in `ui/kit.tsx` oranges any
   run of 3+ capitals, minus a `NOISE` stop-list (`APL`, `ATK`, `HIT`, `DMG`, `NAME`). Tagging
   97 cards by hand was not worth it. If a word highlights wrongly, add it to `NOISE`.
+- **`Rules` also renders `**bold**`, and that is the only markdown any card text may use.** It
+  is structure, not decoration: the hand-written factions head the sub-options inside a long
+  ability with it — Anvil of War's *Hammers of Nocturne* and *Drake Shields*, the Custodes
+  stances. The 697 generated cards carry none, since they come from PDFs, which is exactly why
+  it went unnoticed printing literal asterisks on the card. Stripping it instead would have
+  thrown away the structure the author meant. A test renders `Rules` over every card and
+  datacard in all 52 factions and fails on a surviving `**`. Anything richer — a table — still
+  has to be flattened at transcription time; `Promethean Tooth Dagger` is the standing example.
 - **`KtCard` carries `min-h-fit`, and it is load-bearing.** The carousel gives every card
   `flex-1` inside a fixed-height slide, and a flex item will happily shrink below its content —
   which, with `overflow-hidden` on the card, silently **clips** a long one. Two equipment cards
