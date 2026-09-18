@@ -61,6 +61,7 @@ function PrintDatacard({ o, card }: { o: Operative; card?: Datacard }) {
           <h3 className="display truncate text-xl text-white">{o.name}</h3>
           <div className="mt-1 h-[2px] bg-flare" />
         </div>
+        {card?.img && <img src={card.img} alt="" className="h-[16mm] shrink-0 self-end object-contain" />}
         <dl className="flex shrink-0">
           {stats(o).map(([k, v]) => (
             <div key={k} className="flex w-[13mm] flex-col items-center justify-center border-l border-white/20 px-1 pb-1.5">

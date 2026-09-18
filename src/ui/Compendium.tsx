@@ -86,6 +86,7 @@ export function OperativeCard({
       kicker={kicker}
       title="Operative"
       name={o.name}
+      art={card?.img}
       dim={st?.dead}
       aside={state ? <span className="text-white/60">{state}</span> : undefined}
       className={className}

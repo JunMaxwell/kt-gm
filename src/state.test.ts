@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 
 import {
   ARCHETYPES,
@@ -853,6 +854,8 @@ test('every operative in the library has a datacard, and it is well formed', asy
       for (const a of d.abilities) expect(a.text.length).toBeGreaterThan(10)
       // 0AP unique actions are real — Kasrkin's Medikit, Exaction Squad's Apprehend
       for (const a of d.actions) expect(a.ap).toBeGreaterThanOrEqual(0)
+      // a photo is a static file the generator saw on disk; a stale or renamed one must fail here
+      if (d.img) expect([d.name, d.img, existsSync('public' + d.img)]).toEqual([d.name, d.img, true])
     }
   }
 })

@@ -169,6 +169,7 @@ export function KtCard({
   name,
   tag,
   aside,
+  art,
   dim,
   outline,
   tone,
@@ -181,6 +182,8 @@ export function KtCard({
   /** A short badge on the right of the name strip — a ploy's CP cost. */
   tag?: React.ReactNode
   aside?: React.ReactNode
+  /** A cut-out photo, top-right of the black band — where the printed datacards put the model. */
+  art?: string
   dim?: boolean
   outline?: string
   /** The name strip: a bare box by default (equipment), filled green for strategy ploys, black for firefight. */
@@ -203,12 +206,17 @@ export function KtCard({
       className={`flex min-h-fit min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
       style={{ borderColor: outline ?? '#2a2a2a' }}
     >
-      <div className="kt-band px-2 pt-1.5 pb-3 text-center">
-        <p className="display flex items-baseline justify-center gap-2 text-[11px] tracking-widest text-flare">
-          <span className="truncate">{kicker}</span>
-          {aside}
-        </p>
-        <p className="display text-xl leading-none text-white">{title}</p>
+      {/* The photo is a flex sibling, not absolutely placed, so the kicker and title centre in
+          whatever width it leaves — a long kicker on a 390px phone would otherwise run under it. */}
+      <div className="kt-band flex items-center gap-2 px-2 pt-1.5 pb-3 text-center">
+        <div className="min-w-0 flex-1">
+          <p className="display flex items-baseline justify-center gap-2 text-[11px] tracking-widest text-flare">
+            <span className="truncate">{kicker}</span>
+            {aside}
+          </p>
+          <p className="display text-xl leading-none text-white">{title}</p>
+        </div>
+        {art && <img src={art} alt="" className="h-14 max-w-[45%] shrink-0 object-contain" />}
       </div>
 
       <div className="kt-hex flex min-w-0 flex-1 flex-col p-2">

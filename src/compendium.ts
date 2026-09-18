@@ -38,6 +38,8 @@ export type Datacard = {
   abilities: { name: string; text: string }[]
   actions: { name: string; ap: number; text: string }[]
   keywords?: string[]
+  /** The miniature's cut-out from the PDF's name band, under public/ops. Written by tools/kt_photos.py. */
+  img?: string
 }
 
 export const PLOY_CP = 1

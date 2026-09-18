@@ -5,6 +5,22 @@ first; each resulting column is one card, in reading order.
 """
 import re, sys, os, json
 
+# ---------- ids shared by kt_generate.py and kt_photos.py ----------
+
+# the six factions the preset match already uses keep their existing ids, so
+# PRESET_TEAMS[].faction, CATALOGUE and DEFAULT_ROSTER all keep working
+ALIAS = {'deathwatch':'dw', 'angels_of_death':'aod', 'scout_squad':'sct',
+         'raveners':'rav', 'xv26_stealth_battlesuits':'xv26', 'kommandos':'kom'}
+
+# not kill teams: a campaign system and the core-rules equipment sheet
+SKIP = {'ctesiphus_expedition', 'universal_equipment'}
+
+def fid_of(slug):
+    return ALIAS.get(slug, slug.replace('_','-'))
+
+def slugify(s):
+    return re.sub(r'[^a-z0-9]+','-', s.lower()).strip('-')
+
 # ---------- column splitting ----------
 
 def split_page(page, floor=6, ok=None):

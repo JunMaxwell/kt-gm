@@ -2,14 +2,9 @@ import sys, os, glob, json, re, hashlib
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/tmp/ktwork'
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kt_parse import parse_faction, parse_cards
+from kt_parse import parse_faction, parse_cards, ALIAS, SKIP, fid_of, slugify
 
 OUT = 'src/factions'
-SKIP = {'ctesiphus_expedition', 'universal_equipment'}
-# the six factions the preset match already uses keep their existing ids, so
-# PRESET_TEAMS[].faction, CATALOGUE and DEFAULT_ROSTER all keep working
-ALIAS = {'deathwatch':'dw', 'angels_of_death':'aod', 'scout_squad':'sct',
-         'raveners':'rav', 'xv26_stealth_battlesuits':'xv26', 'kommandos':'kom'}
 PRESET = set(ALIAS.values())
 # muted, readable band colours; the six presets keep the colours already in rules.ts
 FIXED = {'dw':'#8a97a8','aod':'#0066a5','sct':'#5c5f63','rav':'#b83227','xv26':'#dfe3e8','kom':'#3f8f29'}
@@ -33,9 +28,6 @@ LOCK_ORDER = {
     'kom:kommando-bomb-squig': 'engage',   # Stoopid
 }
 
-def slugify(s):
-    return re.sub(r'[^a-z0-9]+','-', s.lower()).strip('-')
-
 def ts(s):
     return json.dumps(s, ensure_ascii=False)
 
@@ -44,7 +36,7 @@ index = []
 for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
     slug = os.path.basename(path)[:-4]
     if slug in SKIP: continue
-    fid = ALIAS.get(slug, slug.replace('_','-'))
+    fid = fid_of(slug)
     data = parse_faction(path)
     name = TITLES.get(slug, slug.replace('_',' ').title())
     colour = FIXED.get(fid) or PALETTE[int(hashlib.md5(fid.encode()).hexdigest(), 16) % len(PALETTE)]
@@ -78,6 +70,9 @@ for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
         row = {'name': d['name'], 'weapons': d['weapons'],
                'abilities': d['abilities'], 'actions': d['actions']}
         if d.get('keywords'): row['keywords'] = d['keywords']
+        # Written by tools/kt_photos.py; absent means the PDF printed no cut-out we could match.
+        img = f"/ops/{fid}/{slugify(d['name'])}.webp"
+        if os.path.exists('public' + img): row['img'] = img
         lines.append(f"  {ts(row)},")
     lines.append("]")
     open(f"{OUT}/{fid}.ts", 'w').write("\n".join(lines) + "\n")

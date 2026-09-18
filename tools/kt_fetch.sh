@@ -2,8 +2,8 @@
 # Download every Kill Team rules PDF Warhammer Community publishes and extract its text.
 #
 # The downloads page renders its list client-side, so the list comes from the same JSON
-# API the page itself calls. PDFs are deleted after extraction — they are ~10MB each and
-# only the text is needed.
+# API the page itself calls. PDFs are kept in $OUT/pdf — kt_photos.py reads the operative photos
+# out of them after the text has been extracted.
 set -euo pipefail
 OUT="${1:-/tmp/ktwork}"
 mkdir -p "$OUT"
@@ -27,11 +27,13 @@ for x in json.load(open(f'{out}/api.json'))['hits']:
     if f.endswith('.pdf') and not SKIP.search(t) and not SKIP.search(f):
         rows.append((t, f))
 rows.sort()
-open(f'{out}/list.tsv', 'w').write('\n'.join(f'{t}\t{f}' for t, f in rows))
+# The trailing newline matters: `read` returns non-zero on a final line without one, so the
+# while-loop below silently skipped the LAST row — XV26, twice — while every check passed.
+open(f'{out}/list.tsv', 'w').write(''.join(f'{t}\t{f}\n' for t, f in rows))
 print(f'{len(rows)} rules PDFs listed')
 PY
 
-mkdir -p "$OUT/txt"
+mkdir -p "$OUT/txt" "$OUT/pdf"
 # A download that fails here is the expensive kind of failure: the generator simply does not see
 # that faction, writes no module for it, and the STALE one already in src/factions survives — so
 # the run looks clean and ships old data. That happened to XV26, a preset faction. Hence -f, the
@@ -56,8 +58,8 @@ while IFS=$'\t' read -r title file; do
     rm -f "$OUT/_kt.pdf"
     continue
   fi
-  pdftotext -layout "$OUT/_kt.pdf" "$OUT/txt/$slug.txt"
-  rm -f "$OUT/_kt.pdf"
+  mv "$OUT/_kt.pdf" "$OUT/pdf/$slug.pdf"
+  pdftotext -layout "$OUT/pdf/$slug.pdf" "$OUT/txt/$slug.txt"
   [ -s "$OUT/txt/$slug.txt" ] || { echo "  FAILED to extract $slug" >&2; missing=$((missing + 1)); }
   echo "  extracted $slug"
 done < "$OUT/list.tsv"
@@ -69,4 +71,4 @@ if [ "$missing" != 0 ] || [ "$got" -lt "$want" ]; then
   echo "INCOMPLETE — rerun this script (it skips what it already has) before generating." >&2
   exit 1
 fi
-echo "done — now run: python3 tools/kt_generate.py"
+echo "done — now run: python3 tools/kt_photos.py && python3 tools/kt_generate.py"

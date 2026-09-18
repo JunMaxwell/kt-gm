@@ -744,7 +744,8 @@ ships the *rules*.
 **`src/factions/*` is generated. Do not hand-edit it** — rerun the extractor:
 
 ```
-tools/kt_fetch.sh          # list + download every PDF, pdftotext -layout, delete the PDFs
+tools/kt_fetch.sh          # list + download every PDF into /tmp/ktwork/pdf, pdftotext -layout
+python3 tools/kt_photos.py     # cut the operative photos out of the PDFs into public/ops/
 python3 tools/kt_generate.py   # write src/factions/*.ts
 bun test                   # the completeness checks below are the gate
 ```
@@ -909,6 +910,33 @@ no module, and **the stale one already in `src/factions` survived** — a clean-
 ships old data. It happened to XV26, a preset faction, on the very run that fixed this. The
 script now uses `curl -f`, retries three times, checks for a `%PDF` header, counts what it got
 against `list.tsv` and exits non-zero if anything is short.
+
+**And the reason XV26 kept failing was never the download.** `list.tsv` was written without a
+trailing newline, and bash's `read` returns non-zero on a final line that has none — so the
+`while read` loop ran its body for every row but the last, and XV26 sorts last. Every check
+above passed on a run that never even tried it. The file ends with a newline now.
+
+**The operative photos live in `public/ops/<fid>/<slug>.webp`**, one per datacard, cut out of
+the PDFs by `tools/kt_photos.py` (PyMuPDF plus `cwebp`; ~6MB for 450 of them). The generator
+emits `Datacard.img` for every file that exists on disk, so a card either has a real photo or
+no field — no manifest, no runtime URL convention, no `onError` hiding. A test checks every
+`img` against the filesystem. Three facts about the PDFs that the script rests on:
+
+- **The photo is identified by shape, not by its mask.** Almost every cut-out is a JPEG with a
+  soft mask, but two Hearthkyn photos are flattened JPEGs with none, and equipment icons on the
+  ploy pages *do* have one. What is constant is that a photo is exactly the band's height (35pt)
+  where the stat icons and the band graphic behind the name are 44pt.
+- **The band's text must END with the datacard name.** The name can run under a wide photo
+  (Murderwing Warp Talon), so words are gathered up to the photo's right edge rather than its
+  left — and the composition pages print every name in prose, which is why "contains" is not
+  good enough. Longest match wins so `Boy` cannot steal `Breacha Boy`.
+- **Every image is converted to RGB before saving.** The PDFs use CMYK, DeviceN *and*
+  Separation colour, and PNG accepts only RGB or grey; a channel-count test misses DeviceN.
+
+The four hand-written factions have no PDF and so no photos; drop a `.webp` in the right folder
+and set `img` in the module by hand if one is wanted. Photos are not prefetched for offline use
+the way faction modules are — a table with no wifi shows text-only cards for any photo the
+browser has not already cached.
 
 **`Datacard` is deliberately not part of `Operative`.** A roster rides in every relay snapshot and
 every localStorage save, and this is reference text nobody edits — putting it on the operative
@@ -1605,7 +1633,7 @@ no keyword bar, live wound and order state, and a `<details>` that would print c
 |---|---|---|
 | A melee/ranged glyph column | nothing | It is a GRAPHIC in the source PDF, so `pdftotext` never gave the extractor one, and `wr` cannot stand in — a marksman bolt carbine is ranged with no Range rule and fists are melee with none either. A name heuristic over 52 factions would mislabel, and a wrong icon is worse than no icon. |
 | A points cost | nothing | Parsed and dropped; this app does not do list building. |
-| An operative photo | nothing | No images in the repo, by design. |
+| An operative photo | the cut-out from the name band | `public/ops/<fid>/<slug>.webp`, via `Datacard.img` — see **The datacards**. |
 
 ### The index puts this match's teams on top
 
