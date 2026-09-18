@@ -1233,6 +1233,22 @@ faction cards here and off the datacards; and KTDash abbreviates weapon rules (`
 them. Unlike the Custodes it takes no `acts`/`kv` — nothing in its rules doubles activations or kill
 value — and no `DEFAULT_ROSTER`, because its composition offers choices.
 
+**Its leader is Vulkan He'stan, and he is the one operative here that is converted rather than
+transcribed.** The source team's leader is a generic Captain and names He'stan only in prose.
+**He has no Kill Team datacard in any edition** — checked against the same downloads API
+`kt_fetch.sh` calls, which lists 69 Kill Team downloads and not one Salamanders or named-character
+team — so the card comes off his 40,000 datasheet, identical in 10th and 11th. The module header
+records every translation; the three worth knowing here are that **Kill Team has no Melta weapon
+rule** (Forgefather names Torrent and Devastating, which is what this team's flamers and meltagun
+actually print), that **his 2+ save and 4+ invulnerable stay off the statline**, because Kill Team
+puts every Space Marine at 3+, and that **Seeker of the Unfound adds to the control total rather
+than his APL**, because an APL change can never total more than +1. That same ability carries his
+Feel No Pain, **written out as a D6 per attack dice** — Kill Team has no Feel No Pain, and its
+damage arrives as dice rather than as wounds lost one at a time, so a per-wound roll has nothing
+to hook onto.
+An unrelated KTDash homebrew converts him independently to the same APL 3 / 6" / 3+ / 15, which is
+the nearest thing to corroboration that exists for him.
+
 **All four hand-written factions export `datacards`**, in the same shape the extractor emits, so
 the player's Ops deck shows them like everyone else. For the bosses each trait is declared once in
 the module and spread into both the Rules card and the datacard — the same anti-drift reason

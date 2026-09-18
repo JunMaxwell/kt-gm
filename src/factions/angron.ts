@@ -168,8 +168,8 @@ export const datacards: Datacard[] = [
   {
     name: 'Angron',
     weapons: [
-      { name: 'Spinegrinder (chain weapon)', atk: 4, hit: '3+', dmg: '5/6', wr: 'Brutal, Rending' },
-      { name: 'Samni’arius (power weapon)', atk: 4, hit: '3+', dmg: '5/7', wr: 'Lethal 5+' },
+      { name: 'Spinegrinder (chain weapon)', atk: 6, hit: '3+', dmg: '5/6', wr: 'Brutal, Rending' },
+      { name: 'Samni’arius (power weapon)', atk: 6, hit: '3+', dmg: '5/7', wr: 'Lethal 5+' },
     ],
     abilities: [FURY, IMPLACABLE, NO_ESCAPE, ALLEGIANCE],
     actions: [],

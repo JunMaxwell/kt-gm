@@ -164,8 +164,27 @@ const RULE_RE = new RegExp(`\\b(${RULE_NAMES.join('|')})\\b`, 'i')
  */
 export const OWN_RULE = /[*\u00b9\u00b2\u00b3\u2070-\u209f\u2020\u2021]$/
 
-/** The universal rules one operative's weapons use, deduped, in the order declared above. */
-export const weaponRules = (weapons: Weapon[] = []): [string, string][] => {
+/**
+ * A rule a card GRANTS rather than a weapon printing it — "its weapons have the Balanced weapon
+ * rule", "gains the weapon rule of Ceaseless". Half these names are ordinary English words, so
+ * this is anchored on the literal phrase `weapon rule` and reads only the short run in front of
+ * it: a bare scan would match "within control range" and "heavy bolter" on nearly every card.
+ * The window stops at sentence punctuation, and the name must be Capitalised as the cards print
+ * it. Over-reading is harmless here — an extra rule in the appendix is a line nobody needed,
+ * where a missing one is a player with no definition.
+ */
+const GRANTED = /\b([A-Z][a-z]+)\b(?=[^.!?]{0,48}weapon rule)|weapon rules? of (?:the )?([A-Z][a-z]+)\b/g
+
+/**
+ * The universal rules one operative's weapons use, deduped, in the order declared above.
+ *
+ * `prose` is rules text to read as well — a team's cards and its operatives' abilities. Without
+ * it the appendix covers only what a weapon table PRINTS, so a team whose ploy hands out Balanced
+ * (the Relic Seekers do it twice, and Vulkan He'stan a third time) offers no definition of it
+ * anywhere. That is the same gap that once printed `Saturate` on a datacard with nothing to say
+ * what it did, one step further out.
+ */
+export const weaponRules = (weapons: Weapon[] = [], prose: string[] = []): [string, string][] => {
   const used = new Set<string>()
   for (const w of weapons)
     for (const token of (w.wr ?? '').split(',')) {
@@ -174,6 +193,11 @@ export const weaponRules = (weapons: Weapon[] = []): [string, string][] => {
       const hit = RULE_RE.exec(t)
       const name = hit && RULE_NAMES.find((n) => n.toLowerCase() === hit[1].toLowerCase())
       if (name) used.add(name)
+    }
+  for (const text of prose)
+    for (const m of text.matchAll(GRANTED)) {
+      const word = m[1] ?? m[2]
+      if (RULE_NAMES.includes(word)) used.add(word)
     }
   return RULE_NAMES.filter((n) => used.has(n)).map((n) => [n, WEAPON_RULES[n]])
 }

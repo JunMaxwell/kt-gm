@@ -136,11 +136,18 @@ export function Pack({ id, onBack }: { id: string; onBack: () => void }) {
   const cards: RefCard[] = data?.cards ?? []
   // The PDF's own order: faction rules, then the three ploy/equipment decks.
   const rules = (['faction', 'strategy', 'firefight', 'equipment'] as const).flatMap((k) => cardsOfKind(cards, k))
-  // The universal rules this faction's weapons actually use. The official sheets leave these to
-  // the core rules — on paper that is exactly the gap that made a datacard print "Saturate" with
-  // nothing anywhere saying what it did. It prints UNDER the operatives, before the ploy deck,
-  // because it explains their weapon tables and nothing else on the sheet.
-  const glossary = weaponRules(data?.datacards?.flatMap((d) => d.weapons))
+  // The universal rules this faction actually uses. The official sheets leave these to the core
+  // rules — on paper that is exactly the gap that made a datacard print "Saturate" with nothing
+  // anywhere saying what it did. It prints UNDER the operatives, before the ploy deck, because it
+  // explains their weapon tables and nothing else on the sheet.
+  //
+  // The CARD TEXT is read too, not just the weapon tables: a rule a ploy hands out appears in no
+  // `wr` column anywhere, so a pack whose ploys grant Balanced three times over used to print no
+  // definition of it.
+  const glossary = weaponRules(
+    data?.datacards?.flatMap((d) => d.weapons),
+    [...cards.map((c) => c.text), ...(data?.datacards ?? []).flatMap((d) => [...d.abilities, ...d.actions].map((a) => a.text))],
+  )
 
   return (
     <div className="min-h-screen print:min-h-0">

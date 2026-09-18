@@ -19,6 +19,36 @@
 //
 // No `acts`/`kv`: nothing in this team's rules doubles activations or kill value, unlike the
 // Custodes. No DEFAULT_ROSTER either — the composition offers choices, so the GM picks.
+//
+// THE LEADER IS VULKAN HE'STAN, and that operative is converted, not transcribed. The source
+// team's leader is a generic CAPTAIN; it names He'stan only in its flavour text. He has no Kill
+// Team datacard in any edition — checked against the same Warhammer Community downloads API
+// `kt_fetch.sh` calls, which lists 69 Kill Team downloads and not one Salamanders or named-
+// character team. So the conversion is off his Warhammer 40,000 datasheet, which is identical in
+// 10th and 11th edition: M 6", T 4, Sv 2+, W 5, a 4+ invulnerable, Feel No Pain 6+, and the three
+// weapons below. How each line was translated:
+//
+//   - The STATLINE is the Captain's it replaces, APL 3 / 6" / 3+ / 15. Corroborated: an unrelated
+//     KTDash homebrew ("Strike team Inferno", HBR-uswxUw-1) converts him independently and lands
+//     on exactly that, with the Iron Halo text verbatim. Two people reaching the same numbers is
+//     the closest thing to a reference that exists for him.
+//   - His 2+ save and 4+ invulnerable are NOT a better Save stat: Kill Team puts every Space
+//     Marine at 3+. The printed Space Marine Captain models an invulnerable as IRON HALO and this
+//     card carried it for a while, but it is gone — his durability is the Feel No Pain below, and
+//     a once-per-battle damage ignore on top of that was one save too many.
+//   - FORGEFATHER names Torrent and Devastating because Kill Team has no Melta weapon rule. Those
+//     two are what this team's flamers and the Eradicator's meltagun actually print, so the
+//     wording picks out the same weapons the 40k rule does. A re-roll of the Wound roll has no
+//     Kill Team equivalent either; Balanced is the re-roll that does.
+//   - SEEKER OF THE UNFOUND adds to the control TOTAL, not to his APL stat. An APL change can
+//     never total more than +1 (core rules), and his printed Objective Control of 10 is far past
+//     that. The Feel No Pain half is written out as a D6 roll per attack dice, because Kill Team
+//     has no Feel No Pain: its damage arrives as dice, not as wounds lost one at a time, so a
+//     per-wound roll has nothing to hook onto. 6+ rather than the printed 4+, and it replaced a
+//     retained defence dice that was standing in for the same thing.
+//   - The spear keeps HIT 2+ (his WS) and gains Devastating 2 for DEVASTATING WOUNDS. That is the
+//     one place this card is stronger than the KTDash conversion, which prints 3+ and no
+//     Devastating. Dial it back there if he plays too hot.
 import type { Datacard, RefCard } from '../compendium'
 import type { Operative } from '../rules'
 
@@ -33,14 +63,14 @@ export const cards: RefCard[] = [
   { kind: "firefight", name: "Transhuman Physiology", text: "Use this firefight ploy when an operative is shooting a friendly SALAMANDERS operative, in the Roll Defence Dice step. You can retain one of your normal successes as a critical success instead." },
   { kind: "firefight", name: "Burning Vengeance", text: "Use this Firefight Ploy when a friendly SALAMANDERS operative is shooting. After a friendly SALAMANDERS operative incapacitates an enemy operative, it immediately perform a free Dash action with that operative. That operative can do so even if it’s performed an action that prevents it from performing the Dash action." },
   { kind: "firefight", name: "Wrathful Inferno", text: "Use this firefight ploy during a friendly SALAMANDERS operative’s activation or counteraction, before or after it performs an action.\nSelect one of the following:\n\n- One enemy operative within 3\" of that operative gains one of your Blaze tokens (if it does not already have one).\n- Roll 1D6: if the result is 4+, one enemy operative visible to and within 6\" of that operative gains one of your Blaze  tokens (if it does not already have one).\n\nWhenever an operative that has one of your Blaze tokens is activated, inflict D3 damage on it. Until the end of the turning point remove the token." },
-  { kind: "equipment", name: "Dragonrage Rounds", text: "Once per turning point, friendly SALAMANDERS operative's Torrent weapons have the Blaze weapon rule within 6\" of the closest enemy operative:\n\nIf you inflict damage with any critical successes, the operative this weapon is being used against gains one of your Blaze tokens (if it doesn’t already have one).\n\nWhenever an operative with a Blaze token activates, it takes D3 damage. After taking the damage, that operative's player can choose to remove the token by rolling a D6 and getting a 3+." },
+  { kind: "equipment", name: "Dragonrage Rounds", text: "Once per turning point, select one friendly SALAMANDERS operative's Torrent weapons to have the Blaze weapon rule within 6\" of the closest enemy operative:\n\nIf you inflict damage with any critical successes, the operative this weapon is being used against gains one of your Blaze tokens (if it doesn’t already have one).\n\nWhenever an operative with a Blaze token activates, it takes D3 damage. After taking the damage, that operative's player can choose to remove the token by rolling a D6 and getting a 3+." },
   { kind: "equipment", name: "Draken Scale", text: "Once per turning point, when a friendly SALAMANDERS operative incapacitates an enemy operative within 2\" of it, you can use this rule. If you do, that friendly operative gains one of your Draken Scale tokens (if it does not already have one). Whenever a friendly SALAMANDERS operative that has one of your Draken Scale tokens is visible to and within control range of an enemy operative, subtract 1 from the ATK stat of that enemy operative's melee weapons." },
   { kind: "equipment", name: "Wrath of Prometheus", text: "Once per turning point, when a friendly SALAMANDERS operative is shooting, fighting or retaliating, if you roll three or more normal successes, you can retain one of them as a critical success." },
   { kind: "equipment", name: "Promethean Tooth Dagger", text: "Friendly SALAMANDERS operatives have the following melee weapon for the battle:\n\nPromethean Tooth Dagger — ATK 5, HIT 3+, DMG 3/4." },
 ]
 
 export const operatives: Operative[] = [
-  { id: "relic-seekers:captain", name: "Captain", apl: 3, move: "6\"", save: "3+", w: 15 },
+  { id: "relic-seekers:hestan", name: "Vulkan He’stan", apl: 3, move: "6\"", save: "3+", w: 15 },
   { id: "relic-seekers:infernus-blacksmith", name: "Infernus Blacksmith", apl: 3, move: "6\"", save: "3+", w: 14 },
   { id: "relic-seekers:bladeguard-veteran", name: "Bladeguard Veteran", apl: 3, move: "5\"", save: "3+", w: 14 },
   { id: "relic-seekers:infernus-marine", name: "Infernus Marine", apl: 3, move: "6\"", save: "3+", w: 14 },
@@ -52,7 +82,7 @@ export const operatives: Operative[] = [
 ]
 
 export const datacards: Datacard[] = [
-  {"name": "Captain", "weapons": [{"name": "Heavy Hand Flamer", "atk": 4, "hit": "2+", "dmg": "3/3", "wr": "Range 8\", Saturate, Torrent 2\""}, {"name": "Power Weapon", "atk": 5, "hit": "3+", "dmg": "4/6", "wr": "Lethal 5+"}], "abilities": [{"name": "Iron Halo", "text": "Once per battle, when an attack die inflicts Normal Damage on this operative, you can ignore that inflicted damage."}, {"name": "Lord of the Pyroclasts", "text": "While an enemy operative is within Engagement Range of this Operative, subtract 1 APL of that enemy operative if both operatives are in the objective marker. Note this is not a change to its APL stat, so any changes are cumulative with this."}], "actions": [], "keywords": ["SALAMANDERS", "IMPERIUM", "ADEPTUS ASTARTES", "LEADER", "SPACE MARINE", "CAPTAIN"], "img": "/ops/relic-seekers/captain.webp"},
+  {"name": "Vulkan He’stan", "weapons": [{"name": "Bolt pistol", "atk": 4, "hit": "2+", "dmg": "3/4", "wr": "Range 8\""}, {"name": "Gauntlet of the Forge", "atk": 4, "hit": "2+", "dmg": "3/4", "wr": "Range 8\", Saturate, Torrent 2\", Piercing 1"}, {"name": "Spear of Vulkan", "atk": 5, "hit": "2+", "dmg": "4/6", "wr": "Devastating 2, Lethal 5+"}], "abilities": [{"name": "Forgefather", "text": "Once per turning point, when this operative is activated, select one enemy operative visible to and within 12\" from it. Until the end of the turning point, whenever a friendly SALAMANDERS operative is shooting that enemy operative, a weapon that has the Torrent or Devastating weapon rule also has the Balanced weapon rule."}, {"name": "Seeker of the Unfound", "text": "The first time this operative is set up, select one objective marker — it is the Unfound for the rest of the battle. While this operative is within 2\" of the Unfound, add 3 to your total APL for controlling that marker (this is not a change to this operative’s APL stat, so other changes are cumulative with it), and each time an attack dice inflicts damage on this operative, roll one D6: on a 6+, ignore that inflicted damage."}], "actions": [], "keywords": ["SALAMANDERS", "IMPERIUM", "ADEPTUS ASTARTES", "LEADER", "SPACE MARINE", "CAPTAIN", "VULKAN HE’STAN"], "img": "/ops/relic-seekers/vulkan-hestan.webp"},
   {"name": "Infernus Blacksmith", "weapons": [{"name": "Hand Flamer", "atk": 4, "hit": "3+", "dmg": "2/2", "wr": "Range 8\", Torrent 2\", Saturate"}, {"name": "Thunder Hammer", "atk": 5, "hit": "3+", "dmg": "5/6", "wr": "Shock, Stun"}], "abilities": [], "actions": [{"name": "Anvil of War", "ap": 1, "text": "Use this ability during a friendly SALAMANDERS operative’s activation or counteraction, before or after it performs an action once per turning point. Select one of the following:\n\n- **Hammers of Nocturne:** Select one friendly SALAMANDERS operative or use it on this operative, add +1 Dmg stats of friendly SALAMANDERS operatives' melee weapons (to a maximum of 7).\n\n- **Drake Shields:** Select one friendly SALAMANDERS operative, visible to and within 3\", improving its Save stats by 1. Note this does not change the Save stat, so any changes are cumulative with this. (Excluding: **Aggressors** and **Eradicators**)"}], "keywords": ["SALAMANDERS", "IMPERIUM", "ADEPTUS ASTARTES", "INFERNUS BLACKSMITH", "SPACE MARINE"], "img": "/ops/relic-seekers/infernus-blacksmith.webp"},
   {"name": "Bladeguard Veteran", "weapons": [{"name": "Heavy Bolt Pistol", "atk": 4, "hit": "4+", "dmg": "3/4", "wr": "Range 8\", Piercing Crits 1"}, {"name": "Master-Crafted Power Weapon & Storm Shield", "atk": 4, "hit": "3+", "dmg": "4/6", "wr": "Lethal 5+, Shield*"}], "abilities": [{"name": "Shield*", "text": "Whenever this operative is fighting or retaliating with this weapon, each of your blocks can be allocated to block two unresolved successes (instead of one)."}, {"name": "Storm Shield", "text": "If this operative is equipped with a Storm Shield, it ignores Piercing weapon rule. Each time it fights in combat, in the Resolve Successful Hits step of that combat, each time it parries, two of your opponent's successful hits are discarded (instead of one)."}], "actions": [], "keywords": ["SALAMANDERS", "IMPERIUM", "ADEPTUS ASTARTES", "BLADEGUARD VETERAN", "SPACE MARINE"], "img": "/ops/relic-seekers/bladeguard-veteran.webp"},
   {"name": "Infernus Marine", "weapons": [{"name": "Pyreblaster", "atk": 5, "hit": "2+", "dmg": "3/3", "wr": "Range 8\", Saturate, Torrent 2\""}, {"name": "Pyreblaster (deluge)", "atk": 4, "hit": "2+", "dmg": "3/3", "wr": "Range 4\", Saturate, Seek Light"}, {"name": "Bolt Pistol", "atk": 4, "hit": "3+", "dmg": "3/4", "wr": "Range 8\""}, {"name": "Fist", "atk": 4, "hit": "3+", "dmg": "3/4"}], "abilities": [{"name": "Seeker of Relic", "text": "Once per battle, one friendly INFERNUS MARINE can perform the Pick Up Marker, Place Marker or a mission action for 1 less AP if that friendly operative is within the objective marker."}], "actions": [], "keywords": ["SALAMANDERS", "IMPERIUM", "ADEPTUS ASTARTES", "INFERNUS MARINE", "SPACE MARINE"], "img": "/ops/relic-seekers/infernus-marine.webp"},

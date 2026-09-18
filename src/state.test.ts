@@ -1367,6 +1367,30 @@ test('a weapon rules column resolves to the universal rules it names', () => {
   expect(weaponRules(undefined)).toEqual([])
 })
 
+// A rule a ploy HANDS OUT is printed in no `wr` column anywhere, so the pack that grants it three
+// times over used to carry no definition of it. Anchoring on the phrase "weapon rule" is what
+// makes reading prose safe: half these names are ordinary words.
+test('the glossary reads rules a card grants, not only those a weapon prints', () => {
+  const rules = (...prose: string[]) => weaponRules([], prose).map(([n]) => n)
+
+  expect(rules('Whenever it is shooting, its weapons have the Balanced weapon rule.')).toEqual(['Balanced'])
+  expect(rules('all weapons gains the weapon rule of Ceaseless.')).toEqual(['Ceaseless'])
+  // Two names in front of one "weapon rule", which is how He'stan's Forgefather is worded.
+  expect(rules('a weapon that has the Torrent or Devastating weapon rule also has the Balanced weapon rule')).toEqual([
+    'Balanced',
+    'Devastating',
+    'Torrent',
+  ])
+  // The anchor, earning its keep: these words are everywhere in rules prose and mean nothing here.
+  expect(rules('while within control range of an enemy operative')).toEqual([])
+  expect(rules('Select one Heavy terrain feature. Range is measured horizontally.')).toEqual([])
+  // ...and it does not read across the end of a sentence into the next one.
+  expect(rules('It cannot Seek cover. Its weapons have the Balanced weapon rule.')).toEqual(['Balanced'])
+  // Weapons and prose merge into one deduped list in the declared order.
+  const w = { name: 'w', atk: 4, hit: '3+', dmg: '3/4', wr: 'Saturate' }
+  expect(weaponRules([w], ['its weapons have the Balanced weapon rule']).map(([n]) => n)).toEqual(['Balanced', 'Saturate'])
+})
+
 test('the glossary dedupes across an operative and keeps one declared order', () => {
   const w = (wr: string) => ({ name: wr, atk: 4, hit: '3+', dmg: '3/4', wr })
   const got = weaponRules([w('Saturate, Balanced'), w('Balanced, Range 6"')])

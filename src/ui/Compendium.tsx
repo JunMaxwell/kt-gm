@@ -74,7 +74,9 @@ export function OperativeCard({
   className?: string
 }) {
   const acts = Math.max(1, o.acts ?? 1)
-  const glossary = weaponRules(card?.weapons)
+  // Its own abilities are read as well as its weapons — an operative whose rule grants Ceaseless
+  // needs Ceaseless spelled out just as much as one whose weapon prints it.
+  const glossary = weaponRules(card?.weapons, [...(card?.abilities ?? []), ...(card?.actions ?? [])].map((a) => a.text))
   const hurt = !!st && injured(o, st)
   const hp = st?.hp ?? o.w
   // A boss is the only operative that activates more than once, and then the count is the thing

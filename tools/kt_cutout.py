@@ -53,7 +53,12 @@ TOP = next((float(f.split('=')[1]) for f in flags if f.startswith('--top=')), 0.
 # a bite out of his shoulder. Sample the source before assuming; the gap is what you are after.
 SWEEP = next((int(f.split('=')[1]) for f in flags if f.startswith('--sweep=')), 228)
 SWEEP_HI = min(SWEEP + 15, 250)
-LO, HI = 6.0, 20.0
+# The tint band: below LO a pixel is the model, above HI it is banner, between it ramps. Raise
+# both for a source whose banner is only faintly tinted, or whose model wears the same hue in
+# shadow — He'stan's card is 150px wide and his shaded green sits where the default called it
+# background, biting holes in his shoulder.
+LO = next((float(f.split('=')[1]) for f in flags if f.startswith('--lo=')), 6.0)
+HI = next((float(f.split('=')[1]) for f in flags if f.startswith('--hi=')), 20.0)
 
 p = pymupdf.Pixmap(src)
 W, n, s = p.width, p.n, p.samples
