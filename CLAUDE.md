@@ -934,8 +934,9 @@ no field — no manifest, no runtime URL convention, no `onError` hiding. A test
   Separation colour, and PNG accepts only RGB or grey; a channel-count test misses DeviceN.
 
 **The hand-written factions have no PDF, so their photos are cut by hand** with
-`tools/kt_cutout.py` and their `img` is set in the module rather than by the generator. Seven are
-done — Angron, Farsight and all five Custodes; the nine Relic Seekers have no source image yet.
+`tools/kt_cutout.py` and their `img` is set in the module rather than by the generator. All sixteen
+are done — Angron, Farsight, the five Custodes and the nine Relic Seekers — so every operative
+in the app now has a photo, whether its faction came from a PDF or not.
 The tool keys the background three ways and **which one is the only per-source decision**:
 `--white` for a product photo on a white sweep, `--warm` for a red banner (Angron's datasheet
 card), the default for a cool teal one (Farsight's). Four things it learned the hard way:
@@ -954,6 +955,11 @@ card), the default for a cool teal one (Farsight's). Four things it learned the 
   pixel is transparent black, a brightness key seeds on none of them, and the whole sweep
   survives. The alpha channel is trusted only when the border ring is mostly transparent, and
   what is already transparent counts as background either way.
+
+**`--sweep=N` moves where white starts, and a model with BONE armour needs it.** The Relic
+Seekers' Captain paints his pauldron at 218-245 on a sweep of 250-255, and the default threshold
+of 228 takes a bite out of his shoulder. Sample the source and put the threshold in the gap — for
+him, 248. Everything gold or green clears the default untouched.
 
 `--top=F` keeps the top F of the model's height, measured after the key. A full-length product
 shot at F=0.4 lands around 2:1, which sits beside the PDF's ~3:1 band cut-outs; at 0.58 it is

@@ -47,6 +47,12 @@ x0, y0, x1, y1 = map(int, a[2:6])
 WARM, WHITE = '--warm' in flags, '--white' in flags
 OPEN = next((int(f.split('=')[1]) for f in flags if f.startswith('--open=')), 2 if WARM else 0)
 TOP = next((float(f.split('=')[1]) for f in flags if f.startswith('--top=')), 0.0)
+# Where the sweep starts, for --white. The default clears a plain white backdrop, but a model
+# with BONE armour needs it raised until it sits in the gap between the two: the Relic Seekers'
+# Captain paints his pauldron at 218-245 on a sweep of 250-255, and at the default the key takes
+# a bite out of his shoulder. Sample the source before assuming; the gap is what you are after.
+SWEEP = next((int(f.split('=')[1]) for f in flags if f.startswith('--sweep=')), 228)
+SWEEP_HI = min(SWEEP + 15, 250)
 LO, HI = 6.0, 20.0
 
 p = pymupdf.Pixmap(src)
@@ -74,7 +80,7 @@ def hazy(i):
     return 105 < (r + g + b) / 3 < 200 and max(pix[i]) - min(pix[i]) < 48 and tint[i] >= 4
 
 if WHITE:
-    fill = [bright[i] > 228 and sat[i] < 20 for i in range(w*h)]
+    fill = [bright[i] > SWEEP and sat[i] < 20 for i in range(w*h)]
     # A sweep can come with a transparent margin around it — opaque white inside, nothing at the
     # edge. Then every border pixel is transparent BLACK, the brightness key seeds on none of
     # them, and the whole sweep survives. What is already transparent is background too.
@@ -128,7 +134,7 @@ for i, (r, g, b) in enumerate(pix):
     elif not bg[i]: alpha = 255
     elif WHITE:
         # ramp across the sweep's own falloff, so the model keeps its anti-aliased edge
-        alpha = 0 if bright[i] >= 243 else max(0, min(255, int(255 * (243 - bright[i]) / 15)))
+        alpha = 0 if bright[i] >= SWEEP_HI else max(0, min(255, int(255 * (SWEEP_HI - bright[i]) / 15)))
     elif WARM or t >= HI or max(r, g, b) < 45 or hazy(i): alpha = 0
     else: alpha = max(0, min(255, int(255 * (HI - t) / (HI - LO))))
     if not WARM and not WHITE and src_alpha is None and t > 0:
