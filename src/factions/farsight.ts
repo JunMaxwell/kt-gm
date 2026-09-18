@@ -163,6 +163,9 @@ export const datacards: Datacard[] = [
     abilities: [TRAIT, ALLEGIANCE],
     actions: [],
     keywords: ['T’AU EMPIRE', 'FARSIGHT ENCLAVES', 'BATTLESUIT', 'NEMESIS', 'COMMANDER FARSIGHT', 'TOWERING'],
+    // Cut off the official promo card with tools/kt_cutout.py — the extractor never sees this
+    // faction, since a nemesis operative is a paid expansion and is in no free PDF.
+    img: '/ops/farsight/commander-farsight.webp',
   },
 ]
 
