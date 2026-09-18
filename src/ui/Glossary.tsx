@@ -4,7 +4,7 @@ import { type Datacard, type RefCard, cardsOfKind, weaponRules } from '../compen
 import { FACTIONS, type FactionMeta, datacardOf, factionMeta } from '../factions'
 import type { Operative } from '../rules'
 import { allTeams } from '../state'
-import { DarkBtn, KtCard, Rules } from './kit'
+import { DarkBtn, Rules } from './kit'
 import { RefCardView } from './Compendium'
 import { type Game, setTeamInUrl, teamInUrl, teamUrl, useFaction } from './shared'
 
@@ -58,10 +58,13 @@ function PrintDatacard({ o, card }: { o: Operative; card?: Datacard }) {
     <article className="break-inside-avoid border border-card/30 bg-stone">
       <div className="kt-band flex items-stretch">
         <div className="flex min-w-0 flex-1 flex-col justify-end px-3 pt-2 pb-3">
-          <h3 className="display truncate text-xl text-white">{o.name}</h3>
+          <h3 className="display text-xl leading-tight text-white">{o.name}</h3>
           <div className="mt-1 h-[2px] bg-flare" />
         </div>
-        {card?.img && <img src={card.img} alt="" className="h-[16mm] shrink-0 self-end object-contain" />}
+        {/* The cut-outs run from 2:1 to ELEVEN:1 (the Vespid Swarmguard, the Abyssal Mandrake), so
+            a height-only photo takes the whole band and truncates the name to an ellipsis. Capped
+            by width like `KtCard`'s art, and the name wraps rather than truncating. */}
+        {card?.img && <img src={card.img} alt="" className="h-[16mm] max-w-[30%] shrink-0 self-end object-contain" />}
         <dl className="flex shrink-0">
           {stats(o).map(([k, v]) => (
             <div key={k} className="flex w-[13mm] flex-col items-center justify-center border-l border-white/20 px-1 pb-1.5">
@@ -196,16 +199,6 @@ export function Pack({ id, onBack }: { id: string; onBack: () => void }) {
 
         {!!rules.length && (
           <section className="grid break-before-page grid-cols-2 gap-3">
-            <KtCard kicker={name} title="Kill Team" name="Operatives" className="break-inside-avoid print:overflow-visible">
-              <p className="text-[11px] text-fade">Archetypes: {meta?.archetypes.join(', ') || '—'}</p>
-              <ul className="mt-2 space-y-0.5">
-                {data?.operatives.map((o) => (
-                  <li key={o.id} className="opname text-[10px]">
-                    • {o.name}
-                  </li>
-                ))}
-              </ul>
-            </KtCard>
             {rules.map((c) => (
               <RefCardView key={`${c.kind}:${c.name}`} card={c} kicker={name} className="break-inside-avoid print:overflow-visible" />
             ))}
