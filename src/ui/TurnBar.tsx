@@ -22,6 +22,7 @@ export function TurnBar({
   setEditing,
   net,
   canUndo,
+  onGlossary,
 }: {
   game: Game
   dispatch: Dispatch
@@ -29,6 +30,7 @@ export function TurnBar({
   setEditing: (v: boolean) => void
   net: Net
   canUndo: boolean
+  onGlossary: () => void
 }) {
   const critOp = CRIT_OPS.find((c) => c.id === game.critOp)
 
@@ -192,6 +194,13 @@ export function TurnBar({
             title="Rooms and saved games — start another match, or reopen one"
           >
             Games
+          </DarkBtn>
+          <DarkBtn
+            onClick={onGlossary}
+            className="display"
+            title="Every kill team's cards and datacards, laid out to print"
+          >
+            Glossary
           </DarkBtn>
         </div>
       </div>

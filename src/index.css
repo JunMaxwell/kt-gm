@@ -87,3 +87,55 @@ body {
 .no-bar::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------- print: the faction glossary as an A4 rules pack ---------- */
+
+@media print {
+  /* 210mm less a 10mm frame leaves 190mm — which is exactly what `.print-sheet` is pinned to
+     on screen, so what wraps in the browser is what wraps in the PDF. Change one, change both.
+     Note the print viewport is then 718px, BELOW Tailwind's `md` at 768 — so nothing inside
+     the sheet may use a responsive prefix, or it silently collapses to one column on paper. */
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  /* The black bands ARE the design, and Chrome's "Background graphics" box is off by default.
+     This property is inherited in theory; Chrome has shipped builds where only the painting
+     box's own value counted, so it goes on everything rather than once on `body`. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* The wash and the page-wide lattice are screen furniture. On paper they are a full-bleed
+     grey rectangle on every single sheet. */
+  html,
+  body {
+    background: #fff;
+    background-image: none;
+  }
+
+  .print-sheet {
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Depth is a screen idea; on paper a shadow is a grey smudge. */
+  .print-sheet * {
+    box-shadow: none;
+  }
+
+  .print-sheet tr {
+    break-inside: avoid;
+  }
+
+  /* A zebra row is a BACKGROUND and vanishes if the reader left background graphics off. A
+     hairline is a BORDER, and borders print whatever that checkbox says — so the weapon table
+     stays legible either way, and the two together just look like the printed card. */
+  .print-sheet tbody tr {
+    border-bottom: 1px solid rgb(0 0 0 / 0.18);
+  }
+}

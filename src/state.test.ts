@@ -15,7 +15,7 @@ import {
   teamTacOps,
   teamsWithArchetype,
 } from './rules'
-import { PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
+import { OWN_RULE, PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
 import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
@@ -1373,14 +1373,17 @@ test('the glossary dedupes across an operative and keeps one declared order', ()
 
 test('every universal weapon rule the generated factions print has a definition', () => {
   // The extractor is the source of the vocabulary: if a PDF ever prints a rule this list does
-  // not cover, a player reads a bare keyword again. Starred faction rules are out of scope.
+  // not cover, a player reads a bare keyword again. A faction's OWN rules are out of scope, and
+  // `OWN_RULE` is shared with `weaponRules` rather than respelled here — the Sanctifiers footnote
+  // theirs with a superscript (`Wreathed¹`) where everyone else uses an asterisk, and a second
+  // copy of that assumption in the test is how it would be missed twice.
   const seen = new Set<string>()
   for (const f of FACTIONS) {
     const data = factionData(f.id)
     for (const d of data?.datacards ?? [])
       for (const weapon of d.weapons)
         for (const token of (weapon.wr ?? '').split(','))
-          if (token.trim() && !token.trim().endsWith('*')) seen.add(token.trim())
+          if (token.trim() && !OWN_RULE.test(token.trim())) seen.add(token.trim())
   }
   // Only the statically-imported factions are loaded synchronously, so this is a sample, not all
   // 51 — enough to catch a vocabulary drift without making the suite async.

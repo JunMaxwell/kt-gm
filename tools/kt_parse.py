@@ -7,10 +7,14 @@ import re, sys, os, json
 
 # ---------- column splitting ----------
 
-def split_page(page):
+def split_page(page, floor=6, ok=None):
+    """`floor` is how many text lines a region must have before it is worth hunting a gutter in.
+    Six is right for a PAGE — fewer than that is furniture. A datacard's rules region is much
+    smaller: four lines of prose either side of a gutter is a real two-column block, and
+    `twocol` has its own stricter guard on top."""
     lines = page.split('\n')
     body = [l for l in lines if l.strip()]
-    if len(body) < 6:
+    if len(body) < floor:
         return [lines]
     width = max(len(l) for l in body)
     runs, cur = [], []
@@ -25,9 +29,18 @@ def split_page(page):
     if not runs:
         return [lines]
     mid = width / 2
-    run = max(runs, key=lambda r: (len(r), -abs(sum(r) / len(r) - mid)))
-    cut = run[0]
-    return [[l[:cut].rstrip() for l in lines], [l[cut:].rstrip() for l in lines]]
+    # Try candidates widest-first, but let the caller VETO one. A rules region can hold two
+    # blank runs — the real gutter, and the gap inside an action header between its name and its
+    # AP cost — and the false one is often the wider of the two. Taking the widest unconditionally
+    # cut MARKERLIGHT away from its 1AP and lost both of that operative's actions.
+    runs.sort(key=lambda r: (len(r), -abs(sum(r) / len(r) - mid)), reverse=True)
+    for run in runs:
+        cut = run[0]
+        left = [l[:cut].rstrip() for l in lines]
+        right = [l[cut:].rstrip() for l in lines]
+        if ok is None or ok(left, right):
+            return [left, right]
+    return [lines]
 
 def columns(path):
     out = []
@@ -271,13 +284,19 @@ def parse_cards(path):
 
 STAT = re.compile(r'^\s*(\d)\s+(\d+)"\s+(\d)\s*\+?\s+(\d+)\s*$')
 DC_HDR = re.compile(r'APL\s+MOVE\s+SAVE\s+WOUNDS')
-W_HDR = re.compile(r'\bNAME\b\s+\bATK\b\s+\bHIT\b\s*\bDMG\b')
-W_ROW = re.compile(r'^\s*(.+?)\s{2,}(\d+)\s+(\d\+)\s+(\d+/\d+)\s*(.*)$')
+W_HDR = re.compile(r'\bNAME\b\s+A(?:TK)?\b\s+\bHIT\b\s*D(?:MG)?\b')
+W_ROW = re.compile(r'^\s*(.+?)\s+(\d+)\s+(\d\+)\s+(\d+/\d+)\s*(.*)$')
 # "KOMMANDO , ORK, LEADER, BOSS NOB                                      32"
 KEYWORDS = re.compile(r'^\s*([A-Z][A-Z0-9 ,\'\u2019\u2013\-\.]{3,})\s{2,}(\d{1,3})\s*$')
 ACTION = re.compile(r'^\s*([A-Z][A-Z0-9 \'\u2019\-\u2026!\.]{2,})\s{2,}(\d)\s*AP\s*$')
-ABILITY = re.compile(r'^\s*([A-Z][^:]{2,60}?):\s+(.*)$')
-DC_NOISE = re.compile(r'RULES CONTINUE ON')
+# A leading footnote marker is how a datacard writes out the FACTION's own weapon rule — the
+# `*` or `¹` that the weapon's WR column points at (`Shock, Shield*`, `Wreathed¹`). Requiring the
+# name to start with a capital dropped all 49 of them, so the marker appeared on the weapon line
+# with nothing anywhere defining it — the exact gap the universal glossary exists to close.
+ABILITY = re.compile(r'^\s*[*¹²³†‡]?\s*([A-Z][^:]{2,60}?):\s+(.*)$')
+# Sheet furniture, never the operative's rules. NOTES is the printed notes box below the last
+# datacard on a page; it used to be swallowed as a continuation of that operative's last ability.
+DC_NOISE = re.compile(r'RULES CONTINUE ON|^\s*NOTES:')
 
 def dc_blocks(path):
     """Every page, cut into one chunk per operative datacard."""
@@ -299,21 +318,31 @@ def dewrap(lines):
     if cur: out.append(' '.join(cur))
     return out
 
+# An AP cost at the START of a column means the gutter cut through a unique action's header,
+# between its name and its cost — so the name stops being an action and folds into the ability
+# above it, or is lost outright.
+ORPHAN_AP = re.compile(r'^\s*\d\s*AP\b')
+
 def twocol(lines):
     """The columns of a rules region, in reading order — or the region whole if it is one column.
 
     Do NOT ask for text on both sides of the SAME line: real columns interleave line by line.
-    Ask how many lines carry text on each side. A genuine second column has several; the
-    right-aligned "1AP" of an action header has exactly one, and splitting on it would fold the
-    action into the ability above it."""
+
+    The trap is that a unique action's header puts its NAME and its AP cost at opposite ends of
+    one line, which a column finder reads as a gutter. Split there and the name is in one column
+    with "1AP" orphaned in the other, so the action stops being an action. Test for that
+    DIRECTLY — a column that OPENS with an AP cost — and let `split_page` fall through to its
+    next candidate, because on a card printing two action headers side by side the false gutter
+    is the wider one. Counting lines was the old proxy for this, and it was lossy both ways: it
+    also threw away real two-column regions that are short, which is most of them once the
+    weapon table is correctly parsed out of the region."""
+    def ok(left, right):
+        if any(ORPHAN_AP.match(y) for y in right): return False
+        return sum(1 for x in left if x.strip()) >= 2 and sum(1 for y in right if y.strip()) >= 2
     body = [l for l in lines if l.strip()]
-    if len(body) < 4: return [lines]
-    got = split_page('\n'.join(lines))
-    if len(got) == 1: return [lines]
-    left, right = got
-    if sum(1 for x in left if x.strip()) < 3 or sum(1 for y in right if y.strip()) < 3:
-        return [lines]
-    return [list(left), list(right)]
+    if len(body) < 3: return [lines]
+    got = split_page('\n'.join(lines), floor=3, ok=ok)
+    return [list(c) for c in got] if len(got) == 2 else [lines]
 
 def rules_of(lines):
     """One column's prose, as (abilities, unique actions)."""
@@ -357,9 +386,15 @@ def parse_datacard(b):
         return None
 
     weapons, keywords, body, in_weapons = [], None, [], False
+    name_col = atk_col = 0
+    pending = ''  # a name that wrapped BEFORE its stats line, rather than after
     for l in rest:
         if W_HDR.search(l):
-            in_weapons = True; continue
+            in_weapons = True
+            name_col = l.index('NAME')
+            hit = re.search(r'\bA(?:TK)?\b', l[name_col:])
+            atk_col = name_col + hit.start() if hit else len(l)
+            continue
         k = KEYWORDS.match(l)
         if k and is_caps(k.group(1)):
             keywords = [w.strip() for w in k.group(1).replace(' ,', ',').split(',') if w.strip()]
@@ -368,11 +403,28 @@ def parse_datacard(b):
             w = W_ROW.match(l)
             if w:
                 wr = w.group(5).strip()
-                weapons.append({'name': w.group(1).strip(), 'atk': int(w.group(2)),
+                nm = f"{pending} {w.group(1).strip()}".strip()
+                pending = ''
+                weapons.append({'name': nm, 'atk': int(w.group(2)),
                                 'hit': w.group(3), 'dmg': w.group(4),
                                 **({'wr': wr} if wr and wr != '-' else {})})
                 continue
-            if l.strip(): in_weapons = False
+            indent = len(l) - len(l.lstrip())
+            # A WRAPPED ROW, not the end of the table. The layout breaks a long weapon name or a
+            # long rules list onto its own line, indented to whichever column it belongs to — and
+            # treating that as a terminator silently dropped every row below it. The Deathwatch
+            # Breacher printed five weapons and kept one.
+            if l.strip() and indent >= name_col:
+                frag = l.strip()
+                if not weapons:
+                    pending = f'{pending} {frag}'.strip()
+                elif indent >= atk_col:
+                    weapons[-1]['wr'] = f"{weapons[-1].get('wr', '')} {frag}".strip()
+                else:
+                    weapons[-1]['name'] += f' {frag}'
+                continue
+            # A blank line, or prose back at the left margin, is the real end of the table.
+            in_weapons = False
         if not in_weapons and not DC_NOISE.search(l):
             body.append(l)
 

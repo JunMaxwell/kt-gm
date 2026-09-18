@@ -15,13 +15,14 @@ import { EndScreen } from './EndScreen'
 import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 import { TeamPicker } from './TeamPicker'
+import { Glossary, Pack } from './Glossary'
 
 const noop = () => {}
 const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, save: noop, saves: [], load: noop } as never
 
 const panels = (g: ReturnType<typeof initialGame>) =>
   [
-    R(<TurnBar game={g} dispatch={noop} editing={false} setEditing={noop} net={net} canUndo />),
+    R(<TurnBar game={g} dispatch={noop} editing={false} setEditing={noop} net={net} canUndo onGlossary={noop} />),
     R(<Scoreboard game={g} dispatch={noop} />),
     R(<Objectives game={g} dispatch={noop} />),
     R(<ActivationOrder game={g} dispatch={noop} />),
@@ -30,7 +31,8 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     // Once per wizard step: each one renders a different panel set, and `initialGame()` is
     // stage `play`, so a single render would only ever exercise the clamped fallback.
     ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} />)),
-    R(<Launcher game={g} dispatch={noop} net={net} />),
+    R(<Launcher game={g} dispatch={noop} net={net} onGlossary={noop} />),
+    R(<Glossary onClose={noop} />),
     R(<EndScreen game={g} dispatch={noop} net={net} />),
     // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
     R(<TeamPicker game={g} me="" onPick={noop} />),
@@ -207,4 +209,36 @@ test('the team picker says so when the match has no teams at all', () => {
 // This is exactly the crash class this file exists for.
 test('every panel renders for a blank new game', () => {
   expect(() => panels(blankGame())).not.toThrow()
+})
+
+/** `renderToStaticMarkup` escapes `'` and `&`, and plenty of kill teams have both. */
+const plain = (html: string) => html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+
+test('the glossary prints a pack for every faction in the library', async () => {
+  for (const f of FACTIONS) {
+    await loadFaction(f.id)
+    const html = plain(R(<Pack id={f.id} onBack={noop} />))
+    expect(html).toContain(f.name)
+    // Every operative's datacard, not a roster: this is a catalogue, not a match.
+    for (const o of factionData(f.id)!.operatives) expect(html).toContain(o.name)
+  }
+})
+
+test('the glossary sheet carries its print hooks and no responsive prefix', () => {
+  const html = R(<Pack id="dw" onBack={noop} />)
+  expect(html).toContain('print-sheet')
+  expect(html).toContain('break-inside-avoid') // one per datacard and per rules card
+  expect(html).toContain('break-before-page') // the rules cards start their own sheet
+  // A `md:`/`lg:` class inside the sheet silently collapses to one column on paper, because
+  // the print viewport is 718px and Tailwind's `md` is 768. Enforce it where a test can.
+  const sheet = html.slice(html.indexOf('print-sheet'))
+  expect(sheet).not.toMatch(/\b(sm|md|lg|xl):/)
+})
+
+test('a datacard prints its weapons, its keywords and the rules its weapons use', () => {
+  const html = R(<Pack id="dw" onBack={noop} />)
+  expect(html).toContain('Plasma pistol (supercharge)')
+  expect(html).toContain('ADEPTUS ASTARTES') // the keyword bar
+  expect(html).toContain('Piercing') // the weapon-rules appendix the official sheets omit
+  expect(html).toContain('Adaptable Armoury') // an ability, name run into its text
 })

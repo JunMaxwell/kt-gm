@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { CHEAT_SHEET } from './rules'
 import { phaseMeta } from './compendium'
 import { allTeams, scores, teamsOf, useGame } from './state'
-import { type Dispatch, type Game, type Net, usePrefetchFactions } from './ui/shared'
+import { type Dispatch, type Game, type Net, teamInUrl, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
 import { EndScreen } from './ui/EndScreen'
+import { Glossary } from './ui/Glossary'
 import { Launcher } from './ui/Launcher'
 import { Objectives } from './ui/Objectives'
 import { OpsBrowser } from './ui/OpsBrowser'
@@ -28,7 +29,7 @@ const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part
  * writing. A stray tap could not do damage anyway — the server rejects writes without the token,
  * and the next relay message overwrites any local divergence.
  */
-function Viewer({ game, net }: { game: Game; net: Net }) {
+function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: () => void }) {
   const teams = allTeams(game)
   const [saved, setSaved] = useState(() => localStorage.getItem(ME_KEY) ?? '')
   const [picking, setPicking] = useState(false)
@@ -94,7 +95,13 @@ function Viewer({ game, net }: { game: Game; net: Net }) {
           </span>
         </div>
 
-        <p className="truncate px-3 pt-0.5 pb-2 text-[11px] text-white/45">{ph.hint}</p>
+        <div className="flex items-center gap-2 px-3 pt-0.5 pb-2">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-white/45">{ph.hint}</p>
+          {/* Their own deck is the screen; every OTHER kill team lives one tap away. */}
+          <button onClick={onGlossary} className="display shrink-0 rounded bg-white/12 px-2 py-0.5 text-[10px] text-white/80">
+            All teams
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col p-2">
@@ -160,19 +167,35 @@ function Reference({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
 export default function App() {
   const [game, dispatch, net, canUndo] = useGame()
   const [editing, setEditing] = useState(false)
+  // `?team=dw` opens straight onto that pack — the link a GM sends a player who only needs
+  // their own kill team's cards. It sits beside a room hash rather than replacing it.
+  const [lib, setLib] = useState(() => !!teamInUrl())
   // Fetch the chunk for every faction on the table up front. The app is meant to survive a
   // venue with no wifi, so a match set up beforehand must not need the network to be read.
   usePrefetchFactions(allTeams(game).map((t) => t.faction))
 
   // One stage cursor, five GM views. A spectator wins over all of them — `Viewer` is the
   // whole player experience and never sees a wizard, an end screen or a room list.
-  if (net.viewer) return <Viewer game={game} net={net} />
-  if (game.stage === 'rooms') return <Launcher game={game} dispatch={dispatch} net={net} />
+  // Device state, not a stage: a spectator's is overwritten by every relay snapshot, and a
+  // shared one would drag all seven phones into the library at once. It wins over everything
+  // else so a player can reach it too.
+  if (lib) return <Glossary onClose={() => setLib(false)} />
+  if (net.viewer) return <Viewer game={game} net={net} onGlossary={() => setLib(true)} />
+  if (game.stage === 'rooms')
+    return <Launcher game={game} dispatch={dispatch} net={net} onGlossary={() => setLib(true)} />
   if (game.stage === 'end') return <EndScreen game={game} dispatch={dispatch} net={net} />
   if (game.stage !== 'play') return <Setup game={game} dispatch={dispatch} />
 
   return (
-    <Console game={game} dispatch={dispatch} net={net} editing={editing} setEditing={setEditing} canUndo={canUndo} />
+    <Console
+      game={game}
+      dispatch={dispatch}
+      net={net}
+      editing={editing}
+      setEditing={setEditing}
+      canUndo={canUndo}
+      onGlossary={() => setLib(true)}
+    />
   )
 }
 
@@ -183,6 +206,7 @@ function Console({
   editing,
   setEditing,
   canUndo,
+  onGlossary,
 }: {
   game: Game
   dispatch: Dispatch
@@ -190,10 +214,19 @@ function Console({
   editing: boolean
   setEditing: (v: boolean) => void
   canUndo: boolean
+  onGlossary: () => void
 }) {
   return (
     <div className="min-h-screen">
-      <TurnBar game={game} dispatch={dispatch} editing={editing} setEditing={setEditing} net={net} canUndo={canUndo} />
+      <TurnBar
+        game={game}
+        dispatch={dispatch}
+        editing={editing}
+        setEditing={setEditing}
+        net={net}
+        canUndo={canUndo}
+        onGlossary={onGlossary}
+      />
 
       {/*
         The command strip: everything the GM watches, full width, above the rosters. The old

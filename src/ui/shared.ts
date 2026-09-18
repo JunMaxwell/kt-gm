@@ -48,3 +48,29 @@ export function usePrefetchFactions(ids: (string | undefined)[]) {
     for (const id of key.split(',')) if (id) loadFaction(id)
   }, [key])
 }
+
+/* ---------- the faction glossary's deep link ----------
+ *
+ * A SEARCH param, not a hash, and that is load-bearing. `#/r/ABCD` is the only thing that makes
+ * a spectator a spectator across a reload — `readRoom` deliberately never remembers a viewer
+ * link — so writing `#/lib/dw` over it would quietly demote every player who opened the
+ * glossary. `?team=dw` is orthogonal to the hash, the two coexist in one URL, and `readRoom`
+ * already preserves `location.search` when it strips a GM token.
+ */
+const TEAM = 'team'
+
+/** `location`/`history` do not exist under `bun test`, which renders these panels for real. */
+export const teamInUrl = () =>
+  typeof location === 'undefined' ? '' : (new URLSearchParams(location.search).get(TEAM) ?? '')
+
+/** Rewrite the address bar in place, so the link is copyable and a reload lands back here. */
+export const setTeamInUrl = (id: string) => {
+  if (typeof history === 'undefined') return
+  const url = new URL(location.href)
+  if (id) url.searchParams.set(TEAM, id)
+  else url.searchParams.delete(TEAM)
+  history.replaceState(null, '', url)
+}
+
+/** The link to hand a player. Drops any room hash — this is reference, not a match. */
+export const teamUrl = (id: string) => `${location.origin}${location.pathname}?${TEAM}=${id}`

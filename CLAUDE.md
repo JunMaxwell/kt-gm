@@ -57,7 +57,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 |---|---|
 | `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula and cheat-sheet text |
 | `src/compendium.ts` | The three turning-point phases, the `RefCard` type, universal equipment, and the universal **weapon rules** glossary. The per-faction cards moved to `src/factions/` |
-| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1196 weapons, 617 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
+| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1362 weapons, 744 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
@@ -83,6 +83,7 @@ the section markers that were already in it:
 | `ui/RoomBar.tsx` | Share / save / load |
 | `ui/Setup.tsx` | The setup **wizard** — the four steps, and the rail/Back/Next shell over them |
 | `ui/Launcher.tsx` | Step 0: new game, the room list, resume by GM link, watch by code |
+| `ui/Glossary.tsx` | The faction glossary: the index of all 52 kill teams, and `Pack`, one team's printable rules pack |
 | `ui/EndScreen.tsx` | Step 6: the final scoreboard |
 | `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
@@ -832,7 +833,74 @@ assert `ap > 0`. A test pinned that assumption and the data was right, not the t
 
 The extraction was validated by regenerating over the previous modules: **all 48 factions produce
 byte-identical `cards` and `operatives`**, 697 and 454 exactly as before, with the datacards as
-pure addition. That is the check to repeat if the parser is ever touched.
+pure addition. That is the check to repeat if the parser is ever touched — and it has been
+repeated once, for the weapon-table fixes below, which moved 146 datacard lines and **not one
+`cards` or `operatives` line**.
+
+#### The weapon table lost rows for a year, and three separate bugs did it
+
+Found by printing a sheet and counting against the PDF in the repo root: Deathwatch prints **35**
+weapons and the modules held **26**. Library-wide it was 1196 against 1320. All three are fixed;
+each had its own cause, and the third was caused by fixing the first two.
+
+1. **A wrapped row ended the table.** The layout breaks a long weapon name, or a long rules list,
+   onto its own line — `Auxiliary grenade launcher` / `(frag)`. Any line that did not match
+   `W_ROW` set `in_weapons = False`, so **every row below the first wrap was dropped**. The
+   Breacher Veteran prints five weapons and kept one. A non-matching line indented to the NAME
+   column is now folded back into the previous row — into its `wr` if it sits past the ATK
+   column, into its `name` otherwise. Only a blank line, or prose back at the left margin, ends
+   the table.
+2. **`W_ROW` required two spaces before ATK.** A name long enough to leave one —
+   `Xenophase blade (phase sweep) 4   3+   4/6` — was invisible to it. It is `\s+` now; the
+   `\d\+` and `\d+/\d+` anchors are what keep that safe, because a name ending in a digit still
+   backtracks to the real split.
+3. **`twocol` then started refusing real two-column rules.** Fixing 1 and 2 moved four or five
+   lines out of the rules region and into `weapons`, where they belonged — and that dropped
+   several regions under the old `< 3 lines a side` guard, silently losing the Wyrmblade
+   Kelermorph's abilities and the Pathfinder's *Markerlight*. That line count was only ever a
+   **proxy** for the real hazard, which is documented above: a gutter that cuts an action
+   header's NAME from its `1AP`. `twocol` now tests for that directly — a column that OPENS with
+   an AP cost — and the floor drops to two.
+
+   **And `split_page` had to learn to try its second choice.** A card printing two action
+   headers side by side (`MARKERLIGHT … 1AP    SIGNAL … 1AP`) has two blank runs, and the false
+   one — the gap inside the left header — is the *wider*. Vetoing the split outright lost both
+   actions; `split_page` now takes a predicate and walks its candidates widest-first until one
+   passes.
+
+Two more, found by auditing which datacards ended up with no weapons at all — 22 of them:
+
+4. **Two teams abbreviate the table header.** Goremongers and Sanctifiers print
+   `NAME A HIT D WR`, and `W_HDR` demanded `ATK`/`DMG` in full, so `in_weapons` never switched
+   on and **every weapon on both teams** fell through into the rules prose. 18 tables.
+5. **A footnoted ability name was invisible.** A datacard writes out its faction's own weapon
+   rule under the marker its WR column points at — `*Shield:` for the Deathwatch Aegis,
+   `¹Wreathed:` for the Sanctifiers — and `ABILITY` required the name to start with a capital.
+   All **49** of them were dropped, so the marker appeared on the weapon line with nothing
+   anywhere defining it: exactly the gap the universal glossary exists to close. `OWN_RULE` in
+   `compendium.ts` is now the single spelling of that convention, shared by `weaponRules` and by
+   the test that hunts orphan rule tokens — the Sanctifiers' superscript is why a second copy of
+   it in the test would have been missed twice.
+
+Net: weapons 1196 → 1362, abilities 458 → 567, unique actions 159 → 177, and datacards with no
+weapons at all 22 → 4 (a C.A.T. unit, a Gheistskull, a Tome-skull and a Vox-relay Beacon, none
+of which print a weapon table). Several garbage entries the old parser invented
+(`'WELD SHUT Select a closed hatchway (e.g. Killzone'`) resolve into the real actions they were
+(`Weld Shut`, `Wayfind`, `Signal`, `Markerlight`). Nothing real was lost anywhere — the check is
+a **name-level diff of every ability and action**, not a count, because a count hides a swap.
+
+**`NOTES` is in `DC_NOISE` now.** The printed notes box below the last datacard on a page was
+being swallowed as a continuation of that operative's last ability, so the Deathwatch Marksman's
+rules ended in a bare `NOTES:`. Note the keyword bar is *not* a hard stop: Hierotek Circle and
+Canoptek Circle print an operative's unique actions on their own cards **below** it, and treating
+the bar as the end of the card deleted them.
+
+**`kt_fetch.sh` now fails loudly on a missing team, and that matters more than it looks.** A
+download that quietly failed produced no `.txt`, so the generator never saw that faction, wrote
+no module, and **the stale one already in `src/factions` survived** — a clean-looking run that
+ships old data. It happened to XV26, a preset faction, on the very run that fixed this. The
+script now uses `curl -f`, retries three times, checks for a `%PDF` header, counts what it got
+against `list.tsv` and exits non-zero if anything is short.
 
 **`Datacard` is deliberately not part of `Operative`.** A roster rides in every relay snapshot and
 every localStorage save, and this is reference text nobody edits — putting it on the operative
@@ -1105,7 +1173,7 @@ the module and spread into both the Rules card and the datacard — the same ant
 guard is, because homebrew is not bound by the printed layout — but every operative needs its own
 weapons and rules whoever wrote it, and scoping that check is exactly what let all three
 hand-written factions ship with no datacards while the other 48 had them. 52 factions, 470
-operatives, 1259 weapons, 486 abilities, 160 unique actions, and a test that fails on any gap.
+operatives, 1420 weapons, 589 abilities, 178 unique actions, and a test that fails on any gap.
 
 **`Operative.lockOrder` is how an order becomes a stat rather than a call.** Every NEMESIS
 operative has **Towering Size** — *"in the Firefight phase, whenever you determine this operative's
@@ -1385,6 +1453,80 @@ correction — banking no Counteract and not advancing the turn.
 `Stepper` also gained an optional `onSet`, which turns its number into a typed field. Stepping a
 75-wound boss down by a 12-damage hit is twelve clicks with the table waiting. The caller converts
 the typed absolute into a delta, so the `wound` action and its clamp are unchanged.
+
+## The faction glossary — the printable rules pack
+
+The app holds 697 cards and 470 operatives and, until this, only ever showed **one card at a
+time** in a phone carousel. The glossary is the other view of the same data: an index of all 52
+kill teams, each opening onto its whole rules pack laid out like the official team rules PDF,
+printable to A4.
+
+- **`window.print()` and `@media print`. No PDF library.** jsPDF/html2canvas would cost ~500KB
+  to produce *worse* output — a raster of the page instead of selectable vector type. The
+  browser's print pipeline is the native feature for this, and the four runtime dependencies
+  stay four. Verified end to end: headless Chrome `--print-to-pdf` over the real component and
+  the real built CSS gives 6 A4 pages for Deathwatch, 8 for Inquisitorial Agents.
+- **`print-color-adjust: exact` is what makes it work at all**, and it is on `*`, not `body`.
+  `.kt-band`, the zebra weapon rows and `.kt-hex` are all *background* paint, which browsers
+  drop when printing — without this the sheet is white boxes with white-on-white titles. It is
+  inherited in theory; Chrome has shipped builds where only the painting box's own value
+  counted. **Verified against Chrome with no background-graphics flag at all: the bands print.**
+- **The print viewport is 718px, below Tailwind's `md` at 768.** So a responsive prefix inside
+  the sheet silently collapses to one column *on paper only*, which no screen check would ever
+  show. The sheet is pinned to `w-[190mm]` (A4 less the 10mm `@page` margin) on screen as well,
+  so what wraps in the browser is what wraps in the PDF, and a test asserts the sheet's markup
+  carries no `sm:`/`md:`/`lg:`/`xl:` at all.
+- **No `min-h-screen`, no `vh`, no trailing margin inside the sheet.** In print `100vh` is one
+  page, so any of the three emits a blank final page. The root carries `print:min-h-0`.
+- **`KtCard` gets `print:overflow-visible` here.** A scroll container never fragments, so its
+  `overflow-hidden` would *clip* a rules card taller than the page rather than splitting it.
+  The datacards deliberately have no `overflow-hidden` for the same reason.
+- **The page lattice goes, the card lattice stays.** `body`'s covers every sheet edge to edge
+  and reads as a grey rectangle; `.kt-hex` is texture on a card, the printed sheets have it,
+  and Save-as-PDF keeps it vector.
+- **Zebra rows carry a border as well as a fill.** Borders and text print whatever the
+  background-graphics setting says, so the weapon table stays legible even if the fill is
+  dropped — and the two together just look like the printed card.
+- **`table-fixed` with explicit column widths.** Auto widths made every operative's table line
+  up differently down the page; the printed sheets use one grid for all of them.
+
+### What it prints, and the three things it cannot
+
+Datacards first — the black band with the name and the four stats, the weapon table with its WR
+column, abilities and unique actions as bold-name prose in two columns, the keyword bar — then
+the weapon-rules appendix, then the cards 2-up: composition, faction rules, strategy, firefight,
+equipment. **The weapon rules sit under the operatives, ahead of the ploy deck**, because they
+explain the weapon tables and nothing else on the sheet. The official PDFs omit them entirely
+(they are core rules), but on paper that is exactly the gap that once had a datacard printing
+`Saturate` with nothing anywhere saying what it did.
+
+`PrintDatacard` is **not** `OperativeCard`. That one is a vertical phone card with no WR column,
+no keyword bar, live wound and order state, and a `<details>` that would print collapsed.
+
+| The PDF has | This prints | Why |
+|---|---|---|
+| A melee/ranged glyph column | nothing | It is a GRAPHIC in the source PDF, so `pdftotext` never gave the extractor one, and `wr` cannot stand in — a marksman bolt carbine is ranged with no Range rule and fists are melee with none either. A name heuristic over 52 factions would mislabel, and a wrong icon is worse than no icon. |
+| A points cost | nothing | Parsed and dropped; this app does not do list building. |
+| An operative photo | nothing | No images in the repo, by design. |
+
+### Reaching it, and the deep link
+
+**Device state, not a `Game.stage`** — one `useState` in `App`, checked *before* `net.viewer`.
+A spectator's local state is overwritten by every relay snapshot, so `stage: 'glossary'` would
+be wiped the instant the GM tapped anything, and would drag all seven phones in at once.
+`rooms` could be a stage precisely because only the GM ever reaches it. Three entry points: a
+`DarkBtn` beside *Games* in `TurnBar`, a button in the `Launcher` header, and an *All teams*
+chip in the player's phase strip.
+
+**The deep link is `?team=dw` — a SEARCH param, not a hash, and that is load-bearing.**
+`#/r/ABCD` is the only thing that makes a spectator a spectator across a reload (`readRoom`
+deliberately never remembers a viewer link), so writing `#/lib/dw` over it would quietly demote
+every player who opened the glossary. A search param is orthogonal: the two live in one URL, and
+`readRoom` already preserves `location.search` when it strips a GM token. `replaceState`, not
+`pushState` — nothing else in this app is history-navigable and the view has its own Back. The
+helpers are in `ui/shared.ts` beside the other non-component exports, and they guard `typeof
+location` because **`bun test` has no `location`, `history` or `localStorage`** — which is also
+why `read()` in `state.ts` has always been wrapped in a try/catch.
 
 ## Known gaps
 

@@ -155,13 +155,20 @@ const RULE_NAMES = Object.keys(WEAPON_RULES)
 // folded into their parent rule's text rather than entries of their own.
 const RULE_RE = new RegExp(`\\b(${RULE_NAMES.join('|')})\\b`, 'i')
 
+/**
+ * A weapon rule the FACTION defines, footnoted on its own datacard rather than universal.
+ * Most teams mark these with a trailing asterisk; the Sanctifiers use a superscript instead
+ * (`Wreathed¹`, `Twin Torrent¹`), which is the same convention in a different glyph.
+ */
+export const OWN_RULE = /[*\u00b9\u00b2\u00b3\u2070-\u209f\u2020\u2021]$/
+
 /** The universal rules one operative's weapons use, deduped, in the order declared above. */
 export const weaponRules = (weapons: Weapon[] = []): [string, string][] => {
   const used = new Set<string>()
   for (const w of weapons)
     for (const token of (w.wr ?? '').split(',')) {
       const t = token.trim()
-      if (t.endsWith('*')) continue // a faction's own rule; its text is on the operative
+      if (OWN_RULE.test(t)) continue // a faction's own rule; its text is on the operative
       const hit = RULE_RE.exec(t)
       const name = hit && RULE_NAMES.find((n) => n.toLowerCase() === hit[1].toLowerCase())
       if (name) used.add(name)

@@ -32,13 +32,41 @@ print(f'{len(rows)} rules PDFs listed')
 PY
 
 mkdir -p "$OUT/txt"
+# A download that fails here is the expensive kind of failure: the generator simply does not see
+# that faction, writes no module for it, and the STALE one already in src/factions survives — so
+# the run looks clean and ships old data. That happened to XV26, a preset faction. Hence -f, the
+# retry, the header check and the hard exit: a missing team must stop the run, not be skipped.
+missing=0
 while IFS=$'\t' read -r title file; do
   [ -z "${file:-}" ] && continue
   slug=$(echo "$title" | tr 'A-Z ' 'a-z_' | tr -cd 'a-z0-9_')
   [ -s "$OUT/txt/$slug.txt" ] && continue
-  curl -sL --max-time 300 "https://assets.warhammer-community.com/$file" -o "$OUT/_kt.pdf"
+  ok=0
+  for attempt in 1 2 3; do
+    if curl -fsSL --max-time 300 --retry 2 "https://assets.warhammer-community.com/$file" -o "$OUT/_kt.pdf" \
+       && [ -s "$OUT/_kt.pdf" ] && head -c 4 "$OUT/_kt.pdf" | grep -q '%PDF'; then
+      ok=1; break
+    fi
+    echo "  retry $attempt: $slug"
+    sleep 2
+  done
+  if [ "$ok" = 0 ]; then
+    echo "  FAILED to download $slug ($file)" >&2
+    missing=$((missing + 1))
+    rm -f "$OUT/_kt.pdf"
+    continue
+  fi
   pdftotext -layout "$OUT/_kt.pdf" "$OUT/txt/$slug.txt"
   rm -f "$OUT/_kt.pdf"
+  [ -s "$OUT/txt/$slug.txt" ] || { echo "  FAILED to extract $slug" >&2; missing=$((missing + 1)); }
   echo "  extracted $slug"
 done < "$OUT/list.tsv"
+
+want=$(grep -c . "$OUT/list.tsv")
+got=$(ls "$OUT/txt" | wc -l | tr -d ' ')
+echo "$got of $want extracted"
+if [ "$missing" != 0 ] || [ "$got" -lt "$want" ]; then
+  echo "INCOMPLETE — rerun this script (it skips what it already has) before generating." >&2
+  exit 1
+fi
 echo "done — now run: python3 tools/kt_generate.py"

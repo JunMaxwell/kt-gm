@@ -26,7 +26,17 @@ import { type Dispatch, type Game, type Net } from './shared'
  * share it later. That is the same non-negotiable the whole app rests on.
  */
 
-export function Launcher({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: Net }) {
+export function Launcher({
+  game,
+  dispatch,
+  net,
+  onGlossary,
+}: {
+  game: Game
+  dispatch: Dispatch
+  net: Net
+  onGlossary: () => void
+}) {
   const { room, setRoom } = net
   const [rooms, setRooms] = useState(knownRooms)
   const [link, setLink] = useState('')
@@ -101,6 +111,13 @@ export function Launcher({ game, dispatch, net }: { game: Game; dispatch: Dispat
         <h1 className="display mr-2 text-2xl">Kill Team GM</h1>
         <span className="display text-xs text-white/50">Start a match, or pick up one you left</span>
         {busy && <span className="display ml-auto text-xs text-amber-300">{busy}</span>}
+        <button
+          onClick={onGlossary}
+          className={`display rounded bg-white/12 px-2 py-1 text-sm text-white hover:bg-white/25 ${busy ? '' : 'ml-auto'}`}
+          title="Every kill team's cards and datacards, laid out to print"
+        >
+          Faction glossary
+        </button>
       </header>
 
       <main className="mx-auto max-w-3xl space-y-4 p-4">
