@@ -97,7 +97,7 @@ export const cards: RefCard[] = [
     kind: 'firefight',
     cp: 0,
     name: 'Reborn from Blood',
-    text: 'Use this firefight ploy the first time Angron would be incapacitated during a turning point, before he is removed from the killzone. Spend all your remaining CP. If you do, he is not incapacitated: set his wounds remaining to 20. Once per battle.',
+    text: 'Use this firefight ploy the first time Angron would be incapacitated during a turning point, before he is removed from the killzone. Spend all of your remaining CP. He is not incapacitated: set his wounds remaining to 10, then add 10 if you spent any CP and a further 5 for each CP you spent after the first. Once per battle.',
   },
   {
     kind: 'firefight',

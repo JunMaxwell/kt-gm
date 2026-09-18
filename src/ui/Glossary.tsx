@@ -171,7 +171,7 @@ export function Pack({ id, onBack }: { id: string; onBack: () => void }) {
         ))}
 
         {!!glossary.length && (
-          <section className="break-before-page border border-card/30 bg-stone">
+          <section className="break-inside-avoid border border-card/30 bg-stone">
             <div className="kt-band px-3 pt-2 pb-3">
               <p className="display text-[11px] tracking-widest text-flare">{name}</p>
               <p className="display text-xl leading-none text-white">Weapon rules</p>

@@ -1508,6 +1508,11 @@ explain the weapon tables and nothing else on the sheet. The official PDFs omit 
 (they are core rules), but on paper that is exactly the gap that once had a datacard printing
 `Saturate` with nothing anywhere saying what it did.
 
+They **flow** after the last datacard rather than forcing a sheet — only the ploy deck does that.
+A one-operative team spent a whole page on three weapon rules otherwise, and Angron and Farsight
+are exactly that. `break-inside-avoid` still keeps the block whole, so it moves down entire when
+it will not fit, never orphaning its header from its list.
+
 `PrintDatacard` is **not** `OperativeCard`. That one is a vertical phone card with no WR column,
 no keyword bar, live wound and order state, and a `<details>` that would print collapsed.
 
