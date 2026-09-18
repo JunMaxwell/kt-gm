@@ -150,7 +150,7 @@ test("an operative's card carries its weapons, abilities and unique actions", ()
   const html = R(<OperativeCard o={nob} st={g.ops[nob.id]} card={datacardOf(kom, nob.name)} kicker="Ork Kommandos" />)
   expect(html).toContain('Power klaw') // weapon, with its ATK/HIT/DMG row
   expect(html).toContain('5/7')
-  expect(html).toContain('Brutal, Shock') // the weapon rules column
+  expect(html).toContain('Brutal</b>, <b class="font-bold text-card">Shock') // the weapon rules column, each rule bold
   expect(html).toContain('Krumpin') // ability
   expect(html).toContain('1AP') // unique action, with its cost
   expect(html).toContain('LEADER') // keywords line
@@ -251,6 +251,15 @@ test('**bold** in a card renders bold, and the keyword pass still runs around it
   expect(html).not.toContain('**')
   // and inside it — a keyword wrapped in bold gets both
   expect(R(<Rules text="**the SALAMANDERS rite**" />)).toContain('text-flare')
+})
+
+test('weapon rules in prose are bold; look-alikes are not', () => {
+  const html = R(
+    <Rules text={'Its weapon has the Lethal 5+ and Severe weapon rules, 1" Devastating 3, Piercing Crits 1 and Heavy (Dash only). Not Heavy terrain, a Hot-shot lasgun, the Stun Grenade action or Seek & Destroy.'} />,
+  )
+  for (const hit of ['Lethal 5+', 'Severe', '1" Devastating 3', 'Piercing Crits 1', 'Heavy (Dash only)'])
+    expect(html).toContain(`<b class="font-bold text-card">${hit.replace(/"/g, '&quot;')}</b>`)
+  for (const miss of ['Heavy</b>', 'Hot</b>', 'Stun</b>', 'Seek</b>']) expect(html).not.toContain(miss)
 })
 
 test('no card anywhere leaks a literal ** onto the page', async () => {

@@ -35,7 +35,8 @@ export function RefCardView({
       name={card.name}
       dim={broke}
       outline={live ? 'var(--color-flare)' : undefined}
-      aside={ploy && <span className="text-white/60">{broke ? `need ${cost}CP` : cost === 0 ? 'free' : `${cost}CP`}</span>}
+      tone={card.kind === 'strategy' ? 'green' : card.kind === 'firefight' ? 'black' : undefined}
+      tag={ploy && (broke ? `need ${cost}CP` : `${cost}CP`)}
       className={className}
     >
       <Rules text={card.text} />

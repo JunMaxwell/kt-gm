@@ -167,18 +167,24 @@ export function KtCard({
   kicker,
   title,
   name,
+  tag,
   aside,
   dim,
   outline,
+  tone,
   children,
   className = '',
 }: {
   kicker: React.ReactNode
   title: React.ReactNode
   name: string
+  /** A short badge on the right of the name strip — a ploy's CP cost. */
+  tag?: React.ReactNode
   aside?: React.ReactNode
   dim?: boolean
   outline?: string
+  /** The name strip: a bare box by default (equipment), filled green for strategy ploys, black for firefight. */
+  tone?: 'green' | 'black'
   children: React.ReactNode
   className?: string
 }) {
@@ -206,7 +212,14 @@ export function KtCard({
       </div>
 
       <div className="kt-hex flex min-w-0 flex-1 flex-col p-2">
-        <h5 className="kt-strip opname px-1.5 py-0.5 text-xs font-bold text-card">{name}</h5>
+        <h5
+          className={`kt-strip opname flex items-baseline gap-2 px-1.5 py-0.5 text-xs font-bold ${
+            tone ? `kt-strip-${tone} text-white` : 'text-card'
+          }`}
+        >
+          <span className="min-w-0 truncate">{name}</span>
+          {tag && <span className={`ml-auto shrink-0 ${tone ? 'text-white/80' : 'text-flare'}`}>{tag}</span>}
+        </h5>
         <div className="mt-1.5 min-w-0 text-xs leading-snug text-ink/90">{children}</div>
       </div>
     </div>
@@ -216,17 +229,37 @@ export function KtCard({
 // Words the cards print in caps but never highlight — stats and table headers, not keywords.
 const NOISE = new Set(['APL', 'ATK', 'HIT', 'DMG', 'NAME', 'AND', 'THE', 'FOR', 'ALL'])
 
-/** The keyword pass: orange every run of three or more capitals that is not a stat name. */
+// Weapon rules as the cards print them: the name and, where it takes one, its x. A bare name only
+// counts when nothing runs on from it — not Hot-shot, Heavy terrain, Stun Grenade, Seek & Destroy.
+// ponytail: a regex over prose, like the keyword pass. A wrong bold gets an exclusion in the lookahead.
+const X = '(?: ?(?:\\d+["”+]?|x["”]?))'
+const RULE =
+  `(?:\\d+["”] )?Devastating${X}?|(?:Accurate|Lethal|Limited|Range)${X}|` +
+  `(?:Blast|Torrent|Piercing(?: Crits)?)${X}?|Seek(?: Light)?|Heavy(?: \\((?:Dash|Reposition) only\\))?|` +
+  'Balanced|Brutal|Ceaseless|Hot|Punishing|Relentless|Rending|Saturate|Severe|Shock|Silent|Stun'
+const TOKEN = new RegExp(
+  `([A-Z][A-Z'’]{2,}(?: [A-Z][A-Z'’]{1,})*)|\\b(?:${RULE})(?![-‑\\w]|\\s(?:[A-Z&]|(?:or |and )?(?:Light )?terrain))`,
+  'g',
+)
+
+/** The keyword pass: orange every run of three or more capitals that is not a stat name, and bold
+ *  every weapon rule so a player can find "Lethal 5+" in a paragraph without reading it. */
 function keywords(text: string, tag: string): React.ReactNode[] {
   const out: React.ReactNode[] = []
   let last = 0
-  for (const m of text.matchAll(/[A-Z][A-Z'’]{2,}(?: [A-Z][A-Z'’]{1,})*/g)) {
+  for (const m of text.matchAll(TOKEN)) {
     if (NOISE.has(m[0]) || m.index === undefined) continue
     out.push(text.slice(last, m.index))
     out.push(
-      <b key={`${tag}k${m.index}`} className="font-bold text-flare">
-        {m[0]}
-      </b>,
+      m[1] ? (
+        <b key={`${tag}k${m.index}`} className="font-bold text-flare">
+          {m[0]}
+        </b>
+      ) : (
+        <b key={`${tag}w${m.index}`} className="font-bold text-card">
+          {m[0]}
+        </b>
+      ),
     )
     last = m.index + m[0].length
   }

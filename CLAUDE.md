@@ -1105,7 +1105,10 @@ extractor pulls. The dossier PDF is in the repo root.
 | Medium | 5 | 6" | 4+ | 50 | 2 |
 | Large | 6 | 6" | 4+ | 75 | 3 |
 
-Angron is Large/CHAOS, Farsight **Small**/T'AU EMPIRE. **They differ by tier, not by invention** —
+Angron is Large/CHAOS, Farsight **Small**/T'AU EMPIRE. **Both are CONTROL 5 regardless of tier**,
+at the user's request — the printed table says 6 for Large and 4 for Small. Everything else still
+comes off the table. Each module states it in two places, the faction card and `apl`, and they
+must not drift apart. **They differ by tier, not by invention** —
 same core rules, same save.
 
 **Farsight is Small because the dossier says so about this exact model.** Its worked example
@@ -1234,6 +1237,45 @@ keyword, because a ploy worded "a friendly X operative" could never select him.
 | *No Sanctuary* — enemies within 6" cannot be given Conceal | *Relentless Carnage* — the wound ladder, below |
 | *Bring Down the Walls* — D3+3 a turn to anyone sheltering in terrain he cannot enter | *Butcher's Frenzy* — +3 Atk for one fight, no Fall Back that TP |
 
+**And a 4-card equipment deck, homebrew for the same reason.** The Custom Builder has no equipment
+step either, and a boss that IS the kill team has no accompanying team whose gear it can share — so
+until these four his Gear tab was empty, since `Gear` stopped concatenating the universal deck onto
+every team.
+
+| Equipment | |
+|---|---|
+| *Chains of the Red Angel* | BARBED CHAIN (1AP), 8", once per activation — beat the target on a D6 and place it in his control range |
+| *Crushing Impact* | CRUSHING IMPACT (1AP), 12", once per **battle** — a Heavy terrain feature leaves the killzone and he lands in its footprint |
+| *The Butcher's Nails* | passive — Severe on his melee weapons while injured |
+| *Warp-Forged Bronze* | passive — Piercing and Piercing Crits are ignored against him |
+
+- **Two actions and two passives, deliberately.** He has 5AP across both activations and his own
+  Fight and Charge want most of it, so four action cards would be two he never performs. Neither
+  passive costs CP, because he has none to spare — that is what *Blood Tithe* is for.
+- **A tie on the hook does nothing.** That is why the card spells the dice out instead of saying
+  *roll-off*, which is a defined term that re-rolls ties and would turn a ~42% drag into a 50% one.
+- **The hook names BULKY's distances**, exactly as *Relentless Carnage* does and for the same
+  reason recorded there: "control range" on a boss card is ambiguous, and the 4" vertical is the
+  whole point — it is what rips an operative off a gantry rather than only off the floor.
+- **The dragged operative gets BETTER, not worse**, for one activation. It is the card's cost, and
+  it is the theme: the Nails are not quieted by prey that cannot fight back. Flipping it to a
+  debuff is a one-line change if that reads wrong at the table.
+- ***Crushing Impact* is not a second *Bring Down the Walls*.** The ploy is what he uses on terrain
+  he cannot reach, over a whole turning point, at 6". The equipment is what he uses when he can
+  reach it: one action, 12", the feature is gone for the rest of the battle and he is standing in
+  it. It inflicts no damage — removing a building and teleporting 12" is the effect.
+- **Its terrain is *Heavy*, not "Stronghold".** Stronghold is not a 2024 terrain trait; the only
+  Stronghold in this repo is Volkus's *Condensed Stronghold*, quoted inside two extracted
+  datacards. Heavy is the trait that means the solid, sight-blocking thing the card is about.
+- ***Warp-Forged Bronze* must not become cover.** Worsening the Hit stat of shots at him would
+  soft-undo Towering Size, which is the documented counter-play and the thing that makes a boss
+  killable at all. Ignoring Piercing protects the Extra Defence dice instead, which is a narrower
+  effect on purpose.
+- **The Nails and IMPLACABLE do not collide**, and the card says so: Implacable ignores changes to
+  his weapon *stats* from being injured, Severe is a weapon *rule*, and rule changes apply
+  immediately. Injured still costs him 2" of Move and, per `nemesisCore`, the Extra Defence dice —
+  so the two bleed ploys keep a real price.
+
 Plus one **ability**: **No Escape is not a ploy, and it lives ONLY on the Ops datacard.** Always
 on, free, beside *Fury* and *Implacable* — an enemy Falling Back out of his control range eats a
 free Fight action. It was a firefight ploy until the user moved it, which is a real buff (it cost
@@ -1332,6 +1374,49 @@ Two of his cards exist because of facts about *this app's* model of a boss, not 
   kill team runs dry the moment it activates, so both bosses bank Counteracts every time the enemy
   activates into an empty side — far more than a seven-model team ever would. Angron's deck ignores
   that resource entirely; Farsight's spends it.
+
+**His equipment four are sourced, not invented**, which is the difference from Angron's — Angron
+had to be given a deck because the format leaves a standalone boss with nothing, while Farsight has
+five decades of published wargear to draw on. Each card names a real item or a real rule:
+
+| Equipment | | Sourced from |
+|---|---|---|
+| *Chronophagic Alloy* | a Dawn Blade kill grants **+1AP** that activation, once per TP | the blade's chronophagic alien alloys, taken on Arthas Moloch |
+| *Puretide Engram Neurochip* | an enemy activating within 6" gives him a **free Dash**, once per TP | canon, and a real 10th-ed Retaliation Cadre Enhancement |
+| *Ta'lissera Bonding Knife* | his alliance ignores **injured** stat changes within 3" | the Enclaves' bonding ritual; a 7th-ed Farsight army had to take it |
+| *Target Designator* | MARKERLIGHT (1AP), 12" — his alliance ignores that target's **cover and obscured** | For the Greater Good: an Observer with MARKERLIGHT grants IGNORES COVER |
+
+- **The Dawn Blade steals TIME, not wounds.** The lore says a life it cuts short is *added to the
+  wielder's own* — so the obvious reading is a heal, and the obvious reading is the one to avoid:
+  *Blood for the Blood God* already heals Angron on a kill, and the two decks are meant to share
+  nothing. AP is the closer translation anyway, because what the blade actually steals is lifespan.
+- **It grants AP, not APL, and the card says so.** `nemesisCore` has him ignore all changes to his
+  APL, so a card that reads as an APL change would cancel itself.
+- **Puretide is CP everywhere else and deliberately not here.** Both his 10th-ed *Puretide's
+  Teachings* and the Enhancement of the same name are Stratagem economy; *Command Uplink* already
+  holds that axis, so this card takes the other half of the idea — the anticipation that earned
+  O'Shovah the name Farsight.
+- ***Ta'lissera* is broader than the IMPLACABLE trait on purpose.** Implacable is weapon stats only
+  and costs a nemesis trait selection; this covers all stats but only within 3" of a 35W operative
+  that TOWERING SIZE keeps permanently out of cover. The ally pays in position, which is the axis
+  the whole deck is built on. Note it shares the 3" band with *Supporting Fire* — one distance to
+  remember at the table rather than two.
+- ***Target Designator* partially overlaps XV26's *Advanced Blacksun Filters***, and that is worth
+  knowing because the same player runs both teams in the preset match. The filters are XV26-only,
+  obscured-only and free; this is alliance-wide, covers cover as well, and costs 1AP on one named
+  target. They stack rather than replace, but if the deck feels redundant this is the card to cut.
+- **One action, three triggered** — inverted from Angron's two-and-two. Farsight is a shooter and
+  his AP goes to Shoot, so a second action card would be one he never performs.
+- **Nothing here touches his Save.** All three nemesis sizes are 4+ and a boss's durability is
+  wounds plus the extra defence dice — the mistake an early Angron made at 50W and a 2+.
+- **He is Seek & Destroy AND Security**, where Angron is Seek & Destroy alone. Two archetypes is
+  the printed shape every real team has, and Security was the pick over Recon for a reason that is
+  about the table rather than the lore: the Xenos alliance already holds Seek & Destroy,
+  Infiltration and Recon between Raveners, XV26 and the Orks, and **Security is the only archetype
+  nobody on that side can reach**. Recon would have shared XV26's pool — the same player runs both
+  teams — and the app does not enforce distinct tac op picks within a side, so it would have put
+  two Flanks on one alliance rather than three ops on the table. It reads fine anyway: the Enclaves
+  are a breakaway realm he holds, and *Envoy* and *Plant Banner* are a separatist commander's cards.
 
 ### Still unread
 

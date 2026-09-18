@@ -1,8 +1,11 @@
 // HAND-WRITTEN — not generated, unlike the extracted modules in this directory.
 //
 // Commander Farsight built with the official Nemesis Custom Builder: allegiance T'AU EMPIRE,
-// size Small (Control 4 / Move 6" / Save 4+ / 35W / 2 weapons), two weapon selections, one
-// allegiance trait and one nemesis trait.
+// size Small (Move 6" / Save 4+ / 35W / 2 weapons), two weapon selections, one allegiance trait
+// and one nemesis trait.
+//
+// CONTROL 5, not the table’s 4 for Small — the user’s call, matching Angron, who sits at 5 rather
+// than Large’s printed 6. Both bosses state it in two places: the faction card and `apl` below.
 //
 // SMALL IS THE BOOK'S OWN ANSWER FOR THIS MODEL. The dossier's worked example (pgs 26-27) is an
 // XV8 Crisis Battlesuit — Farsight's exact chassis, same 50mm base — and it is built at Size:
@@ -51,7 +54,7 @@ export const cards: RefCard[] = [
   {
     kind: 'faction',
     name: 'Commander Farsight',
-    text: 'CONTROL 4 · MOVE 6" · SAVE 4+ · 35 WOUNDS.\nKeywords: T’AU EMPIRE, FARSIGHT ENCLAVES, BATTLESUIT, NEMESIS, COMMANDER FARSIGHT.\n— High-intensity plasma rifle (standard): ATK 4, HIT 3+, DMG 4/6. Piercing 1.\n— High-intensity plasma rifle (supercharge): ATK 4, HIT 3+, DMG 5/6. Hot, Lethal 5+, Piercing 1.\n— Dawn Blade (power weapon): ATK 4, HIT 3+, DMG 5/7. Lethal 5+.\nHE CAN BE SHOT WHILE LOCKED IN COMBAT — Towering Size means being within control range of other operatives never stops him being a valid target for the Shoot action.\nThe Dawn Blade is a mystery even to the Enclaves: a blade that should not cut what it cuts.',
+    text: 'CONTROL 5 · MOVE 6" · SAVE 4+ · 35 WOUNDS.\nKeywords: T’AU EMPIRE, FARSIGHT ENCLAVES, BATTLESUIT, NEMESIS, COMMANDER FARSIGHT.\n— High-intensity plasma rifle (standard): ATK 4, HIT 3+, DMG 4/6. Piercing 1.\n— High-intensity plasma rifle (supercharge): ATK 4, HIT 3+, DMG 5/6. Hot, Lethal 5+, Piercing 1.\n— Dawn Blade (power weapon): ATK 4, HIT 3+, DMG 5/7. Lethal 5+.\nHE CAN BE SHOT WHILE LOCKED IN COMBAT — Towering Size means being within control range of other operatives never stops him being a valid target for the Shoot action.\nThe Dawn Blade is a mystery even to the Enclaves: a blade that should not cut what it cuts.',
   },
   nemesisCore('Small'),
   { kind: 'faction', ...ALLEGIANCE },
@@ -99,6 +102,54 @@ export const cards: RefCard[] = [
     name: 'Reactive Protocols',
     text: 'Use this firefight ploy when Farsight counteracts. He can perform two 1AP actions instead of one, and the 2" movement limit does not apply to the first of them. As a one-model kill team he runs dry early and banks counteracts while the enemy is still activating — this is what he does with them.',
   },
+
+  // EQUIPMENT — homebrew for the same reason the ploys are, and each one is a real, sourced piece
+  // of his wargear or lore rather than an invention:
+  //
+  // \u2022 Chronophagic Alloy: the Dawn Blade was taken from a fallen statue in the ruins of Arthas
+  //   Moloch, and its alien alloys are chronophagic \u2014 a life it cuts short is added to the wielder's.
+  //   So it steals TIME, and here that is AP. Deliberately not wounds: Angron's Blood for the Blood
+  //   God already heals on a kill, and the two bosses' decks are meant to share nothing.
+  // \u2022 Puretide Engram Neurochip: canon, and a real 10th-edition Retaliation Cadre Enhancement.
+  //   His own datasheet renders the same idea as 'Puretide's Teachings'. Both are CP economy there,
+  //   which Command Uplink already occupies here, so this takes the OTHER half of the concept \u2014 the
+  //   anticipation that earned O'Shovah the name Farsight.
+  // \u2022 Ta'lissera Bonding Knife: the Enclaves' bonding ritual, sworn with a knife and a cut. In 7th
+  //   edition a Farsight Enclaves army was REQUIRED to take the Bonding Knife Ritual, so it is his
+  //   most literal piece of faction equipment.
+  // \u2022 Target Designator: For the Greater Good is the Observer/Spotted/Guided markerlight mechanic,
+  //   and an Observer with the MARKERLIGHT keyword grants IGNORES COVER. Mont'ka already marks a
+  //   target for re-rolls, so this one takes the cover half instead.
+  //
+  // ONE ACTION AND THREE TRIGGERED, unlike Angron's two-and-two. He is a shooter: his AP goes to
+  // Shoot, and a second action card would be one he never performs.
+  //
+  // Checked against `nemesisCore` and the pg 19 trait table. Nothing here touches his Save \u2014 all
+  // three nemesis sizes are 4+ and a boss's durability is wounds plus the extra defence dice, never
+  // a good save \u2014 and nothing re-implements Shielded, which he could simply have taken.
+  {
+    kind: 'equipment',
+    name: 'Chronophagic Alloy',
+    text: 'Whenever Farsight incapacitates an enemy operative with the Dawn Blade, he immediately gains 1 additional AP to spend during that activation. This grants AP, not APL \u2014 a NEMESIS operative ignores changes to its APL, and this is not one. You can use this rule only once per turning point.\nThe blade was torn from a fallen statue in the ruins of Arthas Moloch. Its alien alloys are chronophagic: every life it cuts short is added to the life of the one holding it.',
+  },
+  {
+    kind: 'equipment',
+    name: 'Puretide Engram Neurochip',
+    text: 'Once per turning point, when an enemy operative visible to and within 6" of Farsight is activated, before it performs any action, Farsight can immediately perform a free Dash action.\nThe chip carries the memories of Commander Puretide, the finest war leader the T\u2019au have produced. This is the anticipation that earned O\u2019Shovah his name.',
+  },
+  {
+    kind: 'equipment',
+    name: 'Ta\u2019lissera Bonding Knife',
+    text: 'Whenever an operative from Farsight\u2019s alliance is within 3" of him, ignore any changes to its stats from being injured.\nThe Ta\u2019lissera is the bonding ritual of the Enclaves, sworn with a knife and a cut. Bonded, none of them falters first.',
+  },
+  {
+    kind: 'equipment',
+    name: 'Target Designator',
+    text:
+      'Farsight can perform the following unique action.\n' +
+      'MARKERLIGHT (1AP): Select one enemy operative visible to and within 12" of this operative. Until the end of the turning point, whenever an operative from Farsight\u2019s alliance is shooting that operative, that operative is not in cover and is not obscured. This operative cannot perform this action while within control range of an enemy operative, and can perform it only once during each turning point.\n' +
+      'For the Greater Good: the observer marks, and the cadre fires.',
+  },
 ]
 
 export const datacards: Datacard[] = [
@@ -116,5 +167,5 @@ export const datacards: Datacard[] = [
 ]
 
 export const operatives: Operative[] = [
-  { id: 'farsight:farsight', name: 'Commander Farsight', apl: 4, move: '6"', save: '4+', w: 35, acts: 2, lockOrder: 'engage', kv: 5 },
+  { id: 'farsight:farsight', name: 'Commander Farsight', apl: 5, move: '6"', save: '4+', w: 35, acts: 2, lockOrder: 'engage', kv: 5 },
 ]

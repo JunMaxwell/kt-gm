@@ -12,6 +12,7 @@
   --color-card: #101010; /* the black header block */
   --color-flare: #e8452a; /* GW's accent orange-red: keywords, kickers, rules under headings */
   --color-stone: #e6e4e0; /* card body paper */
+  --color-strategy: #6b796b; /* the strategy ploy name strip, sampled from the XV26 PDF */
   --color-fade: #6d6a66; /* flavour and secondary text */
 
   /* sides */
@@ -69,10 +70,19 @@ body {
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px));
 }
 
-/* The boxed card name under the black block. */
+/* The boxed card name under the black block. Bare for equipment and rules, as printed; the
+   ploys fill it — grey-green for strategy, black for firefight. */
 .kt-strip {
   border: 1px solid #2a2a2a;
   background: rgba(255, 255, 255, 0.45);
+}
+.kt-strip-green {
+  background: var(--color-strategy);
+  border-color: var(--color-strategy);
+}
+.kt-strip-black {
+  background: var(--color-card);
+  border-color: var(--color-card);
 }
 
 /* A heading with the accent rule under it, as on "RULES COMMENTARY". */
