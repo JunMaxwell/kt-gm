@@ -1517,6 +1517,31 @@ no keyword bar, live wound and order state, and a `<details>` that would print c
 | A points cost | nothing | Parsed and dropped; this app does not do list building. |
 | An operative photo | nothing | No images in the repo, by design. |
 
+### The index puts this match's teams on top
+
+`Glossary` takes `game` for one reason: the teams actually on the table sort above the other 46,
+so a player opens their own deck without hunting an alphabetical list of 52.
+
+- **Teams map MANY-TO-ONE onto factions**, so a pinned row is a *faction* and its label is the
+  teams using it. The preset seven are **six** rows — `dw` and `dw2` both carry `faction: 'dw'`
+  — and Deathwatch's row reads *"Deathwatch · Deathwatch II"*. At the table the question is
+  "which deck is Player 7 reading?", not "which faction exists?". A test pins the count.
+- **A hand-built team has no `faction`** and therefore no page here, so it is skipped rather
+  than rendered as a row that cannot be opened. Its GM-written cards live in the Compendium
+  browser, which is where they already were.
+- **Typing in the filter collapses the split.** A pinned block fighting a search box is worse
+  than either alone — once you are hunting a name you want one list, not a hit hiding in
+  whichever section it landed in. A pinned faction is also *removed* from the list below rather
+  than repeated, so every faction appears exactly once at every filter state.
+- It costs nothing when there is no match: from the `Launcher` the section simply does not
+  render, and a spectator gets it too, since the glossary renders before the `net.viewer` check.
+
+**JSX text does not process backslash escapes**, and that cost a round here: `<span> \u00b7 </span>`
+renders the six characters, where `{'\u00b7'}` and `join(' \u00b7 ')` are JS strings and do not.
+The header read *"52 kill teams \u00b7 every card"* on screen while every test passed — a
+rendered-output assertion cannot see it, because the escape IS the output. `render.test.tsx` now
+greps every panel's markup for `\uXXXX`.
+
 ### Reaching it, and the deep link
 
 **Device state, not a `Game.stage`** — one `useState` in `App`, checked *before* `net.viewer`.

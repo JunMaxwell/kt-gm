@@ -179,7 +179,7 @@ export default function App() {
   // Device state, not a stage: a spectator's is overwritten by every relay snapshot, and a
   // shared one would drag all seven phones into the library at once. It wins over everything
   // else so a player can reach it too.
-  if (lib) return <Glossary onClose={() => setLib(false)} />
+  if (lib) return <Glossary game={game} onClose={() => setLib(false)} />
   if (net.viewer) return <Viewer game={game} net={net} onGlossary={() => setLib(true)} />
   if (game.stage === 'rooms')
     return <Launcher game={game} dispatch={dispatch} net={net} onGlossary={() => setLib(true)} />

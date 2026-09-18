@@ -1,11 +1,12 @@
 import { useState } from 'react'
 
 import { type Datacard, type RefCard, cardsOfKind, weaponRules } from '../compendium'
-import { FACTIONS, datacardOf, factionMeta } from '../factions'
+import { FACTIONS, type FactionMeta, datacardOf, factionMeta } from '../factions'
 import type { Operative } from '../rules'
+import { allTeams } from '../state'
 import { DarkBtn, KtCard, Rules } from './kit'
 import { RefCardView } from './Compendium'
-import { setTeamInUrl, teamInUrl, teamUrl, useFaction } from './shared'
+import { type Game, setTeamInUrl, teamInUrl, teamUrl, useFaction } from './shared'
 
 /* ---------- the faction glossary ----------
  *
@@ -208,8 +209,55 @@ export function Pack({ id, onBack }: { id: string; onBack: () => void }) {
   )
 }
 
-/** The index: all 52 kill teams, filtered by name. */
-export function Glossary({ onClose }: { onClose: () => void }) {
+/**
+ * The kill teams in the current match, pinned above the rest.
+ *
+ * Teams map MANY-TO-ONE onto factions — the preset seven are six entries, because `dw` and
+ * `dw2` both carry `faction: 'dw'` — so a row is a faction and the useful label is the teams
+ * using it. At the table the question is "which deck is Player 7 reading?", not "which faction
+ * exists?". A hand-built team has no `faction` and therefore no page here, so it is skipped
+ * rather than shown as a row that cannot be opened.
+ */
+const inMatch = (game: Game): [FactionMeta, string][] => {
+  const used = new Map<string, string[]>()
+  for (const t of allTeams(game)) {
+    if (!t.faction || !factionMeta(t.faction)) continue
+    used.set(t.faction, [...(used.get(t.faction) ?? []), t.name])
+  }
+  return [...used].map(([id, names]) => [factionMeta(id)!, names.join(' · ')])
+}
+
+function FactionTile({ f, note, onPick }: { f: FactionMeta; note?: string; onPick: () => void }) {
+  return (
+    <button
+      onClick={onPick}
+      className="overflow-hidden border border-rule bg-paper text-left shadow-sm transition-shadow hover:shadow-md"
+    >
+      <div className="kt-band px-3 pt-1.5 pb-3" style={{ background: f.color, color: f.ink ? '#282c34' : '#fff' }}>
+        <p className="display truncate text-lg">{f.name}</p>
+      </div>
+      <p className="truncate px-3 py-1.5 text-[10px] text-ink/50">
+        {note ?? (
+          <>
+            {f.archetypes.join(' · ')}
+            {f.custom && <span className="text-flare"> · homebrew</span>}
+          </>
+        )}
+      </p>
+    </button>
+  )
+}
+
+const Grid = ({ children }: { children: React.ReactNode }) => (
+  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+)
+
+const Heading = ({ children }: { children: React.ReactNode }) => (
+  <h2 className="display kt-rule mb-2 pb-0.5 text-base text-ink/70">{children}</h2>
+)
+
+/** The index: the match's own teams, then all 52 kill teams, filtered by name. */
+export function Glossary({ game, onClose }: { game: Game; onClose: () => void }) {
   const [id, setId] = useState(teamInUrl)
   const [q, setQ] = useState('')
 
@@ -224,7 +272,12 @@ export function Glossary({ onClose }: { onClose: () => void }) {
   if (id) return <Pack id={id} onBack={() => show('')} />
 
   const needle = q.trim().toLowerCase()
-  const hits = needle ? FACTIONS.filter((f) => f.name.toLowerCase().includes(needle)) : FACTIONS
+  // Filtering collapses the split. A pinned block fighting a search box is worse than either
+  // alone — once you are hunting a name you want one list, not a hit hiding in whichever
+  // section it happened to land in.
+  const mine = needle ? [] : inMatch(game)
+  const pinned = new Set(mine.map(([f]) => f.id))
+  const rest = FACTIONS.filter((f) => !pinned.has(f.id) && (!needle || f.name.toLowerCase().includes(needle)))
 
   return (
     <div className="min-h-screen print:min-h-0">
@@ -249,28 +302,27 @@ export function Glossary({ onClose }: { onClose: () => void }) {
         </DarkBtn>
       </header>
 
-      <main className="mx-auto max-w-5xl p-4">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {hits.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => show(f.id)}
-              className="overflow-hidden border border-rule bg-paper text-left shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div
-                className="kt-band px-3 pt-1.5 pb-3"
-                style={{ background: f.color, color: f.ink ? '#282c34' : '#fff' }}
-              >
-                <p className="display truncate text-lg">{f.name}</p>
-              </div>
-              <p className="px-3 py-1.5 text-[10px] text-ink/50">
-                {f.archetypes.join(' · ')}
-                {f.custom && <span className="text-flare"> · homebrew</span>}
-              </p>
-            </button>
-          ))}
-        </div>
-        {!hits.length && <p className="p-4 text-sm text-ink/40">No kill team matches “{q}”.</p>}
+      <main className="mx-auto max-w-5xl space-y-5 p-4">
+        {!!mine.length && (
+          <section>
+            <Heading>In this match</Heading>
+            <Grid>
+              {mine.map(([f, teams]) => (
+                <FactionTile key={f.id} f={f} note={teams} onPick={() => show(f.id)} />
+              ))}
+            </Grid>
+          </section>
+        )}
+
+        <section>
+          {!!mine.length && <Heading>All kill teams</Heading>}
+          <Grid>
+            {rest.map((f) => (
+              <FactionTile key={f.id} f={f} onPick={() => show(f.id)} />
+            ))}
+          </Grid>
+          {!rest.length && !mine.length && <p className="p-4 text-sm text-ink/40">No kill team matches “{q}”.</p>}
+        </section>
       </main>
     </div>
   )

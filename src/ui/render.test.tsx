@@ -33,7 +33,7 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     // stage `play`, so a single render would only ever exercise the clamped fallback.
     ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} />)),
     R(<Launcher game={g} dispatch={noop} net={net} onGlossary={noop} />),
-    R(<Glossary onClose={noop} />),
+    R(<Glossary game={g} onClose={noop} />),
     R(<EndScreen game={g} dispatch={noop} net={net} />),
     // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
     R(<TeamPicker game={g} me="" onPick={noop} />),
@@ -266,4 +266,43 @@ test('no card anywhere leaks a literal ** onto the page', async () => {
     ]
     for (const text of texts) expect(R(<Rules text={text} />)).not.toContain('**')
   }
+})
+
+/** How many faction tiles carry this name. `plain` because a name like Nocturne's is escaped. */
+const band = (html: string, name: string) =>
+  plain(html).split(`class="display truncate text-lg">${name}</p>`).length - 1
+
+test('the glossary pins this match’s teams on top, one row per faction', () => {
+  const html = R(<Glossary game={initialGame()} onClose={noop} />)
+  expect(html).toContain('In this match')
+  expect(html).toContain('All kill teams')
+  // Seven teams, SIX rows: `dw` and `dw2` share `faction: 'dw'`, so the row is the faction and
+  // the label is the teams using it. Getting this wrong shows Deathwatch twice.
+  expect(html).toContain('Deathwatch · Deathwatch II')
+  expect(band(html, 'Deathwatch')).toBe(1)
+  // and a pinned faction is not repeated in the list below
+  for (const name of ['Deathwatch', 'Angels of Death', 'Scout Squad', 'Raveners', 'Kommandos'])
+    expect(band(html, name)).toBe(1)
+  // every faction is still reachable
+  for (const f of FACTIONS) expect(band(html, f.name)).toBe(1)
+})
+
+test('the glossary has no match section when there is no match, and skips a hand-built team', () => {
+  expect(R(<Glossary game={blankGame()} onClose={noop} />)).not.toContain('In this match')
+  // A team with no `faction` has no page here, so it must not become an unopenable row.
+  const g = initialGame()
+  const solo = { ...g, teams: { hand: { ...g.teams.dw, id: 'hand', name: 'Hand Built', faction: undefined } } }
+  const html = R(<Glossary game={solo} onClose={noop} />)
+  expect(html).not.toContain('In this match')
+  expect(html).not.toContain('Hand Built')
+  expect(band(html, 'Deathwatch')).toBe(1) // still in the full list, once
+})
+
+test('no panel prints a raw \\uXXXX escape', () => {
+  // JSX text and attribute values do NOT process backslash escapes — only JS string literals do,
+  // so `<span> · </span>` renders the six characters. Every test here passed while the
+  // glossary header read "52 kill teams · every card": a rendered-output assertion cannot
+  // see it, because the escape IS the output.
+  const html = panels(initialGame()) + R(<Glossary game={initialGame()} onClose={noop} />)
+  expect(html).not.toMatch(/\\u[0-9a-fA-F]{4}/)
 })
