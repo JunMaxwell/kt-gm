@@ -174,6 +174,9 @@ export const datacards: Datacard[] = [
     abilities: [FURY, IMPLACABLE, NO_ESCAPE, ALLEGIANCE],
     actions: [],
     keywords: ['CHAOS', 'KHORNE', 'DAEMON', 'NEMESIS', 'ANGRON', 'TOWERING'],
+    // Cut off the official datasheet card with tools/kt_cutout.py --warm. A nemesis operative
+    // is a paid expansion, so the extractor never sees this faction.
+    img: '/ops/angron/angron.webp',
   },
 ]
 

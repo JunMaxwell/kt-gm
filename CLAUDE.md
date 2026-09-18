@@ -933,10 +933,34 @@ no field — no manifest, no runtime URL convention, no `onError` hiding. A test
 - **Every image is converted to RGB before saving.** The PDFs use CMYK, DeviceN *and*
   Separation colour, and PNG accepts only RGB or grey; a channel-count test misses DeviceN.
 
-The four hand-written factions have no PDF and so no photos; drop a `.webp` in the right folder
-and set `img` in the module by hand if one is wanted. Photos are not prefetched for offline use
-the way faction modules are — a table with no wifi shows text-only cards for any photo the
-browser has not already cached.
+**The hand-written factions have no PDF, so their photos are cut by hand** with
+`tools/kt_cutout.py` and their `img` is set in the module rather than by the generator. Seven are
+done — Angron, Farsight and all five Custodes; the nine Relic Seekers have no source image yet.
+The tool keys the background three ways and **which one is the only per-source decision**:
+`--white` for a product photo on a white sweep, `--warm` for a red banner (Angron's datasheet
+card), the default for a cool teal one (Farsight's). Four things it learned the hard way:
+
+- **A colour key alone punches holes through the model**, because a shadow between two armour
+  plates is tinted exactly like the banner. The key only applies where a flood fill from the
+  crop's border can reach.
+- **On a warm card the model's own red touches the background red**, and the fill pours through
+  that neck — Angron lost his midsection to a channel a few pixels wide. `--open` erodes the mask
+  before the fill and dilates it after, which severs the neck without moving the real edges.
+- **Battle smoke is grey and so is white armour**, so nothing separates them by colour. The
+  smoke fades into the banner, though, so the fill walks into it where saturated armour stops it.
+- **A source that arrives already cut out beats any key of ours**, so its alpha is used as-is.
+  Three of the Custodes came that way. **A product photo can be an opaque white sweep inside a
+  transparent margin**, though. Then every border
+  pixel is transparent black, a brightness key seeds on none of them, and the whole sweep
+  survives. The alpha channel is trusted only when the border ring is mostly transparent, and
+  what is already transparent counts as background either way.
+
+`--top=F` keeps the top F of the model's height, measured after the key. A full-length product
+shot at F=0.4 lands around 2:1, which sits beside the PDF's ~3:1 band cut-outs; at 0.58 it is
+nearer square and reads small on the card.
+
+Photos are not prefetched for offline use the way faction modules are — a table with no wifi
+shows text-only cards for any photo the browser has not already cached.
 
 **`Datacard` is deliberately not part of `Operative`.** A roster rides in every relay snapshot and
 every localStorage save, and this is reference text nobody edits — putting it on the operative
