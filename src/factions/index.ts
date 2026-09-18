@@ -43,6 +43,7 @@ export const FACTIONS: FactionMeta[] = [
   { id: 'farsight', name: 'Commander Farsight (Small Nemesis)', archetypes: ['Seek & Destroy'], color: '#b8621a', custom: true },
   // Homebrew kill team from KTDash. See the header of src/factions/companions.ts.
   { id: 'companions', name: 'Companions of the Emperor', archetypes: ['Seek & Destroy', 'Security'], color: '#c8a03c', custom: true },
+  { id: 'relic-seekers', name: "Nocturne's Relic Seekers", archetypes: ['Seek & Destroy', 'Recon'], color: '#1c6b3a', custom: true },
   { id: 'aod', name: "Angels of Death", archetypes: ['Security', 'Seek & Destroy'], color: '#0066a5', preset: true },
   { id: 'battleclade', name: "Battleclade", archetypes: ['Infiltration', 'Recon'], color: '#5a5a7a' },
   { id: 'blades-of-khaine', name: "Blades of Khaine", archetypes: ['Seek & Destroy', 'Security', 'Infiltration', 'Recon'], color: '#5a5a7a' },
@@ -108,6 +109,7 @@ const CHUNKS: Record<string, () => Promise<FactionData>> = {
   angron: () => import('./angron'),
   companions: () => import('./companions'),
   farsight: () => import('./farsight'),
+  'relic-seekers': () => import('./relic-seekers'),
   'battleclade': () => import('./battleclade'),
   'blades-of-khaine': () => import('./blades-of-khaine'),
   'blooded': () => import('./blooded'),

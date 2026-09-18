@@ -1087,7 +1087,16 @@ exactly the printed 2024 shape: 1 faction rule, 4 strategy, 4 firefight, 4 equip
 `src/factions/nemesis.ts` holds the shared core-rules card so the two bosses cannot drift apart.
 It exports no `cards`/`operatives`, so the faction loader never sees it.
 
-**All three hand-written factions export `datacards`**, in the same shape the extractor emits, so
+**Nocturne's Relic Seekers** (`relic-seekers.ts`) is the fourth — a homebrew Salamanders team from
+the same KTDash API (`HBR-XRqxC-1`). It hit the same three traps `companions.ts` did and the header
+records them: 13 of its 17 equipment entries are the universal deck; `Astartes` and *Close-range
+Eradication* are repeated on all nine operatives rather than flagged `isFactionRule`, so they are
+faction cards here and off the datacards; and KTDash abbreviates weapon rules (`Rng 8", Sat, Tor 2"`,
+`PrcCrit1`), which have to be expanded to the glossary's own names or `weaponRules` resolves none of
+them. Unlike the Custodes it takes no `acts`/`kv` — nothing in its rules doubles activations or kill
+value — and no `DEFAULT_ROSTER`, because its composition offers choices.
+
+**All four hand-written factions export `datacards`**, in the same shape the extractor emits, so
 the player's Ops deck shows them like everyone else. For the bosses each trait is declared once in
 the module and spread into both the Rules card and the datacard — the same anti-drift reason
 `nemesis.ts` exists.
@@ -1095,8 +1104,8 @@ the module and spread into both the Rules card and the datacard — the same ant
 **The completeness guard for this is deliberately NOT scoped to `custom`.** The 4/4/4 card-format
 guard is, because homebrew is not bound by the printed layout — but every operative needs its own
 weapons and rules whoever wrote it, and scoping that check is exactly what let all three
-hand-written factions ship with no datacards while the other 48 had them. 51 factions, 461
-operatives, 1217 weapons, 476 abilities, 159 unique actions, and a test that fails on any gap.
+hand-written factions ship with no datacards while the other 48 had them. 52 factions, 470
+operatives, 1259 weapons, 486 abilities, 160 unique actions, and a test that fails on any gap.
 
 **`Operative.lockOrder` is how an order becomes a stat rather than a call.** Every NEMESIS
 operative has **Towering Size** — *"in the Firefight phase, whenever you determine this operative's
