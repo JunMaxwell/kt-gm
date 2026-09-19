@@ -56,8 +56,13 @@ function PrintDatacard({ o, card }: { o: Operative; card?: Datacard }) {
 
   return (
     <article className="break-inside-avoid border border-card/30 bg-stone">
-      <div className="kt-band flex items-stretch">
-        <div className="flex min-w-0 flex-1 flex-col justify-end px-3 pt-2 pb-3">
+      {/* `flex-wrap` plus a floor under the name, NOT a breakpoint: the sheet is 190mm wide and a
+          phone shrinks it to ~358px, where four 13mm stat columns and the photo leave the name
+          about 30px and it spills over the photo. The stats drop to their own line instead. A
+          `sm:`/`md:` prefix could not do this — the print viewport is 718px, so it would collapse
+          on paper only, which is why the sheet carries none and a test says so. */}
+      <div className="kt-band flex flex-wrap items-stretch">
+        <div className="flex min-w-[45mm] flex-1 flex-col justify-end px-3 pt-2 pb-3">
           <h3 className="display text-xl leading-tight text-white">{o.name}</h3>
           <div className="mt-1 h-[2px] bg-flare" />
         </div>
