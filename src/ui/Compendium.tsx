@@ -307,6 +307,21 @@ function Slide({ children }: { children: React.ReactNode }) {
   )
 }
 
+/**
+ * How every card sits in its slide, and both halves matter.
+ *
+ * `min-h-full` fills the slide so the hex lattice reaches the edges the way the printed art
+ * does — that is what `flex-1` used to buy. `shrink-0` is the part that was missing: a flex
+ * item shrinks below its content by default, and `KtCard` clips what it cannot fit, so a long
+ * card was cut flush with the bottom edge AND left the slide nothing to scroll. Vulkan
+ * He'stan's card ended mid-sentence on a phone with no `more ▾` pill and no scroll at all,
+ * because from the slide's point of view nothing was overflowing.
+ *
+ * `KtCard` carried `min-h-fit` against this before. `min-height: fit-content` is an intrinsic
+ * keyword a browser may drop; `flex-shrink: 0` is not.
+ */
+const SLIDE_CARD = 'min-h-full shrink-0'
+
 /** One item in the bottom bar. `now` is whatever the current phase unlocks. */
 type Deck = 'now' | 'ops' | 'strategy' | 'firefight' | 'equipment' | 'faction' | 'tac'
 
@@ -381,7 +396,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
           st={game.ops[o.id]}
           card={datacardOf(faction, o.name)}
           kicker={team?.name ?? ''}
-          className="flex-1"
+          className={SLIDE_CARD}
         />
       ))
     : live === 'tac'
@@ -389,7 +404,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
           <TacOpCard
             key={t.name}
             op={t}
-            className="flex-1"
+            className={SLIDE_CARD}
             badge={t.name === team?.tacOp ? <span className="text-white">Yours</span> : undefined}
           />
         ))
@@ -400,7 +415,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
               kicker={team?.name ?? ''}
               cp={team?.cp ?? 0}
               live={live === 'now'}
-              className="flex-1"
+              className={SLIDE_CARD}
             />
         ))
 

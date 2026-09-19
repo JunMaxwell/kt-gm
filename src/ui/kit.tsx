@@ -193,17 +193,17 @@ export function KtCard({
 }) {
   return (
     <div
-      // `min-h-fit` is load-bearing: the carousel gives every card `flex-1` inside a fixed-height
-      // slide, and a flex item will happily shrink below its content. With `overflow-hidden` on
-      // this card that silently CLIPS a long one, and the slide is then left with nothing to
-      // scroll — so the bottom is unreachable, not merely awkward.
+      // No `min-height` here, deliberately. A flex item will happily shrink below its content,
+      // and with `overflow-hidden` on this card that silently CLIPS a long one — the slide is
+      // then left with NOTHING to scroll, so the bottom is unreachable rather than awkward, and
+      // even the `more ▾` pill stays away because the card never overflows anything.
       //
-      // Re-measured at 430x780 with the Custodes deck, all three ways: with no `min-height` two
-      // cards are clipped and the slide scrolls 0px; `min-h-fit` and `min-h-max` are byte
-      // identical, 0 clipped and 163px of scroll. `fit-content` does NOT clamp to the available
-      // space here, so there is nothing to fix — measure the CARD, never the slide, because a
-      // clamped card makes the slide report no overflow at all.
-      className={`flex min-h-fit min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
+      // This used to be defended with `min-h-fit`. That is `min-height: fit-content`, an
+      // intrinsic-sizing keyword a browser may simply drop — and one did, on a phone, where
+      // Vulkan He'stan's card was cut mid-sentence with no pill and no scroll. The caller now
+      // passes `shrink-0` instead, which is plain flexbox and cannot be dropped. Measure the
+      // CARD, never the slide: a clamped card makes the slide report no overflow at all.
+      className={`flex min-w-0 flex-col overflow-hidden border bg-stone shadow-sm ${dim ? 'opacity-45' : ''} ${className}`}
       style={{ borderColor: outline ?? '#2a2a2a' }}
     >
       {/* The photo is a flex sibling, not absolutely placed, so the kicker and title centre in
