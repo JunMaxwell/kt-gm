@@ -23,6 +23,8 @@ export function TurnBar({
   net,
   canUndo,
   onGlossary,
+  reveal,
+  setReveal,
 }: {
   game: Game
   dispatch: Dispatch
@@ -31,6 +33,8 @@ export function TurnBar({
   net: Net
   canUndo: boolean
   onGlossary: () => void
+  reveal: boolean
+  setReveal: (v: boolean) => void
 }) {
   const critOp = CRIT_OPS.find((c) => c.id === game.critOp)
 
@@ -160,6 +164,14 @@ export function TurnBar({
             title="House rule: each side activates two operatives from two different players, then hands over. Off = the official one-at-a-time alternation."
           >
             {game.paired ? 'Paired' : 'Single'}
+          </DarkBtn>
+          <DarkBtn
+            on={reveal}
+            onClick={() => setReveal(!reveal)}
+            className="display"
+            title="Tac ops are secret, and this screen faces the table. Hidden keeps every team's op off the console; Reveal shows them."
+          >
+            {reveal ? 'Tac ops shown' : 'Tac ops hidden'}
           </DarkBtn>
           <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
             {editing ? 'Done editing' : 'Edit rosters'}

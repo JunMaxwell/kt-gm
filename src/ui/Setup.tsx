@@ -305,7 +305,7 @@ function Teams({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
         </p>
         <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           {teams.map((t) => (
-            <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing />
+            <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing reveal />
           ))}
         </div>
         {!teams.length && <p className="text-xs text-ink/40">No teams yet — add one above.</p>}

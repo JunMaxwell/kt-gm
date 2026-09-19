@@ -6,7 +6,7 @@ import { Btn, KtCard, TeamPill } from './kit'
 import { type Game } from './shared'
 import { TacOpCard } from './TacOpCard'
 
-export function OpsBrowser({ game }: { game: Game }) {
+export function OpsBrowser({ game, reveal }: { game: Game; reveal: boolean }) {
   const [arch, setArch] = useState<Archetype | 'all'>('all')
   const [q, setQ] = useState('')
   const needle = q.trim().toLowerCase()
@@ -17,7 +17,8 @@ export function OpsBrowser({ game }: { game: Game }) {
   )
   const teams = allTeams(game)
   const withArch = (a: Archetype) => teamsWithArchetype(teams, a)
-  const taken = new Map(teams.filter((t) => t.tacOp).map((t) => [t.tacOp, t]))
+  // Who took what is the secret; the cards themselves are public. Empty until Reveal.
+  const taken = new Map(reveal ? teams.filter((t) => t.tacOp).map((t) => [t.tacOp, t]) : [])
 
   return (
     <div className="p-3">

@@ -134,11 +134,14 @@ export function TeamCard({
   game,
   dispatch,
   editing,
+  reveal,
 }: {
   teamId: string
   game: Game
   dispatch: Dispatch
   editing: boolean
+  /** Secret tac ops are hidden until the GM taps Reveal — see `Console`. */
+  reveal: boolean
 }) {
   // The team is the play state now — one object, not a preset plus a row beside it.
   const team = game.teams[teamId]
@@ -263,25 +266,33 @@ export function TeamCard({
         </div>
       )}
 
-      <select
-        value={p.tacOp}
-        onChange={(e) => dispatch({ type: 'tacOp', teamId, value: e.target.value })}
-        className="mt-2 w-full min-w-0 rounded border border-rule bg-white px-2 py-1 text-sm"
-      >
-        <option value="">— secret tac op —</option>
-        {team.archetypes.map((arch) => (
-          <optgroup key={arch} label={arch}>
-            {teamTacOps(team.archetypes)
-              .filter((t) => t.archetype === arch)
-              .map((t) => (
-                <option key={t.name} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-      {selectedTacOp && <TacOpCard op={selectedTacOp} className="mt-2" />}
+      {reveal ? (
+        <>
+          <select
+            value={p.tacOp}
+            onChange={(e) => dispatch({ type: 'tacOp', teamId, value: e.target.value })}
+            className="mt-2 w-full min-w-0 rounded border border-rule bg-white px-2 py-1 text-sm"
+          >
+            <option value="">— secret tac op —</option>
+            {team.archetypes.map((arch) => (
+              <optgroup key={arch} label={arch}>
+                {teamTacOps(team.archetypes)
+                  .filter((t) => t.archetype === arch)
+                  .map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+          {selectedTacOp && <TacOpCard op={selectedTacOp} className="mt-2" />}
+        </>
+      ) : (
+        <p className="mt-2 border border-dashed border-rule px-2 py-1 text-center text-xs text-ink/40">
+          Tac op hidden
+        </p>
+      )}
 
       <ul className={`mt-2 ${editing ? 'space-y-1.5' : 'space-y-0.5'}`}>
         {ops.map((o) =>

@@ -23,11 +23,11 @@ const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, 
 
 const panels = (g: ReturnType<typeof initialGame>) =>
   [
-    R(<TurnBar game={g} dispatch={noop} editing={false} setEditing={noop} net={net} canUndo onGlossary={noop} />),
+    R(<TurnBar game={g} dispatch={noop} editing={false} setEditing={noop} net={net} canUndo onGlossary={noop} reveal setReveal={noop} />),
     R(<Scoreboard game={g} dispatch={noop} />),
     R(<Objectives game={g} dispatch={noop} />),
     R(<ActivationOrder game={g} dispatch={noop} />),
-    R(<OpsBrowser game={g} />),
+    R(<OpsBrowser game={g} reveal />),
     R(<CompendiumBrowser game={g} />),
     // Once per wizard step: each one renders a different panel set, and `initialGame()` is
     // stage `play`, so a single render would only ever exercise the clamped fallback.
@@ -38,8 +38,8 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
     R(<TeamPicker game={g} me="" onPick={noop} />),
     R(<TeamPicker game={g} me={allTeams(g)[0]?.id ?? ''} code="ABCD" onPick={noop} onClose={noop} />),
-    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} />)),
-    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing />)),
+    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} reveal={false} />)),
+    ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing reveal />)),
     ...allTeams(g).map((t) => R(<Compendium game={g} teamId={t.id} />)),
   ].join('')
 
@@ -170,9 +170,19 @@ test('an operative with no datacard still renders its stats', () => {
 test('a boss operative renders in the roster editor with its kill value', () => {
   const boss = { ...blankOperative('rav'), name: 'Angron', w: 45, kv: 8 }
   const g = reduce(initialGame(), { type: 'addOp', teamId: 'rav', op: boss })
-  const html = R(<TeamCard teamId="rav" game={g} dispatch={noop} editing />)
+  const html = R(<TeamCard teamId="rav" game={g} dispatch={noop} editing reveal />)
   expect(html).toContain('Angron')
   expect(html).toContain('45')
+})
+
+test('a secret tac op stays off the console until Reveal', () => {
+  const g = reduce(initialGame(), { type: 'tacOp', teamId: 'dw', value: 'Rout' })
+  expect(R(<TeamCard teamId="dw" game={g} dispatch={noop} editing={false} reveal={false} />)).not.toContain('Rout')
+  expect(R(<TeamCard teamId="dw" game={g} dispatch={noop} editing={false} reveal />)).toContain('Rout')
+  // The ops browser leaks it the other way round: the cards and who MAY take them are public,
+  // who did is not — that is the owner pill and the ring it rides on.
+  expect(R(<OpsBrowser game={g} reveal={false} />)).not.toContain('ring-2 ring-ink')
+  expect(R(<OpsBrowser game={g} reveal />)).toContain('ring-2 ring-ink')
 })
 
 test('the team picker lists every team under its own alliance', () => {

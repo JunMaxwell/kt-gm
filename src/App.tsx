@@ -121,7 +121,7 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
  * order and the cheat sheet used to sit under `<main>` as separate `<details>`, so reaching
  * any of them meant scrolling past every roster. One panel, one tab row, closed by default.
  */
-function Reference({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
+function Reference({ game, dispatch, reveal }: { game: Game; dispatch: Dispatch; reveal: boolean }) {
   const [tab, setTab] = useState<'ops' | 'cards' | 'order' | 'cheat' | null>(null)
   const tabs = [
     ['ops', 'Crit & tac ops'],
@@ -148,7 +148,7 @@ function Reference({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
           </button>
         )}
       </nav>
-      {tab === 'ops' && <OpsBrowser game={game} />}
+      {tab === 'ops' && <OpsBrowser game={game} reveal={reveal} />}
       {tab === 'cards' && <CompendiumBrowser game={game} />}
       {tab === 'order' && <ActivationOrder game={game} dispatch={dispatch} />}
       {tab === 'cheat' && (
@@ -221,6 +221,11 @@ function Console({
   canUndo: boolean
   onGlossary: () => void
 }) {
+  // A tac op is secret, and the GM's screen is the one everyone at the table can see. Hidden
+  // by default, revealed with one button. Device state, never `Game`: the relay would ship a
+  // reveal to all seven phones, and the players already see their own op on theirs.
+  const [reveal, setReveal] = useState(false)
+
   return (
     <div className="min-h-screen">
       <TurnBar
@@ -231,6 +236,8 @@ function Console({
         net={net}
         canUndo={canUndo}
         onGlossary={onGlossary}
+        reveal={reveal}
+        setReveal={setReveal}
       />
 
       {/*
@@ -261,13 +268,13 @@ function Console({
               {side.id === game.sideTurn && <span className="text-ink/45"> · activating</span>}
             </p>
             {teamsOf(game, side.id).map((t) => (
-              <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} />
+              <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing={editing} reveal={reveal} />
             ))}
           </div>
         ))}
       </main>
 
-      <Reference game={game} dispatch={dispatch} />
+      <Reference game={game} dispatch={dispatch} reveal={reveal} />
 
       <footer className="mx-4 mb-8 text-center text-xs leading-relaxed text-ink/45">
         Card styling after the official Kill Team rules cards; side and archetype colours after{' '}

@@ -1567,6 +1567,17 @@ alliance**, then a single reference drawer. Three things carry the density:
   here** — the collapsed team strips already show ready/gone per team grouped by alliance, so the
   panel's remaining job is its reorder controls.
 
+- **Tac ops are hidden on the console until the GM taps *Tac ops hidden/shown*.** The GM's
+  screen faces the table, and a tac op is secret. `reveal` is one `useState` in `Console`,
+  drilled to `TurnBar`, `TeamCard` and `OpsBrowser` — **device state, never `Game`**, for the
+  same reason `killteam-gm/me` is: the relay would broadcast one GM's peek to all seven phones,
+  which is where the players read their own op anyway. Default is hidden on every load; nothing
+  persists it. Hiding covers the two always-visible leaks — the team card's select plus its
+  `TacOpCard`, and the ops browser's owner pill (the eligibility pills stay, they are derived
+  from archetypes and public). `CompendiumBrowser`'s "Yours" badge is **not** covered: it is
+  three deliberate taps into a closed drawer, and `Compendium` is the player's own view.
+  `Setup` passes `reveal` outright — configuring the match is not playing it.
+
 **The `<main>` track list is a CSS variable, never an inline `grid-template-columns`.** An inline
 style cannot be gated by `xl:`, so it would force one ~110px column per alliance onto a phone —
 this file warned about exactly that, and the first cut of this layout did it anyway. One column
