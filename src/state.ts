@@ -819,7 +819,11 @@ const readRoom = (): Room | null => {
   return fromUrl
 }
 
-export const viewerUrl = (code: string) => `${location.origin}${location.pathname}#/r/${code}`
+/** The spectator link. With a team id it lands that phone straight on that team's cards, so a
+ *  new player never meets the picker — note the param goes BEFORE the hash, because
+ *  `location.search` is only what precedes it. `Viewer` reads it through `meInUrl`. */
+export const viewerUrl = (code: string, me = '') =>
+  `${location.origin}${location.pathname}${me ? `?me=${encodeURIComponent(me)}` : ''}#/r/${code}`
 export const gmUrl = (r: Room) => `${location.origin}${location.pathname}#/g/${r.code}/${r.token}`
 
 /** Throws on a non-2xx. A 401 body is valid JSON, so without this `loadSave` returns

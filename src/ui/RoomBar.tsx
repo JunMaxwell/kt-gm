@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import {
+  allTeams,
   createRoom,
   exportGame,
   gmUrl,
@@ -25,6 +26,7 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
   const [saves, setSaves] = useState<SaveMeta[]>([])
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState('')
+  const [copied, setCopied] = useState('')
 
   // Only the saves list needs fetching; the room itself lives in localStorage.
   useEffect(() => {
@@ -117,6 +119,34 @@ export function RoomBar({ game, dispatch, net }: { game: Game; dispatch: Dispatc
       <DarkBtn className="display" onClick={() => navigator.clipboard?.writeText(viewerUrl(room.code))}>
         Copy viewer link
       </DarkBtn>
+
+      {/* One link per player, which is the one the table actually wants: the bare viewer link
+          lands on the picker, and a first-time player who picks wrong reads someone else's
+          cards all evening. A select rather than a chip per team — this strip already wraps,
+          and it is the same control the saves list uses two rows down. */}
+      <select
+        defaultValue=""
+        aria-label="Copy a link that opens one player's cards"
+        onChange={(e) => {
+          const t = game.teams[e.target.value]
+          e.target.value = ''
+          if (!t) return
+          navigator.clipboard?.writeText(viewerUrl(room.code, t.id))
+          setCopied(t.name)
+        }}
+        className="rounded bg-white/15 px-2 py-1 text-sm text-white"
+      >
+        <option value="">copy a player's link…</option>
+        {allTeams(game).map((t) => (
+          <option key={t.id} value={t.id} className="text-ink">
+            {t.name}
+            {t.player && ` · ${t.player}`}
+          </option>
+        ))}
+      </select>
+      {/* Beside the control that caused it, not at the end of the strip — the same rule the
+          save readout follows, and its own state so a copy cannot overwrite a save's outcome. */}
+      {copied && <span className="text-amber-300">copied · {copied}</span>}
       {room.token && (
         <DarkBtn
           className="display"

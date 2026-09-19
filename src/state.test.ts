@@ -29,6 +29,7 @@ import {
   matchFilename,
   counteract,
   parseHash,
+  viewerUrl,
   currentTeamId,
   rotation,
   type Game,
@@ -1419,4 +1420,26 @@ test('every universal weapon rule the generated factions print has a definition'
   // Known non-rules the column also carries: the bare PSYCHIC keyword, and the extractor's
   // "no weapon rules" dash, which it sometimes leaves in rather than dropping the field.
   expect(orphans.filter((t) => !/^[-\u2010-\u2015\s]+$/.test(t) && t !== 'PSYCHIC')).toEqual([])
+})
+
+/**
+ * The one thing about a player link that is easy to break silently: the team id is a SEARCH
+ * param and so must come BEFORE the hash — `location.search` is only what precedes it, so
+ * `#/r/ABCD?me=dw2` would read back as an empty `me` and drop the player on the picker.
+ * `location` does not exist under `bun test`, hence the stub.
+ */
+test('a player link carries the team ahead of the room hash, and parses back', () => {
+  const real = (globalThis as { location?: unknown }).location
+  ;(globalThis as { location?: unknown }).location = { origin: 'https://kt.example', pathname: '/' }
+  try {
+    const url = new URL(viewerUrl('ABCD', 'dw2'))
+    expect(new URLSearchParams(url.search).get('me')).toBe('dw2')
+    expect(url.hash).toBe('#/r/ABCD')
+    // The hash still reads as a spectator room, so the link cannot hand out write access.
+    expect(parseHash(url.hash)).toEqual({ code: 'ABCD' })
+    // And without a team it is exactly the link it has always been.
+    expect(viewerUrl('ABCD')).toBe('https://kt.example/#/r/ABCD')
+  } finally {
+    ;(globalThis as { location?: unknown }).location = real
+  }
 })

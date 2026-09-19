@@ -49,28 +49,44 @@ export function usePrefetchFactions(ids: (string | undefined)[]) {
   }, [key])
 }
 
-/* ---------- the faction glossary's deep link ----------
+/* ---------- the two deep links ----------
  *
- * A SEARCH param, not a hash, and that is load-bearing. `#/r/ABCD` is the only thing that makes
+ * SEARCH params, not hashes, and that is load-bearing. `#/r/ABCD` is the only thing that makes
  * a spectator a spectator across a reload — `readRoom` deliberately never remembers a viewer
  * link — so writing `#/lib/dw` over it would quietly demote every player who opened the
- * glossary. `?team=dw` is orthogonal to the hash, the two coexist in one URL, and `readRoom`
- * already preserves `location.search` when it strips a GM token.
+ * glossary. A search param is orthogonal to the hash, the two coexist in one URL, and
+ * `readRoom` already preserves `location.search` when it strips a GM token.
+ *
+ * `?team=` is a FACTION id and opens the glossary; `?me=` is a TEAM id and picks whose cards
+ * the player's phone shows. Two params rather than one because they key different things —
+ * `dw` and `dw2` are one faction and two teams.
  */
 const TEAM = 'team'
+const ME = 'me'
 
 /** `location`/`history` do not exist under `bun test`, which renders these panels for real. */
-export const teamInUrl = () =>
-  typeof location === 'undefined' ? '' : (new URLSearchParams(location.search).get(TEAM) ?? '')
+const param = (k: string) =>
+  typeof location === 'undefined' ? '' : (new URLSearchParams(location.search).get(k) ?? '')
 
 /** Rewrite the address bar in place, so the link is copyable and a reload lands back here. */
-export const setTeamInUrl = (id: string) => {
+const setParam = (k: string, id: string) => {
   if (typeof history === 'undefined') return
   const url = new URL(location.href)
-  if (id) url.searchParams.set(TEAM, id)
-  else url.searchParams.delete(TEAM)
+  if (id) url.searchParams.set(k, id)
+  else url.searchParams.delete(k)
   history.replaceState(null, '', url)
 }
 
+export const teamInUrl = () => param(TEAM)
+export const setTeamInUrl = (id: string) => setParam(TEAM, id)
+
 /** The link to hand a player. Drops any room hash — this is reference, not a match. */
 export const teamUrl = (id: string) => `${location.origin}${location.pathname}?${TEAM}=${id}`
+
+/**
+ * Which team this phone is playing, when the GM sent a link that says so. The param WINS over
+ * the stored pick on arrival, and tapping "Change" rewrites it — otherwise a reload would drag
+ * the player back to the team the link named, silently undoing the pick they just made.
+ */
+export const meInUrl = () => param(ME)
+export const setMeInUrl = (id: string) => setParam(ME, id)

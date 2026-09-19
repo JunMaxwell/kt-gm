@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { CHEAT_SHEET } from './rules'
 import { phaseMeta } from './compendium'
 import { allTeams, scores, teamsOf, useGame } from './state'
-import { type Dispatch, type Game, type Net, teamInUrl, usePrefetchFactions } from './ui/shared'
+import { type Dispatch, type Game, type Net, meInUrl, setMeInUrl, teamInUrl, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
 import { EndScreen } from './ui/EndScreen'
@@ -31,7 +31,11 @@ const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part
  */
 function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: () => void }) {
   const teams = allTeams(game)
-  const [saved, setSaved] = useState(() => localStorage.getItem(ME_KEY) ?? '')
+  // `?me=dw2` beside the room hash is the link a GM sends one player: it opens on their own
+  // cards instead of the picker, which is the difference between "here is the room" and "here
+  // is your kill team". It wins over the stored pick, and `pick` rewrites it so tapping
+  // "Change" is not undone by the next reload.
+  const [saved, setSaved] = useState(() => meInUrl() || (localStorage.getItem(ME_KEY) ?? ''))
   const [picking, setPicking] = useState(false)
   // Checked every render: the GM can delete a team in setup, and the relay will ship that
   // snapshot straight to this phone. A stale pick falls back to NOTHING, not to the first team —
@@ -42,6 +46,7 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
   const pick = (id: string) => {
     setSaved(id)
     localStorage.setItem(ME_KEY, id)
+    setMeInUrl(id)
     setPicking(false)
   }
 
