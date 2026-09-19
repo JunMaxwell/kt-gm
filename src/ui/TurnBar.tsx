@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { CRIT_OPS, type CritOpId } from '../rules'
 import type { Stage } from '../state'
 import { phaseMeta, PHASES } from '../compendium'
@@ -36,193 +38,210 @@ export function TurnBar({
   reveal: boolean
   setReveal: (v: boolean) => void
 }) {
+  // The board is the point on a phone, not the dials. Under `md` the header keeps only
+  // whose activation it is and folds the rest away; `md:contents` below hands every
+  // control back to the same flex row on a laptop, so the desktop layout is untouched.
+  const [open, setOpen] = useState(false)
+  const fold = open ? '' : 'hidden'
+
   const critOp = CRIT_OPS.find((c) => c.id === game.critOp)
 
   return (
-    <header className="sticky top-0 z-10 bg-card px-4 py-3 text-white shadow-lg">
+    <header className="sticky top-0 z-10 max-h-[85dvh] overflow-y-auto bg-card px-4 py-3 text-white shadow-lg md:max-h-none md:overflow-y-visible">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <h1 className="display mr-2 text-2xl">Kill Team GM</h1>
+        {/* Collapsed under `md`: a phone shows the turn, not 25 dials. */}
+        <DarkBtn onClick={() => setOpen(!open)} aria-expanded={open} className="display md:hidden">
+          {open ? '✕ Close' : '⋯ Controls'}
+        </DarkBtn>
+        {/* Read-only: the two numbers the GM needs without opening anything. */}
+        <span className="display text-xs text-white/50 md:hidden">
+          TP {game.tp}/{game.tpCount} · {phaseMeta(game.phase).label}
+        </span>
 
-        <div className="flex items-center gap-2">
-          <span className="display text-xs text-white/50">Turning point</span>
-          {Array.from({ length: game.tpCount }, (_, i) => (
-            <button
-              key={i}
-              onClick={() => dispatch({ type: 'setTp', value: i + 1 })}
-              title={`Jump to turning point ${i + 1} (does not ready operatives or pay CP)`}
-              className={`display grid h-7 w-7 place-items-center rounded text-lg ${
-                game.tp === i + 1 ? 'bg-white text-ink' : 'bg-white/12 text-white/60 hover:bg-white/25'
-              }`}
-            >
-              {i + 1}
-            </button>
-          ))}
-          <span className="inline-flex items-center gap-1">
-            <DarkBtn onClick={() => dispatch({ type: 'tpCount', value: game.tpCount - 1 })} className="w-7">
-              –
-            </DarkBtn>
-            <DarkBtn onClick={() => dispatch({ type: 'tpCount', value: game.tpCount + 1 })} className="w-7">
-              +
-            </DarkBtn>
-          </span>
-        </div>
+        <div className={`${open ? 'contents' : 'hidden'} md:contents`}>
+          <h1 className="display mr-2 text-2xl">Kill Team GM</h1>
 
-        {/* The question five of seven players cannot answer for themselves. Every spectator's
-            phone reads this off the same snapshot. */}
-        <div className="flex items-center gap-2">
-          <span className="display text-xs text-white/50">Phase</span>
-          {PHASES.map((ph) => (
-            <button
-              key={ph.id}
-              onClick={() => dispatch({ type: 'phase', value: ph.id })}
-              title={ph.hint}
-              className={`display rounded px-2 py-1 text-sm ${
-                game.phase === ph.id ? 'bg-amber-400 text-ink' : 'bg-white/12 text-white/60 hover:bg-white/25'
-              }`}
-            >
-              {ph.label}
-            </button>
-          ))}
-        </div>
-
-        <label
-          className="display flex items-center gap-1 text-xs text-white/50"
-          title="Max VP per op type. Official is 6 over four turning points — raise it if you add turning points, or the extra ones cannot score."
-        >
-          VP cap
-          <BufferedInput
-            dark
-            className="w-10"
-            inputMode="numeric"
-            aria-label="Max VP per op type"
-            value={String(game.opCap)}
-            onEdit={onInt((value) => dispatch({ type: 'opCap', value }))}
-          />
-        </label>
-        <label
-          className="display flex items-center gap-1 text-xs text-white/50"
-          title="Max crit op VP per turning point. The cards cap this at 2; this homebrew defaults to 3."
-        >
-          crit/TP
-          <BufferedInput
-            dark
-            className="w-10"
-            inputMode="numeric"
-            aria-label="Max crit op VP per turning point"
-            value={String(game.critCap)}
-            onEdit={onInt((value) => dispatch({ type: 'critCap', value }))}
-          />
-        </label>
-
-        <div className="flex items-center gap-2">
-          <span className="display text-xs text-white/50">Initiative</span>
-          {game.sides.map(({ id: s, name, color }) => (
-            <button
-              key={s}
-              onClick={() => dispatch({ type: 'initiative', side: s })}
-              className="display rounded px-2 py-1 text-sm"
-              style={
-                game.initiative === s
-                  ? { background: color, color: '#fff' }
-                  : { background: 'rgba(255,255,255,.12)', color: 'rgba(255,255,255,.6)' }
-              }
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-
-        <label className="flex items-center gap-2">
-          <span className="display text-xs text-white/50">Crit op</span>
-          <select
-            value={game.critOp ?? ''}
-            onChange={(e) => dispatch({ type: 'critOp', id: e.target.value as CritOpId })}
-            className="rounded bg-white/15 px-2 py-1 text-sm text-white"
-          >
-            <option value="">— roll D9 or agree —</option>
-            {CRIT_OPS.map((c) => (
-              <option key={c.id} value={c.id} className="text-ink">
-                {c.n}. {c.name}
-              </option>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="display text-xs text-white/50">Turning point</span>
+            {Array.from({ length: game.tpCount }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => dispatch({ type: 'setTp', value: i + 1 })}
+                title={`Jump to turning point ${i + 1} (does not ready operatives or pay CP)`}
+                className={`display grid h-7 w-7 place-items-center rounded text-lg ${
+                  game.tp === i + 1 ? 'bg-white text-ink' : 'bg-white/12 text-white/60 hover:bg-white/25'
+                }`}
+              >
+                {i + 1}
+              </button>
             ))}
-          </select>
-        </label>
+            <span className="inline-flex items-center gap-1">
+              <DarkBtn onClick={() => dispatch({ type: 'tpCount', value: game.tpCount - 1 })} className="w-7">
+                –
+              </DarkBtn>
+              <DarkBtn onClick={() => dispatch({ type: 'tpCount', value: game.tpCount + 1 })} className="w-7">
+                +
+              </DarkBtn>
+            </span>
+          </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <DarkBtn
-            onClick={() => dispatch({ type: 'undo' })}
-            disabled={!canUndo}
-            className="display disabled:opacity-30"
-            title="Undo the last change (Ctrl/Cmd+Z). Fifty steps, this session only."
+          {/* The question five of seven players cannot answer for themselves. Every spectator's
+              phone reads this off the same snapshot. */}
+          <div className="flex items-center gap-2">
+            <span className="display text-xs text-white/50">Phase</span>
+            {PHASES.map((ph) => (
+              <button
+                key={ph.id}
+                onClick={() => dispatch({ type: 'phase', value: ph.id })}
+                title={ph.hint}
+                className={`display rounded px-2 py-1 text-sm ${
+                  game.phase === ph.id ? 'bg-amber-400 text-ink' : 'bg-white/12 text-white/60 hover:bg-white/25'
+                }`}
+              >
+                {ph.label}
+              </button>
+            ))}
+          </div>
+
+          <label
+            className="display flex items-center gap-1 text-xs text-white/50"
+            title="Max VP per op type. Official is 6 over four turning points — raise it if you add turning points, or the extra ones cannot score."
           >
-            ↶ Undo
-          </DarkBtn>
-          <DarkBtn
-            on={game.paired}
-            onClick={() => dispatch({ type: 'paired', value: !game.paired })}
-            className="display"
-            title="House rule: each side activates two operatives from two different players, then hands over. Off = the official one-at-a-time alternation."
+            VP cap
+            <BufferedInput
+              dark
+              className="w-10"
+              inputMode="numeric"
+              aria-label="Max VP per op type"
+              value={String(game.opCap)}
+              onEdit={onInt((value) => dispatch({ type: 'opCap', value }))}
+            />
+          </label>
+          <label
+            className="display flex items-center gap-1 text-xs text-white/50"
+            title="Max crit op VP per turning point. The cards cap this at 2; this homebrew defaults to 3."
           >
-            {game.paired ? 'Paired' : 'Single'}
-          </DarkBtn>
-          <DarkBtn
-            on={reveal}
-            onClick={() => setReveal(!reveal)}
-            className="display"
-            title="Tac ops are secret, and this screen faces the table. Hidden keeps every team's op off the console; Reveal shows them."
-          >
-            {reveal ? 'Tac ops shown' : 'Tac ops hidden'}
-          </DarkBtn>
-          <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
-            {editing ? 'Done editing' : 'Edit rosters'}
-          </DarkBtn>
-          {/* The escape hatch. Late players arrive and teams get cut, so every wizard step
-              stays one tap away mid-match — each one returns here on its own. */}
-          <label className="display flex items-center gap-1 text-xs text-white/50">
-            Setup
+            crit/TP
+            <BufferedInput
+              dark
+              className="w-10"
+              inputMode="numeric"
+              aria-label="Max crit op VP per turning point"
+              value={String(game.critCap)}
+              onEdit={onInt((value) => dispatch({ type: 'critCap', value }))}
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="display text-xs text-white/50">Initiative</span>
+            {game.sides.map(({ id: s, name, color }) => (
+              <button
+                key={s}
+                onClick={() => dispatch({ type: 'initiative', side: s })}
+                className="display rounded px-2 py-1 text-sm"
+                style={
+                  game.initiative === s
+                    ? { background: color, color: '#fff' }
+                    : { background: 'rgba(255,255,255,.12)', color: 'rgba(255,255,255,.6)' }
+                }
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-2">
+            <span className="display text-xs text-white/50">Crit op</span>
             <select
-              value=""
-              aria-label="Jump to a setup step"
-              onChange={(e) => e.target.value && dispatch({ type: 'stage', value: e.target.value as Stage })}
+              value={game.critOp ?? ''}
+              onChange={(e) => dispatch({ type: 'critOp', id: e.target.value as CritOpId })}
               className="rounded bg-white/15 px-2 py-1 text-sm text-white"
             >
-              <option value="">— step —</option>
-              {STEPS.map((s, i) => (
-                <option key={s} value={s} className="text-ink">
-                  {i + 1}. {STEP_LABEL[s]}
+              <option value="">— roll D9 or agree —</option>
+              {CRIT_OPS.map((c) => (
+                <option key={c.id} value={c.id} className="text-ink">
+                  {c.n}. {c.name}
                 </option>
               ))}
             </select>
           </label>
-          <DarkBtn onClick={() => dispatch({ type: 'nextTp' })} className="display">
-            Next TP · ready all + CP
-          </DarkBtn>
-          <DarkBtn on={game.finished} onClick={() => dispatch({ type: 'finish', finished: !game.finished })} className="display">
-            End battle
-          </DarkBtn>
-          <DarkBtn
-            onClick={() => dispatch({ type: 'stage', value: 'rooms' })}
-            className="display"
-            title="Rooms and saved games — start another match, or reopen one"
-          >
-            Games
-          </DarkBtn>
-          <DarkBtn
-            onClick={onGlossary}
-            className="display"
-            title="Every kill team's cards and datacards, laid out to print"
-          >
-            Glossary
-          </DarkBtn>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <DarkBtn
+              onClick={() => dispatch({ type: 'undo' })}
+              disabled={!canUndo}
+              className="display disabled:opacity-30"
+              title="Undo the last change (Ctrl/Cmd+Z). Fifty steps, this session only."
+            >
+              ↶ Undo
+            </DarkBtn>
+            <DarkBtn
+              on={game.paired}
+              onClick={() => dispatch({ type: 'paired', value: !game.paired })}
+              className="display"
+              title="House rule: each side activates two operatives from two different players, then hands over. Off = the official one-at-a-time alternation."
+            >
+              {game.paired ? 'Paired' : 'Single'}
+            </DarkBtn>
+            <DarkBtn
+              on={reveal}
+              onClick={() => setReveal(!reveal)}
+              className="display"
+              title="Tac ops are secret, and this screen faces the table. Hidden keeps every team's op off the console; Reveal shows them."
+            >
+              {reveal ? 'Tac ops shown' : 'Tac ops hidden'}
+            </DarkBtn>
+            <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
+              {editing ? 'Done editing' : 'Edit rosters'}
+            </DarkBtn>
+            {/* The escape hatch. Late players arrive and teams get cut, so every wizard step
+                stays one tap away mid-match — each one returns here on its own. */}
+            <label className="display flex items-center gap-1 text-xs text-white/50">
+              Setup
+              <select
+                value=""
+                aria-label="Jump to a setup step"
+                onChange={(e) => e.target.value && dispatch({ type: 'stage', value: e.target.value as Stage })}
+                className="rounded bg-white/15 px-2 py-1 text-sm text-white"
+              >
+                <option value="">— step —</option>
+                {STEPS.map((s, i) => (
+                  <option key={s} value={s} className="text-ink">
+                    {i + 1}. {STEP_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <DarkBtn onClick={() => dispatch({ type: 'nextTp' })} className="display">
+              Next TP · ready all + CP
+            </DarkBtn>
+            <DarkBtn on={game.finished} onClick={() => dispatch({ type: 'finish', finished: !game.finished })} className="display">
+              End battle
+            </DarkBtn>
+            <DarkBtn
+              onClick={() => dispatch({ type: 'stage', value: 'rooms' })}
+              className="display"
+              title="Rooms and saved games — start another match, or reopen one"
+            >
+              Games
+            </DarkBtn>
+            <DarkBtn
+              onClick={onGlossary}
+              className="display"
+              title="Every kill team's cards and datacards, laid out to print"
+            >
+              Glossary
+            </DarkBtn>
+          </div>
         </div>
       </div>
 
-      <p className="mt-2 text-xs text-white/60">
+      <p className={`${fold} md:block mt-2 text-xs text-white/60`}>
         <b className="text-amber-300">{phaseMeta(game.phase).label} phase</b> · {phaseMeta(game.phase).hint}
       </p>
 
       {critOp && (
-        <p className="mt-2 text-xs text-white/60">
+        <p className={`${fold} md:block mt-2 text-xs text-white/60`}>
           <b className="text-white">{critOp.name}</b> · {critOp.action} · {critOp.vp.join(' ')}{' '}
           <span className="text-amber-300">No crit VP in TP1.</span>
         </p>
@@ -232,7 +251,10 @@ export function TurnBar({
         {game.paired ? <PairedTurn game={game} dispatch={dispatch} /> : <SingleTurn game={game} dispatch={dispatch} />}
       </div>
 
-      {!net.viewer && <RoomBar game={game} dispatch={dispatch} net={net} />}
+      {/* Share/save/export: never needed mid-activation, so it folds away with the rest. */}
+      <div className={`${fold} md:block`}>
+        {!net.viewer && <RoomBar game={game} dispatch={dispatch} net={net} />}
+      </div>
     </header>
   )
 }

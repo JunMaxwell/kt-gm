@@ -1578,6 +1578,43 @@ alliance**, then a single reference drawer. Three things carry the density:
   three deliberate taps into a closed drawer, and `Compendium` is the player's own view.
   `Setup` passes `reveal` outright — configuring the match is not playing it.
 
+### The header folds on a phone
+
+`TurnBar` is `sticky top-0` and had **no responsive prefix anywhere** — nor does `RoomBar`,
+which renders inside it. Measured at 390x844 with a room open and a crit op picked, the header
+was **570px, 67% of the screen**, and since a sticky element taller than the viewport can never
+be scrolled to its own bottom, "Save match" was not merely in the way but *unreachable*. The
+board panels were always fine — `scrollWidth === innerWidth` at 390 before and after.
+
+Under `md` the header now keeps **only the turn block** — who is activating, `done/target`, the
+"pick two" pills, Pass, and the counteract banners — plus a `⋯ Controls` toggle and a read-only
+`TP 1/4 · FIREFIGHT` chip. Everything else folds away. **112px, 13%.** Four things carry it:
+
+- **The fold is `display:contents`, not a second layout.** One wrapper holds the row's existing
+  children with `` `${open ? 'contents' : 'hidden'} md:contents` ``. At `md` the wrapper's box
+  vanishes and its children go back to being direct flex items of the same
+  `flex flex-wrap gap-x-6` row — so `ml-auto` on the action cluster still right-aligns and the
+  desktop header measures **203px before and after, byte for byte the same layout**. Verified,
+  not assumed: that equality is the whole reason for the mechanism, and `max-md:hidden` on each
+  of the seven groups was rejected because it needs the `open` ternary repeated seven times.
+- **The expanded drawer caps itself**: `max-h-[85dvh] overflow-y-auto`, reset at
+  `md:max-h-none md:overflow-y-visible`. Without it, opening the controls recreates the original
+  bug exactly. `dvh` because iOS Safari's `vh` is the *large* viewport. At a phone's height the
+  cap never actually engages (the reducer clamps `tpCount` to 12), so it is a safety net — tested
+  by injecting a 2000px child: caps at 717, becomes scrollable, reaches bottom.
+- **The turning-point and initiative rows needed `flex-wrap`, and that bug predates the fold.**
+  Both grow with the match and neither wrapped, so past ~9 turning points the pips were simply
+  cut off at 390px. The fold made it *silent* rather than causing it — `overflow-y-auto` computes
+  `overflow-x` to `auto` too, so the header absorbed the overflow instead of the page showing a
+  scrollbar. Fixed at the cause; the phase row is left alone because three buttons always fit.
+- **`RoomBar` needs a wrapper, not a class** — it returns its own `<div className="mt-2 …">` in
+  both branches.
+
+The breakpoint is `md` (768px), where the full header is 313px on a 1024-tall tablet — the status
+quo nobody complained about. **No new test:** `hidden` is CSS, so `renderToStaticMarkup` emits the
+identical string either way and a unit assertion would prove nothing. Browser measurement is the
+check, as everywhere else here.
+
 **The `<main>` track list is a CSS variable, never an inline `grid-template-columns`.** An inline
 style cannot be gated by `xl:`, so it would force one ~110px column per alliance onto a phone —
 this file warned about exactly that, and the first cut of this layout did it anyway. One column
