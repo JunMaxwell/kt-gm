@@ -83,7 +83,7 @@ the section markers that were already in it:
 | `ui/RoomBar.tsx` | Share / save / load |
 | `ui/Setup.tsx` | The setup **wizard** — the four steps, and the rail/Back/Next shell over them |
 | `ui/Launcher.tsx` | Step 0: new game, the room list, resume by GM link, watch by code |
-| `ui/Glossary.tsx` | The faction glossary: the index of all 52 kill teams, and `Pack`, one team's printable rules pack |
+| `ui/Glossary.tsx` | The faction glossary: the index of all 53 kill teams, and `Pack`, one team's printable rules pack |
 | `ui/EndScreen.tsx` | Step 6: the final scoreboard |
 | `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
@@ -381,7 +381,7 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
   stances. The 697 generated cards carry none, since they come from PDFs, which is exactly why
   it went unnoticed printing literal asterisks on the card. Stripping it instead would have
   thrown away the structure the author meant. A test renders `Rules` over every card and
-  datacard in all 52 factions and fails on a surviving `**`. Anything richer — a table — still
+  datacard in all 53 factions and fails on a surviving `**`. Anything richer — a table — still
   has to be flattened at transcription time; `Promethean Tooth Dagger` is the standing example.
 - **`KtCard` carries `min-h-fit`, and it is load-bearing.** The carousel gives every card
   `flex-1` inside a fixed-height slide, and a flex item will happily shrink below its content —
@@ -1249,7 +1249,7 @@ to hook onto.
 An unrelated KTDash homebrew converts him independently to the same APL 3 / 6" / 3+ / 15, which is
 the nearest thing to corroboration that exists for him.
 
-**All four hand-written factions export `datacards`**, in the same shape the extractor emits, so
+**All five hand-written factions export `datacards`**, in the same shape the extractor emits, so
 the player's Ops deck shows them like everyone else. For the bosses each trait is declared once in
 the module and spread into both the Rules card and the datacard — the same anti-drift reason
 `nemesis.ts` exists.
@@ -1257,8 +1257,8 @@ the module and spread into both the Rules card and the datacard — the same ant
 **The completeness guard for this is deliberately NOT scoped to `custom`.** The 4/4/4 card-format
 guard is, because homebrew is not bound by the printed layout — but every operative needs its own
 weapons and rules whoever wrote it, and scoping that check is exactly what let all three
-hand-written factions ship with no datacards while the other 48 had them. 52 factions, 470
-operatives, 1420 weapons, 589 abilities, 178 unique actions, and a test that fails on any gap.
+hand-written factions ship with no datacards while the other 48 had them. 53 factions, 471
+operatives, 1423 weapons, 597 abilities, 178 unique actions, and a test that fails on any gap.
 
 **`Operative.lockOrder` is how an order becomes a stat rather than a call.** Every NEMESIS
 operative has **Towering Size** — *"in the Firefight phase, whenever you determine this operative's
@@ -1492,9 +1492,76 @@ five decades of published wargear to draw on. Each card names a real item or a r
   two Flanks on one alliance rather than three ops on the table. It reads fine anyway: the Enclaves
   are a breakaway realm he holds, and *Envoy* and *Plant Banner* are a separatist commander's cards.
 
+### The Brutalis Dreadnought — the third boss
+
+`dreadnought.ts` is a **Large / IMPERIUM** nemesis operative: CONTROL 5 (the table prints 6 —
+the same house divergence Angron and Farsight carry), Move 6", Save 4+, **75W**, `kv` 10, two
+weapon selections of three spent. Its allegiance trait is **Defenders of the Imperium**, from
+KTDash's `SPEC-NEM` — the same route Angron's CHAOS trait took, because the dossier defers
+allegiance text to separate cards.
+
+**Its flavour source is a KTDash homebrew, its rules are not.** The user supplied
+`ktdash.app/killteams/HBR-tPn5gs-5` ("dreadnoughts", flagged WIP), which is APL 6 / Save 2+ /
+60W with no ploys, untitled abilities, and all thirteen "equipment" entries the universal deck —
+the trap `companions.ts` and `relic-seekers.ts` both hit. A 2+ is specifically the mistake an
+early Angron made: **pg 15 fixes every nemesis size at 4+**. So the chassis and the kit came from
+KTDash and every number came off the dossier's tables. Three of its ideas survive, translated:
+
+| KTDash wrote | This ships as |
+|---|---|
+| Ballistus: stationary → "piercing 1 and seek light" | *Fire Support Doctrine*, a strategy ploy, in the game's own rule names |
+| Brutalis: change Move to 8" and smash through Heavy terrain on a D6 4+ | *Through the Wall*, a firefight ploy, 1CP for one charge |
+| shared: two Shoot **or** two Fight actions every activation, free | *Blessed Autoloaders*, 1CP, one extra Shoot with a **different** weapon |
+
+- **Both traits trigger on the Charge action** — Blitz and Crushing Impact — and that is the
+  build. **Blitz overlaps the talons' own Shock**, so in practice it grants Severe; that is
+  accepted, not missed, and the module says so. Swapping the power fist for a chain weapon to
+  clear the overlap would trade one duplicated rule for 6/8 damage dropping to 5/6.
+- **Crushing Impact fires on finishing a Charge move, which is not the Fight action**, so Bulky's
+  widened 1"/4" control range does **not** apply — the normal one does. That is the same trap
+  *Relentless Carnage* documents from the other side.
+- **The twin heavy bolter is the single heavy bolter profile.** The *Twinned weapon* selection
+  (pg 17) grants Ceaseless and would have cost the spare selection that pays for Crushing Impact.
+  *Twin-Linked Discipline* rents that selection for one shooting sequence instead.
+- **Its deck pays in nothing and reaches nobody**, which is the axis neither other boss uses —
+  Angron pays in blood, Farsight pays in position and half his cards reach his alliance. It has
+  deliberately **no CP generator** (Angron's *Blood Tithe*, Farsight's *Command Uplink*) and **no
+  self-repair**, which would have collided with *Blood for the Blood God*.
+- **Both its equipment passives buy back a clause its own core rules take away**, rather than
+  inventing a defence: *Atomantic Shielding* keeps the Extra Defence dice while injured (the
+  core rule says "unless it is injured"), and *Ironclad Ceramite* stops Devastating and Blast.
+  Neither re-implements Armoured, Tough or Shielded — traits it could simply have selected — and
+  neither touches its Save or the Hit stat of shots at it, which would soft-undo Towering Size.
+- **It has no photo.** A nemesis operative is a paid expansion so the extractor never sees one,
+  and no promo shot was supplied the way Angron's and Farsight's were. `Datacard.img` is simply
+  absent, which is a normal state.
+- **One card was written and cut**, and the reason is the newly-read rule below: a ploy lifting
+  the "cannot activate a second time until all other friendly operatives are expended" gate reads
+  well and does **nothing**, because a boss modelled as a one-model team has no other friendly
+  operatives.
+
 ### Still unread
 
-The per-mission-pack activation and AP limits (Joint Ops pg 34, Nemesis Ops pg 46).
+Nothing. The per-mission-pack activation and AP limits were the last gap, and both packs print
+the **same** rule — Joint Ops on pg **36** and Nemesis Ops on pg **47**, not the 34/46 this file
+used to point at (those are the pack openers):
+
+> Each player must activate their friendly NEMESIS operative twice per turning point, but they
+> cannot activate it a second time **until all other friendly operatives are expended**. It cannot
+> move more than **12" per turning point** and each player cannot spend more than **5AP** for it in
+> total per turning point.
+
+Three limits, and the app models one and a half of them:
+
+- **Twice per turning point** is `Operative.acts`, already there.
+- **5AP per turning point** was already recorded here and is a table-procedure number — the app
+  tracks activations, never AP.
+- **12" per turning point** and **not until every other friendly operative is expended** are new,
+  and neither is modelled. The 12" is a table call like every other distance in this app. The
+  expended gate would be a real reducer change, and it is **vacuous for Angron and Farsight**,
+  who are one-model teams with no other friendly operatives to wait on — so it only starts to
+  matter if a boss is ever put inside a populated roster, which `TeamCard`'s picker currently
+  cannot do anyway (see **Nemesis operatives**).
 
 **The team-size reduction HAS now been read** (pg 35, *Kill Team Selection*), and it settles what a
 boss costs. A NEMESIS operative **must share its kill team's allegiance keyword** — Angron is
@@ -1628,7 +1695,7 @@ one would white-screen the whole console mid-game, and that is not a trade worth
 
 ## Boss fights — the app support underneath
 
-The two bosses above are NEMESIS operatives; this is the machinery that lets the app hold one.
+The three bosses above are NEMESIS operatives; this is the machinery that lets the app hold one.
 
 - **`Operative.kv`** is how many kills downing it is worth. Absent means 1, and that default is
   the whole reason adding the field changed no existing test: `killValue()` sums `killWorth` over
@@ -1671,7 +1738,7 @@ the typed absolute into a delta, so the `wound` action and its clamp are unchang
 
 ## The faction glossary — the printable rules pack
 
-The app holds 697 cards and 470 operatives and, until this, only ever showed **one card at a
+The app holds 774 cards and 471 operatives and, until this, only ever showed **one card at a
 time** in a phone carousel. The glossary is the other view of the same data: an index of all 52
 kill teams, each opening onto its whole rules pack laid out like the official team rules PDF,
 printable to A4.
@@ -1725,13 +1792,13 @@ no keyword bar, live wound and order state, and a `<details>` that would print c
 
 | The PDF has | This prints | Why |
 |---|---|---|
-| A melee/ranged glyph column | nothing | It is a GRAPHIC in the source PDF, so `pdftotext` never gave the extractor one, and `wr` cannot stand in — a marksman bolt carbine is ranged with no Range rule and fists are melee with none either. A name heuristic over 52 factions would mislabel, and a wrong icon is worse than no icon. |
+| A melee/ranged glyph column | nothing | It is a GRAPHIC in the source PDF, so `pdftotext` never gave the extractor one, and `wr` cannot stand in — a marksman bolt carbine is ranged with no Range rule and fists are melee with none either. A name heuristic over 53 factions would mislabel, and a wrong icon is worse than no icon. |
 | A points cost | nothing | Parsed and dropped; this app does not do list building. |
 | An operative photo | the cut-out from the name band | `public/ops/<fid>/<slug>.webp`, via `Datacard.img` — see **The datacards**. |
 
 ### The index puts this match's teams on top
 
-`Glossary` takes `game` for one reason: the teams actually on the table sort above the other 46,
+`Glossary` takes `game` for one reason: the teams actually on the table sort above the other 47,
 so a player opens their own deck without hunting an alphabetical list of 52.
 
 - **Teams map MANY-TO-ONE onto factions**, so a pinned row is a *faction* and its label is the

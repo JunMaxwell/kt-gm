@@ -41,6 +41,7 @@ export const FACTIONS: FactionMeta[] = [
   // NEMESIS operatives, built with the official Custom Builder. See src/factions/nemesis.ts.
   { id: 'angron', name: 'Angron (Large Nemesis)', archetypes: ['Seek & Destroy'], color: '#8a1111', custom: true },
   { id: 'farsight', name: 'Commander Farsight (Small Nemesis)', archetypes: ['Seek & Destroy', 'Security'], color: '#b8621a', custom: true },
+  { id: 'dreadnought', name: 'Brutalis Dreadnought (Large Nemesis)', archetypes: ['Seek & Destroy', 'Security'], color: '#3f4a5a', custom: true },
   // Homebrew kill team from KTDash. See the header of src/factions/companions.ts.
   { id: 'companions', name: 'Companions of the Emperor', archetypes: ['Seek & Destroy', 'Security'], color: '#c8a03c', custom: true },
   { id: 'relic-seekers', name: "Nocturne's Relic Seekers", archetypes: ['Seek & Destroy', 'Recon'], color: '#1c6b3a', custom: true },
@@ -108,6 +109,7 @@ const BUNDLED: Record<string, FactionData> = {
 const CHUNKS: Record<string, () => Promise<FactionData>> = {
   angron: () => import('./angron'),
   companions: () => import('./companions'),
+  dreadnought: () => import('./dreadnought'),
   farsight: () => import('./farsight'),
   'relic-seekers': () => import('./relic-seekers'),
   'battleclade': () => import('./battleclade'),

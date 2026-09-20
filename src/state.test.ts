@@ -452,7 +452,7 @@ test('an operative locked to one order cannot be moved off it', async () => {
   expect(g.ops[squig.id].order).toBe('engage')
 
   // every NEMESIS operative has Towering Size, whatever its size
-  for (const id of ['angron', 'farsight']) {
+  for (const id of ['angron', 'farsight', 'dreadnought']) {
     const o = (await loadFaction(id))!.operatives[0]
     expect([id, o.lockOrder]).toEqual([id, 'engage'])
   }
@@ -865,7 +865,7 @@ test('every operative in the library has a datacard, and it is well formed', asy
 // whose rules matter most. Without their own datacards they would be the ONLY operatives in the
 // game reduced to four bare numbers on the player's Ops card.
 test('the NEMESIS bosses carry a datacard with their weapons and traits', async () => {
-  for (const id of ['angron', 'farsight']) {
+  for (const id of ['angron', 'farsight', 'dreadnought']) {
     const f = (await loadFaction(id))!
     const o = f.operatives[0]
     const card = datacardOf(f, o.name)
