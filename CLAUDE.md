@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 132 tests: the reducer, and a render pass over every panel
+bun test           # 173 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -77,31 +77,38 @@ the section markers that were already in it:
 | `ui/TurnBar.tsx` | The sticky header, plus `SingleTurn` / `PairedTurn` |
 | `ui/Scoreboard.tsx`, `ui/Objectives.tsx`, `ui/ActivationOrder.tsx` | The three left-column panels |
 | `ui/TacOpCard.tsx` | One tac op card. Its own file because three panels use it |
+| `ui/cards.tsx` | `OperativeCard` and `RefCardView` — same reason: the deck and the draft both draw them |
+| `ui/Carousel.tsx` | The swipe rail, one `Slide`, the dots. Shared by the deck and the draft |
 | `ui/OpsBrowser.tsx` | The crit op / tac op catalogue |
 | `ui/TeamCard.tsx` | A player's card, plus `EditRow` / `PlayRow` |
 | `ui/Compendium.tsx` | A player's ploys and equipment, plus the GM's `CompendiumBrowser` |
-| `ui/RoomBar.tsx` | Share / save / load |
+| `ui/RoomBar.tsx` | Share / save / load. Rendered by **both** `TurnBar` and `Setup` |
 | `ui/Setup.tsx` | The setup **wizard** — the four steps, and the rail/Back/Next shell over them |
 | `ui/Launcher.tsx` | Step 0: new game, the room list, resume by GM link, watch by code |
 | `ui/Glossary.tsx` | The faction glossary: the index of all 53 kill teams, and `Pack`, one team's printable rules pack |
 | `ui/EndScreen.tsx` | Step 6: the final scoreboard |
-| `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen |
+| `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen, and claiming a team |
+| `ui/Draft.tsx` | The player's own list: a carousel per tab — operatives, faction gear, universal gear |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
 
 Two conventions the split rests on:
 
-- **The import graph is acyclic and shallow.** Leaves (`shared`, `kit`, `TacOpCard`) know nothing
-  about panels; panels import leaves; `App.tsx` imports panels. `TurnBar` → `RoomBar` is the only
-  panel-to-panel edge. Do not let a leaf import a panel.
+- **The import graph is acyclic and shallow.** Leaves (`shared`, `kit`, `TacOpCard`, `cards`,
+  `Carousel`) know nothing about panels; panels import leaves; `App.tsx` imports panels.
+  `TurnBar` → `RoomBar` and `Setup` → `RoomBar` are the only panel-to-panel edges, and they are
+  the same edge twice: `RoomBar` imports nothing but `state`, `kit` and `shared`, so it is a leaf
+  in everything except where the table lists it. Do not let a leaf import a panel — when a second
+  panel needs something a panel owns, the thing moves down to a leaf. That is how `cards.tsx` and
+  `Carousel.tsx` came out of `Compendium` once `Draft` needed them.
 - **`shared.ts` is `.ts`, not `.tsx`, and holds every non-component export.** A `.tsx` that
   exports a constant or a helper beside its components loses React Fast Refresh for the whole
   file — oxlint's `react(only-export-components)` catches it. That rule is why `onInt`
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
 Game state persists to `localStorage` under a **versioned key, one game per room**:
-`killteam-gm/v18/<code>`, or `killteam-gm/v18/local` when no room could be opened. Any change to
+`killteam-gm/v19/<code>`, or `killteam-gm/v19/local` when no room could be opened. Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-eighteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+nineteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 The `local` key is written even on a fresh device that has never opened a room — the reducer boots
@@ -146,6 +153,11 @@ export const STEPS: Stage[] = ['alliances', 'teams', 'config', 'tacops']
 - **Setup stays reachable mid-match** — late players arrive, teams get cut — through a step menu
   in the header. Every step offers *To the match* once the gates pass, so the wizard needs no
   "is a match in progress" concept to double as an escape hatch.
+- **The wizard carries the room strip too**, on every step. It did not for as long as setup
+  existed, and that was survivable only while the players had nothing to do until the match
+  began. The draft happens *during* setup, so the viewer link has to be on the screen the GM is
+  building the match on — reaching it used to mean walking onto the board, which is the very
+  thing that used to close the draft. `Setup` takes `net` for this and nothing else.
 - The gates are per-step. The old single `blocked` ladder said all of it at once on one screen.
 - **`bun test` does not typecheck**, so the `setup` → `stage` rename broke nothing at runtime and
   three things under `tsc -b`. `bun run ci` is the gate, not `bun test`.
@@ -179,10 +191,12 @@ Non-negotiables that this design rests on:
 
 - **localStorage stays authoritative.** Every relay call is `.catch(() => {})`. A dead VPS must not
   stop a game in progress — verified: kill the relay, keep playing, reload, state survives.
-- **Whole snapshots, never actions.** `activate` / `passPair` / `nextTp` are order-dependent and
-  `wound` / `cp` / `tacVp` / `critVp` are all deltas, so a replayed or reordered action would
-  corrupt state. `{ type: 'replace', game }` is the only action the network ever produces, and it
-  merges over `initialGame()` exactly like a localStorage load does.
+- **Whole snapshots DOWN, never actions.** `activate` / `passPair` / `nextTp` are order-dependent
+  and `wound` / `cp` / `tacVp` / `critVp` are all deltas, so a replayed or reordered action would
+  corrupt state. `{ type: 'replace', game }` is the only action the relay's *downstream* ever
+  produces, and it merges over `initialGame()` exactly like a localStorage load does.
+  Upstream is a **request**, not an action applied anywhere but the GM's own reducer — see
+  **The player's draft**. There is still exactly one writer.
 - **The server never imports `rules.ts`** and never runs the reducer. A snapshot is an opaque blob.
   Viewers run the same selectors on the same state, so scores can't disagree.
 - **Read-only is structural, and `inert` is gone.** It used to be one `<div inert>` over the whole
@@ -191,7 +205,9 @@ Non-negotiables that this design rests on:
   swiped. There is now no `inert` anywhere in `src/`.
 
   What replaces it is that the player view renders one thing that *cannot* write: `Compendium`
-  takes no `dispatch` prop at all. Anything added to that view has to clear the same bar.
+  takes no `dispatch` prop at all. Anything added to that view has to clear the same bar — and
+  **the draft did not change this**. `TeamPicker` and `Draft` take `net.ask`, which can send three
+  team-scoped requests and nothing else; the card deck still has no write prop of any kind.
 
   The server still rejects writes without the token and the next relay message overwrites any local
   divergence, so a stray click is harmless regardless. That is the backstop, not the mechanism.
@@ -399,6 +415,15 @@ header), `--color-stone` `#e6e4e0` (card body), `--color-fade` (flavour). `--col
 
   What this does *not* buy is anyone noticing. See `Slide` in **The player's phone**.
 - **Panels are square-cornered**, controls stay rounded. The printed cards have no radius.
+- **`Btn` is the light-panel button and `DarkBtn` the one for the ink header bars**, and mixing
+  them up is invisible in code and glaring on screen: `Btn`'s `text-ink` on `bg-card` is dark on
+  dark. The setup header shipped that way for as long as it existed — *Back*, *Start match* and
+  *Games* were all but unreadable, and *Start match* looked permanently disabled.
+- **Both dim themselves when `disabled`, and that lives on the base rather than per call.**
+  Eighteen call sites pass `disabled` and exactly one used to style it, so a blocked *Next* and a
+  live one were identical everywhere in the app. `Stepper`'s own `disabled:opacity-25` is gone
+  with it — two `disabled:opacity-*` in one class list resolve by stylesheet order, not by which
+  was written last.
 - **The live card outline is the accent orange**, not a per-kind colour. The printed cards carry
   no coloured outline at all, so an invented palette read as off-brand; orange already means
   "this one, now" on these sheets.
@@ -429,7 +454,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 135 tests in two files:
+`bun test` is 173 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -717,6 +742,186 @@ proxied-DNS workaround are needed. Two traps found while testing it:
   ```
   bun -e 'new WebSocket("wss://kt-api.ydothien.work/rooms/TEST/ws").onopen = () => console.log("open")'
   ```
+
+## The player's draft
+
+Seven people and one GM, who used to build all seven rosters alone while six of them watched.
+The phone now holds the three decisions that were always theirs — **which team, which operatives,
+which equipment** — and what they choose becomes the roster the GM tracks wounds on.
+
+It is the first thing in the app that lets a spectator write, so the mechanism matters more than
+the screens do.
+
+### One writer, still
+
+A player's phone does not dispatch. It **asks**, and the GM's client is the reducer it has always
+been:
+
+```
+phone ──{ ask }──▶ relay ──▶ GM's browser ──reduce──▶ snapshot ──▶ every phone
+```
+
+- The phone sends `{ ask: Action }` up the WebSocket it already had open.
+- The relay forwards it, understanding it no better than it understands a snapshot.
+- The GM validates it against `PLAYER_ASKS`, dispatches it, and the result goes back out as an
+  ordinary snapshot. **The player's confirmation is the game state changing under them.**
+
+So every non-negotiable above survives intact: localStorage on the GM's device is authoritative,
+snapshots still only flow one way, and the server still never runs the reducer or imports
+`rules.ts`.
+
+- **Two topics on one socket.** `<code>` carries snapshots to spectators, `<code>:ask` carries
+  requests to the GM, and the GM subscribes only to the second. That is not tidiness: it POSTs a
+  30–100KB snapshot on every debounced change, and one topic would echo all of it straight back
+  down a phone-tethered GM's uplink. `?gm=1` on the upgrade picks the side.
+- **`?gm=1` is unauthenticated, and that is fine.** It grants the ability to *hear* asks, which
+  are a strict subset of what the open snapshot stream already says. Acting on one still requires
+  being the GM's browser.
+- **`PLAYER_ASKS` is the whole security boundary.** The room code is the only secret in this app,
+  so anyone who can open the spectator link can send a frame. The GM applies `claim`, `setRoster`
+  and `gear` and nothing else — all three team-scoped, none of them able to reach VP, wounds,
+  initiative or the turn cursor. Verified: an ask reaches the GM, reaches *only* the GM (the
+  sender gets no echo and other players hear nothing), and a snapshot POST still 401s without the
+  token.
+- **The GM-side fields go through `teamPatch`, which is exactly why the whitelist is action-typed
+  rather than a patch sanitiser.** `pool`, `opLimit` and `gearLimit` are ordinary `Partial<TeamDef>`
+  edits — and `teamPatch` must never be askable, or a phone could move its own team to another
+  alliance.
+- **Failure has to be visible.** With the GM's tab shut the ask simply evaporates. `Draft` holds a
+  `sending` flag, derives `landed` from the snapshot it is handed, and falls to *Could not reach
+  the GM* after 4s. Landing beats the timeout, so a slow GM never shows a stale error. Measured
+  both ways: GM tab closed → the timeout path; relay killed → `ask` returns false and it reports
+  at once.
+
+### What it stores
+
+Five optional fields on `TeamDef`, and one on `Game`. Optional throughout, so `TeamPreset`, every
+hand-built team and every stale save stay valid.
+
+| Field | |
+|---|---|
+| `claimed?: boolean` | A phone holds this team. **Not** `player !== ''` — the presets ship "Player 1".."Player 7", so a non-empty name cannot mean taken. |
+| `pool?: Operative[]` | What the player may choose from. Absent means the team's own roster. |
+| `opLimit?: number` | How many of it they may take. Set from the roster size when the team is added. |
+| `gear?: string[]` | Chosen equipment, by `RefCard.name`. |
+| `gearLimit?: number` | Absent means `GEAR_LIMIT`, which is 4. |
+| `Game.picks: boolean` | Is the draft open. Closes itself on the **first activation**; the GM's header toggle is the one way back. |
+
+- **`pool` holds minted operatives, not catalogue ids**, for three reasons. The phone mints no ids
+  — the reducer never has, and ids come in four shapes. Duplicates work, because the Raveners'
+  `Warrior 1..5` are five tickable rows rather than one catalogue entry takeable once. And a
+  re-picked operative keeps its id, which is what lets `setRoster` keep its wounds. It costs ~6KB
+  in a 30–100KB snapshot.
+- **`gear` keys on `name`** because `RefCard` has no id and `kind:name` was already the de-facto
+  key. Everything in the list is `kind: 'equipment'`, so the name alone is unique enough.
+- **`opLimit` is materialised when the team is added, never read back off the roster.** The
+  player's picks *become* the roster, so deriving the limit from `roster.length` would ratchet it
+  down to whatever they last chose. `initialGame()` sets each preset team's own legal size —
+  5/6/5/9 and 10/7/11 — so the whole match is draftable with the GM setting nothing. It is read
+  with `||`, not `??`: a team added from the library has no roster, so `teamAdd` stored 0, and 0
+  as a limit means "pick nothing".
+- **What the draft closes on is the FIRST ACTIVATION, not `stage: 'play'`,** and the difference
+  is not academic — it shipped wrong once. The GM walks onto the board constantly during setup:
+  to read the scoreboard, to check the counteract banners, to copy the room link that is printed
+  there. Closing the draft then locks seven phones out of a list nobody has built yet, and the
+  symptom is simply that the *My list* chip is not there. An activation is unambiguous.
+- **`draftPool(team, faction, roster)` in `ui/shared.ts` is the one place the list is decided**,
+  so the GM's Setup panel and the player's phone can never disagree. Three tiers: the GM's
+  `pool`, else the roster, else **the faction's whole datacard list** — that last tier exists
+  because only the six preset factions carry a `DEFAULT_ROSTER`, so without it the other 42 hand
+  their player a blank draft. Tier 3 **re-mints every id against the team**, because library
+  operatives are keyed by faction and `g.ops` is one flat map: two teams of one faction would
+  otherwise share a wound track. Deterministic, so unticking and changing your mind keeps it.
+- **An empty `claim` name is the release**, and the label survives it. The same action both ways
+  because the two always happen together: switching teams releases the old one in the same step,
+  so a phone can never hold two claims or strand one.
+- **`setRoster` keeps the OpState of every operative that survives the change.** The GM can reopen
+  the draft mid-match, and a re-pick must not heal the team.
+- **`setRoster` also FREEZES the pool, on the first draft and only then**, and without it the
+  offered list is a one-way ratchet. An uncurated pool falls back to the team's roster — which is
+  exactly what this action overwrites with the player's picks — so dropping an operative deleted
+  it from the very list it could be picked back from. Eleven Kommandos to four, and never up
+  again. The roster is captured *before* the replacement, so the pool holds the full starting
+  eleven for good and the GM's Setup panel stays a list he removes from rather than one that
+  quietly shrinks under him. Skipped when the roster is empty, because that pool falls through to
+  the faction's own datacards, and that tier is derived from the faction and cannot shrink.
+- **`claim` is deliberately NOT gated on `picks`.** A late arrival still has to tell the GM who
+  they are once the draft has closed; they simply cannot build a list. `setRoster` and `gear` both
+  return `g` untouched, so a stale phone cannot edit a roster mid-turn.
+- **Both limits are clamped in the reducer, not only in the UI.** `gear` always was; `setRoster`
+  was not, which made the GM's *Pick* field a suggestion — set it to 5 on an eleven-model team
+  and the phone still submitted eleven. Worse, the draft opened with the **whole current roster**
+  pre-selected whatever the limit said, so the counter read `11/5` on arrival and the player could
+  only ever remove. It now binds in the three places that each need it: the phone's initial
+  selection is truncated to it (roster order, so a leader survives the cut), the pick control
+  refuses to go over, and the reducer slices on the way in, because the ask crosses a network from
+  a phone that may be showing a stale limit.
+- **The limit caps what you TAKE, never what you see.** All eleven stay in the carousel at a limit
+  of five, and that is what makes swapping one for another possible at all. The effective limit is
+  itself capped at the pool size, since a counter reading `11/20` only looks broken.
+- `pool` lives on `TeamDef`, so `normalize` prunes it when a team is deleted — no cleanup code was
+  written, the same free ride `TeamDef.cards` gets.
+
+### The screens
+
+- **`TeamPicker` gained claiming, and picking is now two things.** `onPick` reads a team —
+  device-local, instant, works with no relay at all, and is everything this screen used to do.
+  `onClaim` takes a name, locks the team on every other phone, and is offered only where there is
+  a socket to ask over. A player who just wants to read along never has to claim.
+- **`Draft` is the same carousel the deck is, showing the same full cards.** A first cut listed
+  operatives as one-line rows reading `2AP · 6" · 5+ · 10W` — enough to identify a model you
+  already know and useless for choosing between two you do not, which is the entire situation for
+  five of the seven players here. It now shows the whole datacard: weapons, abilities, unique
+  actions with their AP, keywords, the weapon-rules glossary.
+- **Three tabs over one rail**: Operatives, Faction gear, Universal gear. Tabs rather than stacked
+  sections because a phone fits exactly one full card, and the counts still have to be visible —
+  they live in the tab labels. An empty deck is not offered at all, and the tab it opens on is the
+  first that has cards, so a team with no pool lands on gear rather than an empty rail.
+- **The two gear tabs are separate lists over ONE budget.** Four cards written for this kill team
+  and ten every team in the game can take are different things, and running them together buried
+  the team's own gear among ladders and barricades — the exact complaint that got universal
+  equipment removed from the player's deck in the first place. The limit stays one number across
+  both, because that is the rule; it is stated once, in the header, and the card's own kicker
+  reads the team's name or `Universal` so which list you are in is legible from the card.
+- **The pick control sits below the dots, not on the card.** A carousel shows one card at a time
+  by design, so the choice can act on "the card you are looking at". Putting it inside the slide
+  either scrolls out of reach on a long datacard or reflows the card it sits in — the same trap
+  the `more ▾` pill documents. The dots double as the overview: a chosen card's dot is tinted, so
+  a player picking eleven operatives one at a time can still see what they hold.
+- **This is what brought `UNIVERSAL_EQUIPMENT` back.** Those ten cards had been referenced nowhere
+  but a test since they were pulled out of the Gear deck for burying a team's own rules under
+  ladders and barricades. That objection does not apply to a list you pick *from* — and the Gear
+  deck now shows the cards the player chose, so it is more their own content than before, not
+  less. It still falls back to the full faction deck when nobody has drafted, which is why no
+  existing behaviour or test moved.
+- **`Carousel` and `cards.tsx` were extracted from `Compendium` for this**, rather than the draft
+  growing a second carousel. Both are leaves, for the reason `TacOpCard.tsx` is one: more than one
+  panel draws them, and **a panel must not import a panel**. `Compendium` re-exports
+  `OperativeCard` and `RefCardView` so nothing that already imported them from there had to move.
+  Resetting the rail to card 1 is now a `key` on the `Carousel` — remounting clears the scroll
+  offset and the index together, where the old `pick()` set an index and left the rail where the
+  last deck ended.
+- **The GM curates in Setup step 2**, in a *Player picks* panel beside the Rosters one: the pool,
+  the two limits, and a Release button — the escape hatch for a player who claims the wrong team
+  and whose phone then dies. Doing nothing is a valid setup: the roster is the pool.
+- **The reopen toggle sits beside *Tac ops hidden/shown* in the header**, and is the one of the
+  two that is `Game` state rather than device state. A GM peeking at his own screen is not the
+  same as unlocking seven other people's.
+
+### Verified in a browser
+
+Two real pages against a live relay, the player's in **its own browser context** — two tabs in one
+Chrome profile share `localStorage`, so without that a "second phone" inherits the first player's
+pick and never sees the picker at all. Claim → GM console; draft → the GM's roster and gear; a
+second phone sees `Taken — Minh` on a disabled row and every other team still open; the first
+activation hides the *My list* chip and the toggle brings it back; the Gear deck shows exactly the
+cards drafted; and `scrollWidth === clientWidth` at 360 / 390 / 430 on every tab.
+
+**And screenshotted, not only asserted.** Every check above passed while the header subtitle was
+being cut at `Faction and universal share the li…` — `truncate` on a 390px phone, eating the only
+half that mattered. This file already says it once about the `more ▾` pill and it was true again:
+a boolean answers "did it render", never "could anyone read it". Look at the pixels.
+
 
 ## Phases and the compendium
 
@@ -1119,13 +1324,20 @@ Gain CP, then alternate Strategy Ploys, initiative side first.
   at whatever scroll offset the last one ended on.
 - **There are no tabs.** The view is one deck of cards; a second tab existed for the board and
   went with it. The deck is fully interactive and still cannot mutate — `Compendium` has no
-  `dispatch` prop. See the read-only note in **Rooms** for why that is structural.
+  `dispatch` prop. See the read-only note in **Rooms** for why that is structural, and
+  **The player's draft** for the one screen beside it that can write, and how narrowly.
+- **The `Gear` deck is the four cards the player drafted**, falling back to the whole faction
+  deck when nobody has. See **The player's draft**.
 
 **Which team you are playing is a per-device choice**, stored under `killteam-gm/me` and never
 in `Game`. `teams[].player` is a free-text label, not an identity — putting the selection in the
 snapshot would mean seven players fighting over one field through the relay.
 
-**It is chosen on its own screen, `ui/TeamPicker.tsx`, and a fresh phone cannot skip it.** `me`
+**It is chosen on its own screen, `ui/TeamPicker.tsx`, and a fresh phone cannot skip it.**
+That screen now also *claims* a team — which does reach `Game`, as `teams[].claimed` plus the
+name in `teams[].player`. The device-local `me` and the shared claim are different things on
+purpose: `me` is "whose cards am I reading", the claim is "who is playing this", and a player
+reading along over someone's shoulder should need neither a name nor anyone's permission. `me`
 falls back to `''`, not to `teams[0]`, and `Viewer` early-returns the picker while it is empty.
 The old control was an unlabelled `<select>` in the corner of the room strip, and the silent
 default behind it meant a player who never found that corner read *someone else's cards for the
@@ -1892,9 +2104,15 @@ why `read()` in `state.ts` has always been wrapped in a try/catch.
   ploys, which is the format, not a gap; Angron's four are homebrew — see **Nemesis operatives**.
 - **Setup has no undo of its own beyond the normal stack**, and `sideRemove` deletes that
   alliance's teams outright. It confirms first; that is the whole safety net.
-- **Spectators are read-only, full stop.** No per-player editing, no claiming a team, no accounts.
-  `teams[].player` is a free-text label, not an identity, so the server cannot tell who is who.
-  Authentik OIDC is already running on the VPS if that ever changes.
+- **A player can claim a team and build a list, and that is all.** No accounts, no per-operative
+  ownership, and the server still cannot tell who is who — a claim is a flag on a team, not an
+  identity, and any phone with the room code could send one. The whitelist in `PLAYER_ASKS` is the
+  entire boundary, and the GM's Release button in Setup is the entire recovery. Authentik OIDC is
+  already running on the VPS if that ever needs to be real. See **The player's draft**.
+- **The draft needs the GM's console open.** A player's phone asks; the GM's browser is the only
+  reducer there is. With that tab shut the ask goes nowhere, which is why `Draft` reports it rather
+  than failing silently — but it means the draft is the one part of the app that is not offline-
+  tolerant. Everything else still is.
 - Rooms are never garbage-collected. Seven friends and a few evenings; add a retention sweep if that
   stops being true.
 - Tac ops are archetype-based, so two players on the same side can take the same op (both Deathwatch

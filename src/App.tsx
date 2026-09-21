@@ -6,6 +6,7 @@ import { allTeams, scores, teamsOf, useGame } from './state'
 import { type Dispatch, type Game, type Net, meInUrl, setMeInUrl, teamInUrl, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
+import { Draft } from './ui/Draft'
 import { EndScreen } from './ui/EndScreen'
 import { Glossary } from './ui/Glossary'
 import { Launcher } from './ui/Launcher'
@@ -28,6 +29,11 @@ const ME_KEY = 'killteam-gm/me' // which team this device is playing; never part
  * Read-only is structural, not a flag: `Compendium` takes no `dispatch` and so is incapable of
  * writing. A stray tap could not do damage anyway — the server rejects writes without the token,
  * and the next relay message overwrites any local divergence.
+ *
+ * The draft is the one exception, and it is a narrow one. `TeamPicker` and `Draft` take `net.ask`
+ * — not `dispatch` — and between them may send three team-scoped requests the GM's client
+ * validates and runs. The card deck still cannot write anything at all, so the bar for adding
+ * something to THAT view is unchanged: it has to work with no write prop.
  */
 function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: () => void }) {
   const teams = allTeams(game)
@@ -37,6 +43,7 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
   // "Change" is not undone by the next reload.
   const [saved, setSaved] = useState(() => meInUrl() || (localStorage.getItem(ME_KEY) ?? ''))
   const [picking, setPicking] = useState(false)
+  const [drafting, setDrafting] = useState(false)
   // Checked every render: the GM can delete a team in setup, and the relay will ship that
   // snapshot straight to this phone. A stale pick falls back to NOTHING, not to the first team —
   // a silent default is how a first-time player reads someone else's cards for a whole match.
@@ -50,6 +57,19 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
     setPicking(false)
   }
 
+  // Claiming is picking PLUS telling the table. It releases whatever this phone held before in
+  // the same action, so a player who changes their mind never leaves a team locked behind them.
+  const claim = (id: string, name: string) => {
+    net.ask({ type: 'claim', teamId: id, name, from: me && me !== id ? me : undefined })
+    if (!name) return // a release: they keep reading the team, they just no longer hold it
+    pick(id)
+    setDrafting(game.picks)
+  }
+
+  // Only offered where there is a socket to ask over. Without a room this screen is the old
+  // read-only reader and there is nobody to hear a claim.
+  const canAsk = !!net.room
+
   // Nothing chosen yet, or they tapped the band to change it. The picker IS the screen, the way
   // `Setup` is for the GM — no overlay, because what sits behind it is the deck they may be
   // reading by mistake. Without `onClose` it cannot be dismissed, which is the first-run case.
@@ -60,11 +80,18 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
         me={me}
         code={net.room?.code}
         onPick={pick}
+        onClaim={canAsk ? claim : undefined}
         onClose={me ? () => setPicking(false) : undefined}
       />
     )
 
   const team = game.teams[me]
+
+  // The draft closes itself when the GM starts the match, so a phone left on this screen does
+  // not sit there editing a list nobody will accept. `picks` rides the snapshot, so that
+  // happens on its own the moment the GM taps through.
+  if (drafting && game.picks)
+    return <Draft game={game} teamId={me} ask={net.ask} onClose={() => setDrafting(false)} />
 
   // The shell owns the viewport and only the active tab scrolls, so the phase banner and the
   // deck chips never leave the screen. A player should be reading, not hunting.
@@ -81,7 +108,8 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
         >
           <b className="display min-w-0 flex-1 truncate text-lg">{team.name}</b>
           <span className="shrink-0 truncate text-[10px] opacity-70">
-            {team.player} · {net.room!.code} · read only
+            {team.player} · {net.room!.code}
+            {!game.picks && ' · read only'}
           </span>
           <span className="display shrink-0 rounded bg-black/20 px-2 py-0.5 text-[10px]">Change</span>
         </button>
@@ -102,6 +130,16 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
 
         <div className="flex items-center gap-2 px-3 pt-0.5 pb-2">
           <p className="min-w-0 flex-1 truncate text-[11px] text-white/45">{ph.hint}</p>
+          {/* Gone entirely once the GM closes the draft, rather than sitting there disabled:
+              a control you cannot use is a question you have to ask someone. */}
+          {canAsk && game.picks && (
+            <button
+              onClick={() => setDrafting(true)}
+              className="display shrink-0 rounded bg-white/12 px-2 py-0.5 text-[10px] text-white/80"
+            >
+              My list
+            </button>
+          )}
           {/* Their own deck is the screen; every OTHER kill team lives one tap away. */}
           <button onClick={onGlossary} className="display shrink-0 rounded bg-white/12 px-2 py-0.5 text-[10px] text-white/80">
             All teams
@@ -189,7 +227,7 @@ export default function App() {
   if (game.stage === 'rooms')
     return <Launcher game={game} dispatch={dispatch} net={net} onGlossary={() => setLib(true)} />
   if (game.stage === 'end') return <EndScreen game={game} dispatch={dispatch} net={net} />
-  if (game.stage !== 'play') return <Setup game={game} dispatch={dispatch} />
+  if (game.stage !== 'play') return <Setup game={game} dispatch={dispatch} net={net} />
 
   return (
     <Console

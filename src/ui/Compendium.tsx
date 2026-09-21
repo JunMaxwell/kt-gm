@@ -1,326 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 
-import { type Operative, tacOp, teamTacOps } from '../rules'
-import { cardsOfKind, type Datacard, KIND_LABEL, phaseCards, PLOY_CP, type RefCard, weaponRules } from '../compendium'
+import { tacOp, teamTacOps } from '../rules'
+import { cardsOfKind, phaseCards, type RefCard, UNIVERSAL_EQUIPMENT } from '../compendium'
 import { datacardOf } from '../factions'
-import { allTeams, injured, type OpState, teamOps } from '../state'
-import { KtCard, Rules } from './kit'
+import { allTeams, teamOps } from '../state'
+import { Carousel, SLIDE_CARD } from './Carousel'
+import { OperativeCard, RefCardView } from './cards'
 import { type Game, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
 
+// `OperativeCard` and `RefCardView` moved to `./cards`, and the rail to `./Carousel`, so the
+// player's draft can render the same cards without a panel importing a panel. Re-exported
+// because the tests and the GM's browser already import them from here.
+export { OperativeCard, RefCardView }
+
 /* ---------- compendium ---------- */
-
-/** One card, in the shape the printed sheets use: faction keyword, card type, then the name. */
-export function RefCardView({
-  card,
-  kicker,
-  cp,
-  live,
-  className = '',
-}: {
-  card: RefCard
-  kicker: string
-  cp?: number
-  live?: boolean
-  className?: string
-}) {
-  const ploy = card.kind === 'strategy' || card.kind === 'firefight'
-  const cost = card.cp ?? PLOY_CP
-  const broke = ploy && cp !== undefined && cp < cost
-
-  return (
-    <KtCard
-      kicker={kicker}
-      title={KIND_LABEL[card.kind]}
-      name={card.name}
-      dim={broke}
-      outline={live ? 'var(--color-flare)' : undefined}
-      tone={card.kind === 'strategy' ? 'green' : card.kind === 'firefight' ? 'black' : undefined}
-      tag={ploy && (broke ? `need ${cost}CP` : `${cost}CP`)}
-      className={className}
-    >
-      <Rules text={card.text} />
-    </KtCard>
-  )
-}
-
-/** The four stats a datacard prints across its header, in the order it prints them. */
-const STATS = (o: Operative, hp: number) =>
-  [
-    ['APL', o.apl],
-    ['Move', o.move],
-    ['Save', o.save],
-    ['Wounds', `${hp}/${o.w}`],
-  ] as const
-
-/**
- * One of the player's own operatives, in the card shape the rest of the deck uses: the printed
- * stat row, then the live state the GM is editing — wounds, order, injured.
- *
- * Read-only by construction. Like every other slide it takes no `dispatch`, which is what keeps
- * the spectator view structurally unable to write.
- */
-export function OperativeCard({
-  o,
-  st,
-  card,
-  kicker,
-  className = '',
-}: {
-  o: Operative
-  st?: OpState
-  card?: Datacard
-  kicker: string
-  className?: string
-}) {
-  const acts = Math.max(1, o.acts ?? 1)
-  // Its own abilities are read as well as its weapons — an operative whose rule grants Ceaseless
-  // needs Ceaseless spelled out just as much as one whose weapon prints it.
-  const glossary = weaponRules(card?.weapons, [...(card?.abilities ?? []), ...(card?.actions ?? [])].map((a) => a.text))
-  const hurt = !!st && injured(o, st)
-  const hp = st?.hp ?? o.w
-  // A boss is the only operative that activates more than once, and then the count is the thing
-  // you need to see. Everyone else just needs to know whether they have gone yet.
-  const state = !st ? '' : st.dead ? 'Incapacitated' : acts > 1 ? `${st.used ?? 0}/${acts} used` : st.expended ? 'Activated' : 'Ready'
-
-  return (
-    <KtCard
-      kicker={kicker}
-      title="Operative"
-      name={o.name}
-      art={card?.img}
-      dim={st?.dead}
-      aside={state ? <span className="text-white/60">{state}</span> : undefined}
-      className={className}
-    >
-      <dl className="grid grid-cols-4 gap-1 text-center">
-        {STATS(o, hp).map(([k, v]) => (
-          <div key={k} className="kt-strip px-1 py-1">
-            <dt className="display text-[10px] text-fade">{k}</dt>
-            <dd className="display text-lg leading-none tabular-nums text-card">{v}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {st && (
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-black/10">
-          <div
-            className="h-full"
-            style={{
-              width: `${o.w ? Math.max(0, Math.min(100, (hp / o.w) * 100)) : 0}%`,
-              background: st.dead ? 'var(--color-fade)' : hurt ? 'var(--color-recon)' : 'var(--color-flare)',
-            }}
-          />
-        </div>
-      )}
-
-      {/* The two rules a first-time player keeps having to ask about, spelled out rather than named. */}
-      {hurt && (
-        <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-          <span className="display shrink-0 rounded bg-recon px-1.5 text-white">Injured</span>
-          <span className="text-fade">&minus;2&quot; Move, and &minus;1 to its weapons&rsquo; Hit stat.</span>
-        </p>
-      )}
-      {st && !st.dead && (
-        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-          <span
-            className="display shrink-0 rounded px-1.5 text-white"
-            style={{ background: st.order === 'conceal' ? '#0b6be1' : '#f05c22' }}
-          >
-            {st.order === 'conceal' ? 'Conceal' : 'Engage'}
-          </span>
-          <span className="text-fade">
-            {st.order === 'conceal'
-              ? 'Cannot Shoot, Charge or counteract; not a valid target while in cover.'
-              : 'Acts normally, and can counteract.'}
-            {/* Towering Size, Sneaky Zogger, Stoopid — the order is a stat here, not a choice. */}
-            {o.lockOrder && <b className="text-flare"> Always in Engage Order.</b>}
-          </span>
-        </p>
-      )}
-
-      {/* The rest of the printed datacard. Absent for a hand-built team, and for the homebrew
-          factions, which have no PDF to extract — both are normal, so this simply renders less. */}
-      {!!card?.weapons.length && (
-        <table className="mt-2.5 w-full border-collapse">
-          <thead>
-            <tr className="display text-[10px] text-fade">
-              <th className="border-b border-black/15 py-0.5 text-left font-normal">Weapon</th>
-              <th className="border-b border-black/15 py-0.5 text-right font-normal">ATK</th>
-              <th className="border-b border-black/15 py-0.5 text-right font-normal">HIT</th>
-              <th className="border-b border-black/15 py-0.5 text-right font-normal">DMG</th>
-            </tr>
-          </thead>
-          <tbody>
-            {card.weapons.map((w) => (
-              <tr key={w.name} className="align-baseline">
-                <td className="py-0.5 pr-2">
-                  {w.name}
-                  {/* The weapon rules column is where the keywords live, so it gets the accent. */}
-                  {w.wr && <Rules text={w.wr} className="text-[11px] text-fade" />}
-                </td>
-                <td className="py-0.5 text-right tabular-nums">{w.atk}</td>
-                <td className="py-0.5 text-right tabular-nums">{w.hit}</td>
-                <td className="py-0.5 text-right tabular-nums">{w.dmg}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {card?.abilities.map((a) => (
-        <div key={a.name} className="mt-2.5">
-          <h6 className="display text-[11px] tracking-wider text-flare">{a.name}</h6>
-          <Rules text={a.text} />
-        </div>
-      ))}
-
-      {card?.actions.map((a) => (
-        <div key={a.name} className="mt-2.5">
-          <h6 className="display flex items-baseline gap-2 text-[11px] tracking-wider text-flare">
-            <span>{a.name}</span>
-            <span className="ml-auto shrink-0 rounded bg-card px-1.5 text-white">{a.ap}AP</span>
-          </h6>
-          <Rules text={a.text} />
-        </div>
-      ))}
-
-      {!!card?.keywords?.length && (
-        <p className="opname mt-2.5 border-t border-black/15 pt-1.5 text-[10px] text-fade">
-          {card.keywords.join(' \u00b7 ')}
-        </p>
-      )}
-
-      {/* What the weapon table's rules column actually means. These are the 2024 Appendix's
-          universal rules, which are in no faction PDF — so before this the card printed
-          "Piercing 1, Saturate" and nothing in the app said what either one did.
-
-          Last on the card and collapsed, because it is the least urgent thing on it: a
-          four-weapon operative can pull in eight rules, and open by default that wall would
-          push the operative's OWN abilities below the fold. `<details>` rather than state
-          because it is native, and because this view still takes no `dispatch`. */}
-      {!!glossary.length && (
-        <details
-          className="mt-2.5 border-t border-black/15 pt-1.5"
-          // Opening a disclosure has to REVEAL it. This sits at the bottom of the tallest card in
-          // the app, so expanding it almost always lands the new text below the fold — and the
-          // `more ▾` pill only tells you it is there, which is not the same as showing you. The
-          // slide is the nearest scroll container, so `block: 'nearest'` scrolls it the minimum
-          // needed and does nothing when the content already fits.
-          onToggle={(e) =>
-            e.currentTarget.open && e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-          }
-        >
-          <summary className="display cursor-pointer text-[11px] tracking-wider text-flare">
-            Weapon rules ({glossary.length})
-          </summary>
-          <dl className="mt-1 space-y-1 text-fade">
-            {glossary.map(([name, text]) => (
-              <div key={name}>
-                <dt className="inline font-bold text-card">{name}</dt>{' '}
-                <dd className="inline">{text}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      )}
-    </KtCard>
-  )
-}
-
-/**
- * Is there still card below the fold? Measured on the CARD against the slide's visible bottom,
- * deliberately NOT as `scrollTop + clientHeight < scrollHeight`: the hint pill is a sibling in
- * this same scroll container, so a scrollHeight test counts the pill's own height as content and
- * the hint keeps itself on screen for a card that fits. Measured: that kept it up on 6 cards
- * with nothing to show.
- *
- * The 24px is one line of body text: several cards clear the fold by two or three pixels of
- * rounding, and a hint promising more when there is no more is worse than no hint.
- */
-const MORE_SLACK = 24
-const cardOverflows = (el: HTMLElement | null) => {
-  const card = el?.firstElementChild
-  return (
-    !!el && !!card && card.getBoundingClientRect().bottom > el.getBoundingClientRect().bottom + MORE_SLACK
-  )
-}
-
-/**
- * One slide of the carousel, and the scroll container for any card taller than the screen.
- *
- * The pill is the whole point of this component. `KtCard`'s `min-h-fit` already makes a long card
- * grow and the slide scroll, so nothing is ever clipped — but the card is cut flush with the
- * bottom edge and this deck's primary gesture is a HORIZONTAL swipe, so a player swipes sideways
- * and never learns the card continued. Measured at 430x780 on the Custodes deck: Venatari keeps
- * 163px, 22% of its card, below the fold with no sign of it.
- *
- * `sticky` is what makes it self-removing: the pill un-pins once its own position scrolls into
- * view, which is exactly the bottom of the card.
- */
-function Slide({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [more, setMore] = useState(false)
-
-  // Keyed on `children`, which is a fresh element every render, so this re-measures whenever the
-  // card changes — and it has to. Measuring once on mount is wrong twice over: a dynamically
-  // imported faction grows the card a tick later, and switching deck swaps the card inside the
-  // SAME slide (the slides are keyed by index), so a stale `more` would carry across. Watching
-  // the card for resize instead is not enough either — `flex-1` stretches most cards to the same
-  // box height, so the swap fires no resize at all. The observer is only for the viewport
-  // changing under a card that did not re-render, i.e. rotating the phone.
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const check = () => setMore(cardOverflows(el))
-    check()
-    const ro = new ResizeObserver(check)
-    ro.observe(el)
-    // ...and the CARD, which is the only thing that grows when a `<details>` inside it opens. The
-    // slide's own box never changes then, and a native toggle re-renders no React, so neither the
-    // `children` key nor an observer on `el` fires — measured: 33px below the fold with the hint
-    // still down, on the one interaction that most needs it. Watching both covers content growing
-    // (the card) and the viewport changing under it (the slide).
-    if (el.firstElementChild) ro.observe(el.firstElementChild)
-    return () => ro.disconnect()
-  }, [children])
-
-  return (
-    <div
-      ref={ref}
-      onScroll={(e) => setMore(cardOverflows(e.currentTarget))}
-      className="flex w-full shrink-0 snap-center flex-col overflow-y-auto p-2"
-    >
-      {children}
-      {/* Zero-height on purpose. The pill is a flex sibling of a `flex-1` card, so anything with
-          real height reflows the card the moment it appears, which changes the very measurement
-          that decided to show it — the hint then flickers against its own layout. An `h-0` sticky
-          anchor contributes nothing and the pill hangs off it. */}
-      {more && (
-        <span className="pointer-events-none sticky bottom-0 h-0 self-stretch">
-          <span className="display absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-card/85 px-2 py-0.5 text-[10px] whitespace-nowrap text-white shadow">
-            more &#9662;
-          </span>
-        </span>
-      )}
-    </div>
-  )
-}
-
-/**
- * How every card sits in its slide, and both halves matter.
- *
- * `min-h-full` fills the slide so the hex lattice reaches the edges the way the printed art
- * does — that is what `flex-1` used to buy. `shrink-0` is the part that was missing: a flex
- * item shrinks below its content by default, and `KtCard` clips what it cannot fit, so a long
- * card was cut flush with the bottom edge AND left the slide nothing to scroll. Vulkan
- * He'stan's card ended mid-sentence on a phone with no `more ▾` pill and no scroll at all,
- * because from the slide's point of view nothing was overflowing.
- *
- * `KtCard` carried `min-h-fit` against this before. `min-height: fit-content` is an intrinsic
- * keyword a browser may drop; `flex-shrink: 0` is not.
- */
-const SLIDE_CARD = 'min-h-full shrink-0'
 
 /** One item in the bottom bar. `now` is whatever the current phase unlocks. */
 type Deck = 'now' | 'ops' | 'strategy' | 'firefight' | 'equipment' | 'faction' | 'tac'
@@ -362,12 +56,23 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
   const cards = [...(team?.cards ?? []), ...(faction?.cards ?? [])]
 
   const [deck, setDeck] = useState<Deck>('now')
-  const [at, setAt] = useState(0)
-  const rail = useRef<HTMLDivElement>(null)
+
+  // Gear is the one deck the player chose rather than inherited. Once they have drafted, it is
+  // exactly their four cards — which is also how the ten universal ones get back in, having been
+  // pulled out of here for burying a team's own rules under ladders and barricades.
+  //
+  // Falls back to the whole faction deck when nothing has been picked, so a GM-run team, a team
+  // whose player never drafted and every stale save all read exactly as they did before.
+  const chosenGear = team?.gear?.length
+    ? team.gear
+        .map((n) => [...cards, ...UNIVERSAL_EQUIPMENT].find((c) => c.kind === 'equipment' && c.name === n))
+        .filter((c): c is RefCard => !!c)
+    : null
 
   const cardsIn = (d: Deck): RefCard[] => {
     if (d === 'now') return phaseCards(cards, game.phase)
     if (d === 'tac' || d === 'ops') return []
+    if (d === 'equipment' && chosenGear) return chosenGear
     return cardsOfKind(cards, d)
   }
   const size = (d: Deck) => (d === 'tac' ? tacs.length : d === 'ops' ? ops.length : cardsIn(d).length)
@@ -382,7 +87,8 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
   //
   // There used to be a `hasOwn` guard here, to stop the fallback landing on the ten universal
   // equipment cards that belong to everybody rather than on the team's own rules. `Gear` is
-  // faction equipment only now, so every deck is the team's own content and the guard is gone.
+  // the team's faction equipment, or the cards its player drafted — either way its own content,
+  // so the guard is still gone.
   const ownFirst = team?.cards?.[0]?.kind
   const fallback = (ownFirst && decks.includes(ownFirst) ? ownFirst : decks[0]) ?? 'strategy'
   const live = decks.includes(deck) ? deck : fallback
@@ -419,56 +125,21 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
             />
         ))
 
-  const goto = (i: number) => {
-    const el = rail.current
-    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
-  }
-  const pick = (d: Deck) => {
-    setDeck(d)
-    setAt(0)
-    rail.current?.scrollTo({ left: 0 })
-  }
-
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-rule bg-paper shadow-sm">
-      <div
-        ref={rail}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          setAt(el.clientWidth ? Math.round(el.scrollLeft / el.clientWidth) : 0)
-        }}
-        className="no-bar flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain"
-      >
-        {slides.length ? (
-          slides.map((slide, i) => <Slide key={i}>{slide}</Slide>)
-        ) : (
-          <p className="p-3 text-sm text-ink/55">Nothing here.</p>
-        )}
-      </div>
-
-      {live === 'tac' && !op && (
-        <p className="border-t border-rule px-2 py-1 text-center text-[11px] text-flare">
-          None picked yet — tell the GM which of these you want.
-        </p>
-      )}
-
-      {/* Which card of how many, and a tap target per card for anyone not swiping. */}
-      {slides.length > 1 && (
-        <div className="flex items-center justify-center gap-1.5 border-t border-rule py-1.5">
-          {slides.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => goto(i)}
-              aria-label={`Card ${i + 1} of ${slides.length}`}
-              aria-current={i === at}
-              className={`h-1.5 rounded-full transition-all ${i === at ? 'w-5 bg-flare' : 'w-1.5 bg-black/20'}`}
-            />
-          ))}
-          <span className="display ml-2 text-[10px] text-fade">
-            {Math.min(at + 1, slides.length)}/{slides.length}
-          </span>
-        </div>
-      )}
+      {/* Keyed by deck: remounting is what resets the rail to card 1, where setting an index
+          left it at whatever offset the last deck ended on. */}
+      <Carousel
+        key={live}
+        slides={slides}
+        note={
+          live === 'tac' && !op ? (
+            <p className="border-t border-rule px-2 py-1 text-center text-[11px] text-flare">
+              None picked yet — tell the GM which of these you want.
+            </p>
+          ) : undefined
+        }
+      />
 
       {/* Bottom navigation: the decks, under the thumb. */}
       <nav className="flex shrink-0 border-t-2 border-flare bg-card">
@@ -477,7 +148,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
           return (
             <button
               key={d}
-              onClick={() => pick(d)}
+              onClick={() => setDeck(d)}
               aria-current={on}
               className={`display relative min-w-0 flex-1 px-1 pt-2 pb-1.5 text-center text-xs ${
                 on ? 'text-flare' : 'text-white/55 hover:text-white/80'

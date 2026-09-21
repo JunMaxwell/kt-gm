@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import {
   CP_PER_TP,
@@ -6,6 +6,7 @@ import {
   CRIT_OPS,
   type CritOpId,
   DEFAULT_ROSTER,
+  GEAR_LIMIT,
   OBJECTIVE_MARKERS,
   OP_CAP,
   type OpKind,
@@ -81,6 +82,9 @@ export type Game = {
   ops: Record<string, OpState>
   teams: Record<string, TeamDef> // teamId -> the team itself, metadata and play state
   turnIdx: number
+  /** Is the players' draft open? Closes on its own when the match starts; the GM reopens it
+   *  from the header. Lives on `Game`, not on a device, because it has to reach seven phones. */
+  picks: boolean
 }
 
 /** Everyone starts Concealed, except an operative a rule forbids it to. */
@@ -120,8 +124,16 @@ export const initialGame = (): Game => {
     counteracts: { imperium: 0, xenos: 0 },
     roster,
     ops: freshOps(roster),
-    teams: Object.fromEntries(PRESET_TEAMS.map((t) => [t.id, { ...t, cp: STARTING_CP, tacOp: '', tacVp: 0 }])),
+    // `opLimit` from the roster it ships with, so every preset team's draft limit is its own
+    // legal size (5/6/9/10/7/11) without the GM setting a single number.
+    teams: Object.fromEntries(
+      PRESET_TEAMS.map((t) => [
+        t.id,
+        { ...t, cp: STARTING_CP, tacOp: '', tacVp: 0, opLimit: roster[t.id]?.length ?? 0 },
+      ]),
+    ),
     turnIdx: 0,
+    picks: true,
   }
 }
 
@@ -179,6 +191,12 @@ export type Action =
   | { type: 'removeOp'; teamId: string; opId: string }
   | { type: 'editOp'; teamId: string; opId: string; patch: Partial<Operative> }
   | { type: 'resetRoster'; teamId: string }
+  // --- the player's draft. The first three are the ONLY actions a phone may ask for; see
+  //     `PLAYER_ASKS`. `picks` is the GM's gate over them and is never asked for. ---
+  | { type: 'claim'; teamId: string; name: string; from?: string }
+  | { type: 'setRoster'; teamId: string; ops: Operative[] }
+  | { type: 'gear'; teamId: string; names: string[] }
+  | { type: 'picks'; value: boolean }
   // --- setup: the match itself is editable, so these change who is playing ---
   | { type: 'stage'; value: Stage }
   | { type: 'sideAdd' }
@@ -357,9 +375,17 @@ export function reduce(g: Game, a: Action): Game {
       const spent = clamp((o.used ?? 0) + (spending ? 1 : -1), 0, acts)
       // Activating *is* the Firefight phase, so the GM never has to announce that one by hand.
       // Every path below spreads `next`, so setting it here covers all of them.
+      //
+      // It is also what closes the players' draft, and the trigger is here rather than on
+      // `stage: 'play'` for a reason that cost a round: the GM steps onto the board constantly
+      // during setup — to check the scoreboard, to read the counteract banners, to hand out the
+      // room link that is printed there — and closing the draft then locks seven phones out
+      // before anybody has drafted. The FIRST ACTIVATION is when a roster change actually
+      // becomes dangerous, and it is unambiguous. Reopening is still the GM's header toggle.
       const next = {
         ...g,
         phase: spending ? ('firefight' as const) : g.phase,
+        picks: g.picks && !spending,
         ops: { ...g.ops, [a.opId]: { ...o, used: spent, expended: spent >= acts } },
       }
 
@@ -490,6 +516,77 @@ export function reduce(g: Game, a: Action): Game {
         ops: { ...kept, ...freshOps({ [a.teamId]: list }) },
       }
     }
+
+    /* ---------- the player's draft ----------
+     * Three actions a phone may ask for, applied by the GM's client after the `PLAYER_ASKS`
+     * whitelist. Like the roster cases above they manage `g.ops` by hand rather than calling
+     * `normalize` — nothing here changes the cast of alliances or teams.
+     */
+
+    // NOT gated on `picks`: a late arrival still has to tell the GM who they are, even once the
+    // draft has closed. Releasing the old team is part of the same step, so switching teams is
+    // atomic and costs one undo, and a phone can never hold two claims.
+    //
+    // An empty name IS the release — the same action both ways, because the two always happen
+    // together and splitting them would let a phone drop one half. The label survives a release:
+    // the GM typed "Player 3" there once and may want it back, and a blank team card tells him
+    // less than a stale name does.
+    case 'claim': {
+      const teams = { ...g.teams }
+      if (a.from && teams[a.from]) teams[a.from] = { ...teams[a.from], claimed: false }
+      const team = teams[a.teamId]
+      if (!team) return { ...g, teams }
+      teams[a.teamId] = a.name
+        ? { ...team, player: a.name, claimed: true }
+        : { ...team, claimed: false }
+      return { ...g, teams }
+    }
+
+    // The player's picks ARE the roster, so this is `resetRoster` with the list supplied.
+    // The one addition: an operative that survives the change keeps its OpState. The GM can
+    // reopen the draft mid-match, and re-picking must not heal the whole team.
+    case 'setRoster': {
+      if (!g.picks) return g
+      const kept = Object.fromEntries(Object.entries(g.ops).filter(([id]) => teamIdOf(g, id) !== a.teamId))
+      const survivors = Object.fromEntries(
+        a.ops.filter((o) => g.ops[o.id]).map((o) => [o.id, g.ops[o.id]]),
+      )
+      // Freeze the pool on the first draft, and only then. An uncurated pool falls back to the
+      // team's ROSTER — which this action is about to overwrite with the player's picks — so
+      // without this, dropping an operative deletes it from the very list it could be picked
+      // back from. A one-way ratchet: 11 Kommandos to 4, and never up again.
+      //
+      // The roster is captured BEFORE the replacement, so the pool holds the full starting
+      // eleven for good and the GM's Setup panel stays a list he removes from. Skipped when the
+      // roster is empty, because that pool falls through to the faction's own datacards
+      // instead, and that tier is derived from the faction and cannot shrink.
+      const team = g.teams[a.teamId]
+      const teams =
+        team && !team.pool && g.roster[a.teamId]?.length
+          ? { ...g.teams, [a.teamId]: { ...team, pool: g.roster[a.teamId] } }
+          : g.teams
+      // Clamped here as well as in the UI, exactly as `gear` is: the GM's limit is the rule, and
+      // the ask arrives over a network from a phone that may be showing a stale one. `||`, not
+      // `??` — a limit of 0 means "never set", which is how a team added from the library starts.
+      const ops = a.ops.slice(0, team?.opLimit || a.ops.length)
+      return {
+        ...g,
+        teams,
+        roster: { ...g.roster, [a.teamId]: ops },
+        ops: { ...kept, ...freshOps({ [a.teamId]: ops }), ...survivors },
+      }
+    }
+
+    case 'gear': {
+      const team = g.teams[a.teamId]
+      if (!g.picks || !team) return g
+      // Clamped here as well as in the UI: the limit is the rule, and the ask arrives over a
+      // network from a phone that may be showing a stale one.
+      return { ...g, teams: { ...g.teams, [a.teamId]: { ...team, gear: a.names.slice(0, team.gearLimit ?? GEAR_LIMIT) } } }
+    }
+
+    case 'picks':
+      return { ...g, picks: a.value }
 
     /* ---------- setup ----------
      * Everything below changes who is playing, so every case ends in `normalize`.
@@ -748,7 +845,7 @@ export const counteract = (g: Game, s: SideId) => {
 // One game PER ROOM, so switching back to an old room restores it with no network at all.
 // `local` is the no-room fallback — if `POST /rooms` fails the GM still gets a game, because
 // the relay is never a prerequisite for starting one.
-const gameKey = (code = 'local') => `killteam-gm/v18/${code}`
+const gameKey = (code = 'local') => `killteam-gm/v19/${code}`
 const ROOM_KEY = 'killteam-gm/room' // the room this device is CURRENTLY in
 const ROOMS_KEY = 'killteam-gm/rooms' // every room this device knows, newest first
 
@@ -959,6 +1056,19 @@ export const withHistory = (h: History, a: UiAction): History => {
   return { past: merge ? h.past : [...h.past, h.now].slice(-UNDO_DEPTH), now, last: key }
 }
 
+/**
+ * The only actions a player's phone may ask the GM to run.
+ *
+ * This set IS the security boundary. The room code is the only secret there is — anyone who can
+ * open the spectator link can open a socket and send a frame — so the GM validates by action
+ * type and applies nothing else. All three are scoped to one team, and none of them can reach
+ * VP, wounds, initiative or the turn cursor.
+ *
+ * ponytail: type-level whitelist over a shared code. Sign each ask with a per-player token if
+ * this ever guards something that matters.
+ */
+const PLAYER_ASKS = new Set(['claim', 'setRoster', 'gear'])
+
 export function useGame() {
   // Above the reducer, because the reducer's lazy initialiser now needs the room to pick its
   // storage key. Switching rooms afterwards is NOT a re-init — the launcher dispatches an
@@ -972,6 +1082,16 @@ export function useGame() {
   })
   const game = hist.now
   const viewer = !!room && !room.token
+  const sock = useRef<WebSocket | null>(null)
+
+  /** Ask the GM to run an action. The player's only write path; see `PLAYER_ASKS`.
+   *  Returns false when there is no open socket, which is the caller's cue to say so — an ask
+   *  into a closed socket is silent, and a player tapping Done deserves to know it went nowhere. */
+  const ask = useCallback((a: Action) => {
+    if (sock.current?.readyState !== WebSocket.OPEN) return false
+    sock.current.send(JSON.stringify({ ask: a }))
+    return true
+  }, [])
 
   useEffect(() => {
     if (!viewer) localStorage.setItem(gameKey(room?.code), JSON.stringify(game))
@@ -989,17 +1109,34 @@ export function useGame() {
     return () => clearTimeout(t)
   }, [game, room])
 
-  // Viewer ← relay. The server sends the current snapshot on connect, so a late joiner or a
-  // reconnect is caught up without a separate fetch.
+  // The relay socket, now in both directions.
+  //
+  //   viewer ← relay : the whole snapshot, exactly as before. The server sends the current one
+  //                    on connect, so a late joiner or a reconnect is caught up with no fetch.
+  //   GM     ← relay : `{ ask }` frames only, on their own topic. The GM is the only reducer
+  //                    there has ever been; a phone asks, the GM applies, and the resulting
+  //                    snapshot goes back out the normal way. That is what lets players write
+  //                    without giving anyone a second writer or teaching the server the rules.
+  //
+  // The GM subscribes to `<code>:ask`, never to `<code>`, so it does not receive its own
+  // snapshot back — it POSTs one every debounced change, and echoing it would double the
+  // uplink on a phone-tethered GM for nothing.
   useEffect(() => {
-    if (!viewer || !room) return
+    if (!room) return
     let ws: WebSocket
     let retry: ReturnType<typeof setTimeout>
     let done = false
     const connect = () => {
-      ws = new WebSocket(`${API.replace(/^http/, 'ws')}/rooms/${room.code}/ws`)
-      ws.onmessage = (e) => dispatch({ type: 'replace', game: JSON.parse(e.data) })
+      ws = new WebSocket(`${API.replace(/^http/, 'ws')}/rooms/${room.code}/ws${viewer ? '' : '?gm=1'}`)
+      sock.current = ws
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data)
+        if (viewer) return dispatch({ type: 'replace', game: msg })
+        // Anyone who knows the room code can send an ask, so the whitelist is the boundary.
+        if (PLAYER_ASKS.has(msg?.ask?.type)) dispatch(msg.ask)
+      }
       ws.onclose = () => {
+        if (sock.current === ws) sock.current = null
         if (!done) retry = setTimeout(connect, 2000)
       }
     }
@@ -1024,5 +1161,5 @@ export function useGame() {
     return () => window.removeEventListener('keydown', onKey)
   }, [viewer])
 
-  return [game, dispatch, { room, viewer, setRoom }, hist.past.length > 0] as const
+  return [game, dispatch, { room, viewer, setRoom, ask }, hist.past.length > 0] as const
 }

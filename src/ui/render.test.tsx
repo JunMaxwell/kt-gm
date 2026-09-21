@@ -15,11 +15,16 @@ import { EndScreen } from './EndScreen'
 import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 import { TeamPicker } from './TeamPicker'
+import { Draft } from './Draft'
 import { Glossary, Pack } from './Glossary'
 import { Rules } from './kit'
 
 const noop = () => {}
+/** `ask` reports whether the socket took the frame; in a render test it always did. */
+const yes = () => true
 const net = { room: null, viewer: false, create: noop, join: noop, leave: noop, save: noop, saves: [], load: noop } as never
+/** A GM who has actually opened a room — the branch of `RoomBar` that offers the links. */
+const netRoom = { ...(net as object), room: { code: 'ABCD', token: 't' }, setRoom: noop, ask: yes } as never
 
 const panels = (g: ReturnType<typeof initialGame>) =>
   [
@@ -31,13 +36,16 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     R(<CompendiumBrowser game={g} />),
     // Once per wizard step: each one renders a different panel set, and `initialGame()` is
     // stage `play`, so a single render would only ever exercise the clamped fallback.
-    ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} />)),
+    ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} net={net} />)),
     R(<Launcher game={g} dispatch={noop} net={net} onGlossary={noop} />),
     R(<Glossary game={g} onClose={noop} />),
     R(<EndScreen game={g} dispatch={noop} net={net} />),
-    // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick.
+    // Both entries: the unskippable first run (no pick, no Cancel) and the re-pick. The third
+    // is the claim-capable form — `onClaim` is absent with no relay, so both shapes exist.
     R(<TeamPicker game={g} me="" onPick={noop} />),
     R(<TeamPicker game={g} me={allTeams(g)[0]?.id ?? ''} code="ABCD" onPick={noop} onClose={noop} />),
+    R(<TeamPicker game={g} me="" code="ABCD" onPick={noop} onClaim={noop} />),
+    ...allTeams(g).map((t) => R(<Draft game={g} teamId={t.id} ask={yes} onClose={noop} />)),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing={false} reveal={false} />)),
     ...allTeams(g).map((t) => R(<TeamCard teamId={t.id} game={g} dispatch={noop} editing reveal />)),
     ...allTeams(g).map((t) => R(<Compendium game={g} teamId={t.id} />)),
@@ -324,4 +332,134 @@ test('no panel prints a raw \\uXXXX escape', () => {
   // see it, because the escape IS the output.
   const html = panels(initialGame()) + R(<Glossary game={initialGame()} onClose={noop} />)
   expect(html).not.toMatch(/\\u[0-9a-fA-F]{4}/)
+})
+
+test('the draft offers a curated pool, and falls back to the roster when the GM set none', () => {
+  const g = initialGame()
+  // No pool: the team's own roster is the list, so the default costs the GM nothing.
+  const plain = R(<Draft game={g} teamId="kom" ask={yes} onClose={noop} />)
+  // The preset six field the short hand-curated CATALOGUE names, not the PDF's full ones.
+  expect(plain).toContain('Boss Nob')
+  expect(plain).toContain('11/11') // the whole roster, pre-ticked, at its own limit
+  // Full datacards, not a list of one-liners — that is the whole point of the carousel.
+  // Source casing, not the screen's: `display` uppercases these in CSS, which `innerText`
+  // reflects in a browser and `renderToStaticMarkup` does not.
+  expect(plain).toContain('Krumpin')     // the Boss Nob's ability
+  expect(plain).toContain('Power klaw')  // his weapon table
+  expect(plain).toContain('Get It Dun')  // and his unique action
+
+  const curated = reduce(g, {
+    type: 'teamPatch',
+    teamId: 'kom',
+    patch: { pool: [blankOperative('kom')], opLimit: 1 },
+  })
+  const html = R(<Draft game={curated} teamId="kom" ask={yes} onClose={noop} />)
+  expect(html).toContain('New operative')
+  expect(html).not.toContain('Boss Nob') // the pool REPLACES the roster as the list
+})
+
+/** `Compendium` only mounts the deck that is OPEN, and `ops` wins by default. A GM-authored
+ *  card sorts first and its kind decides the fallback, so this is how you make Gear the one
+ *  on screen — the same route a boss's rules deck takes. */
+const gearOpen = (g: ReturnType<typeof initialGame>, teamId: string) => {
+  const withCard = reduce(g, { type: 'cardAdd', teamId, kind: 'equipment' })
+  const id = withCard.teams[teamId].cards![0].id
+  return reduce(withCard, { type: 'cardPatch', teamId, cardId: id, patch: { name: 'GM kit', text: 'x' } })
+}
+
+test('faction and universal gear are separate tabs over one shared budget', () => {
+  const g = initialGame()
+  // Only the open tab's carousel is mounted, and the draft opens on Operatives. An empty pool
+  // is what sends it onward — which is also the fallback being pinned.
+  const noOps = reduce(g, { type: 'teamPatch', teamId: 'dw', patch: { pool: [] } })
+  const html = R(<Draft game={noOps} teamId="dw" ask={yes} onClose={noop} />)
+  // Three tabs, and it lands on the team's OWN gear rather than the ten everybody shares.
+  expect(html).toContain('Faction gear')
+  expect(html).toContain('Universal gear')
+  expect(html).toContain('Digital Weapons') // dw's own
+  expect(html).not.toContain('Ladders')     // universal, one tab over
+  // One budget across both, said once — and short enough to survive `truncate` at 390px,
+  // where the first wording was cut at "share the li…" and lost the half that mattered.
+  expect(html).toContain('Gear — 0 of 4 across both tabs.')
+})
+
+test('a team with no faction gear is not offered an empty tab', () => {
+  let g = reduce(initialGame(), { type: 'teamPatch', teamId: 'dw', patch: { faction: undefined, pool: [] } })
+  const html = R(<Draft game={g} teamId="dw" ask={yes} onClose={noop} />)
+  expect(html).not.toContain('Faction gear')
+  // Universal gear is in the core rules, so that tab can never be empty and is where it lands.
+  expect(html).toContain('Ladders')
+  // With one gear tab there are no "both tabs" to share across.
+  expect(html).toContain('Gear — 0 of 4.')
+})
+
+test('universal equipment is pickable in the draft and still absent from the deck', () => {
+  expect(R(<Compendium game={gearOpen(initialGame(), 'dw')} teamId="dw" />)).not.toContain('Ladders')
+})
+
+test('the Gear deck shows what the player drafted, universal cards included', () => {
+  const g = reduce(gearOpen(initialGame(), 'dw'), {
+    type: 'gear',
+    teamId: 'dw',
+    names: ['Ladders (2x)', 'Ammo Cache (1x)'],
+  })
+  const html = R(<Compendium game={g} teamId="dw" />)
+  expect(html).toContain('Ladders (2x)')
+  expect(html).toContain('Ammo Cache (1x)')
+  // and every card they did NOT take is gone, the GM's own included
+  expect(html).not.toContain('GM kit')
+  const dropped = factionData('dw')!.cards.filter((c) => c.kind === 'equipment')
+  expect(dropped.length).toBeGreaterThan(0)
+  for (const c of dropped) expect(html).not.toContain(c.name)
+})
+
+test('a team whose player never drafted keeps the faction equipment deck it always had', () => {
+  const html = R(<Compendium game={gearOpen(initialGame(), 'dw')} teamId="dw" />)
+  const kit = factionData('dw')!.cards.find((c) => c.kind === 'equipment')!
+  expect(html).toContain(kit.name)
+  expect(html).toContain('GM kit')
+})
+
+test('a claimed team is offered to nobody else, and named to everyone', () => {
+  const g = reduce(initialGame(), { type: 'claim', teamId: 'kom', name: 'Minh' })
+  // Someone else's phone: taken, named, and the row cannot be tapped.
+  const theirs = R(<TeamPicker game={g} me="dw" code="ABCD" onPick={noop} onClaim={noop} />)
+  expect(theirs).toContain('Taken — Minh')
+  expect(theirs).toContain('disabled')
+  // Their own: no "taken", and a way back out.
+  const mine = R(<TeamPicker game={g} me="kom" code="ABCD" onPick={noop} onClaim={noop} />)
+  expect(mine).toContain('Claimed as Minh')
+  expect(mine).toContain('Release')
+  expect(mine).not.toContain('Taken —')
+})
+
+test('the setup wizard carries the room strip, on every step', () => {
+  // The draft happens DURING setup, so the viewer link has to be on the screen the GM is
+  // building the match on. It was missing here entirely: reaching it meant walking onto the
+  // board, which is the one thing that used to close the draft.
+  const g = initialGame()
+  for (const stage of STEPS) {
+    expect(R(<Setup game={{ ...g, stage }} dispatch={noop} net={netRoom} />)).toContain('Copy viewer link')
+    // And with no room open it is still the strip, offering the one copy that needs no server.
+    expect(R(<Setup game={{ ...g, stage }} dispatch={noop} net={net} />)).toContain('Export match')
+  }
+})
+
+test('the draft opens within the limit, even when the roster is over it', () => {
+  // A GM lowering the limit below the roster would otherwise hand the player a list that is
+  // already illegal and can only be removed from — the counter reading 11/5 on arrival.
+  const g = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { opLimit: 5 } })
+  const html = R(<Draft game={g} teamId="kom" ask={yes} onClose={noop} />)
+  expect(html).toContain('5/5')
+  expect(html).not.toContain('11/5')
+  expect(html).toContain('pick 5, each operative once')
+  // All eleven are still offered — the limit caps what you take, not what you can see.
+  expect(html).toContain('Bomb Squig')
+})
+
+test('a limit above the pool is capped to what is actually offered', () => {
+  const g = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { opLimit: 20 } })
+  const html = R(<Draft game={g} teamId="kom" ask={yes} onClose={noop} />)
+  expect(html).toContain('11/11')
+  expect(html).not.toContain('/20')
 })

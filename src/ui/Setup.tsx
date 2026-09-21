@@ -3,21 +3,27 @@ import { useState } from 'react'
 import {
   ARCHETYPES,
   type Archetype,
+  CATALOGUE,
   CRIT_OPS,
   type CritOpId,
   DEFAULT_ROSTER,
+  GEAR_LIMIT,
+  type Operative,
   type OwnCard,
   STARTING_CP,
   type TeamDef,
+  blankOperative,
   presetRoster,
+  slug,
   tacOp,
   teamTacOps,
 } from '../rules'
 import { FACTIONS } from '../factions'
 import { KIND_LABEL, type RefKind } from '../compendium'
 import { type Stage, STEPS, allTeams, initialGame, teamOps, teamsOf } from '../state'
-import { Btn, BufferedInput, Label, TeamPill } from './kit'
-import { type Dispatch, type Game, onInt } from './shared'
+import { Btn, BufferedInput, DarkBtn, Label, TeamPill } from './kit'
+import { type Dispatch, type Game, type Net, draftPool, onInt, useFaction } from './shared'
+import { RoomBar } from './RoomBar'
 import { Objectives } from './Objectives'
 import { TacOpCard } from './TacOpCard'
 import { TeamCard } from './TeamCard'
@@ -45,7 +51,7 @@ const STEP_LABEL: Record<string, string> = {
   tacops: 'Tac ops',
 }
 
-export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
+export function Setup({ game, dispatch, net }: { game: Game; dispatch: Dispatch; net: Net }) {
   // `initialGame()` is stage `play`, and the escape hatch can land here from anywhere, so the
   // rendered step is clamped into the wizard's own range rather than trusted.
   const step: Stage = STEPS.includes(game.stage) ? game.stage : 'alliances'
@@ -99,30 +105,43 @@ export function Setup({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
 
           <span className="ml-auto flex items-center gap-2">
             {blocked && <span className="display text-xs text-amber-300">{blocked}</span>}
-            <Btn className="display px-3 py-1" disabled={at <= 0} onClick={() => go(STEPS[at - 1])}>
+            <DarkBtn className="display px-3 py-1" disabled={at <= 0} onClick={() => go(STEPS[at - 1])}>
               ← Back
-            </Btn>
+            </DarkBtn>
             {at < STEPS.length - 1 ? (
-              <Btn className="display px-3 py-1" disabled={!!blocked} onClick={() => go(STEPS[at + 1])}>
+              <DarkBtn className="display px-3 py-1" disabled={!!blocked} onClick={() => go(STEPS[at + 1])}>
                 Next →
-              </Btn>
+              </DarkBtn>
             ) : (
-              <Btn className="display px-3 py-1 text-base" disabled={!playable} onClick={() => go('play')}>
+              <DarkBtn className="display px-3 py-1 text-base" disabled={!playable} onClick={() => go('play')}>
                 Start match
-              </Btn>
+              </DarkBtn>
             )}
             {/* Always offered once the match holds together — this is the escape hatch's
                 way home, and it needs no "already started" flag to know when to appear. */}
             {playable && at < STEPS.length - 1 && (
-              <Btn className="display px-3 py-1" onClick={() => go('play')} title="Back to the board">
+              <DarkBtn className="display px-3 py-1" onClick={() => go('play')} title="Back to the board">
                 ▶ To the match
-              </Btn>
+              </DarkBtn>
             )}
-            <Btn className="display px-3 py-1" onClick={() => go('rooms')} title="Rooms and saved games">
+            <DarkBtn className="display px-3 py-1" onClick={() => go('rooms')} title="Rooms and saved games">
               Games
-            </Btn>
+            </DarkBtn>
           </span>
         </div>
+
+        {/* The room strip, the same one the board carries.
+         *
+         * It was missing here for as long as setup existed, and that was survivable only while
+         * the players had nothing to do until the match began. It is not survivable now: the
+         * draft happens DURING setup, so the viewer link is needed on the screen where the GM
+         * is building the match, not one click past it. Getting it used to mean walking onto
+         * the board — which is the very thing that used to close the draft.
+         *
+         * `Setup -> RoomBar` is the second panel-to-panel edge after `TurnBar -> RoomBar`, and
+         * it is the same edge: `RoomBar` imports nothing but `state`, `kit` and `shared`, so it
+         * is a leaf in everything but the table's labelling. */}
+        <RoomBar game={game} dispatch={dispatch} net={net} />
       </header>
 
       <main className="p-4">
@@ -253,7 +272,10 @@ function Teams({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
     // Only the six bundled factions carry a default roster for this match. Everything else
     // starts empty and the GM picks from its datacards — there is no one legal composition.
     const roster = f && DEFAULT_ROSTER[f.id] ? presetRoster(f.id, team.id) : []
-    dispatch({ type: 'teamAdd', team, roster })
+    // The draft limit is the team's own legal size, set once here so it cannot drift: the
+    // player's picks BECOME the roster, so reading it back off `roster.length` later would
+    // ratchet the limit down to whatever they last chose.
+    dispatch({ type: 'teamAdd', team: { ...team, opLimit: roster.length }, roster })
   }
 
   return (
@@ -306,6 +328,21 @@ function Teams({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
         <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           {teams.map((t) => (
             <TeamCard key={t.id} teamId={t.id} game={game} dispatch={dispatch} editing reveal />
+          ))}
+        </div>
+        {!teams.length && <p className="text-xs text-ink/40">No teams yet — add one above.</p>}
+      </Panel>
+
+      <Panel title="Player picks">
+        <p className="mb-3 text-xs text-ink/50">
+          What each player may choose on their own phone, and how much of it. Leave a team alone and its own roster
+          is the list — they just tick which models they are fielding. Offer more than they can take and the choice
+          becomes theirs.
+          {!game.picks && <b className="text-flare"> The draft is closed; reopen it from the header.</b>}
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+          {teams.map((t) => (
+            <PlayerPicks key={t.id} game={game} dispatch={dispatch} team={t} />
           ))}
         </div>
         {!teams.length && <p className="text-xs text-ink/40">No teams yet — add one above.</p>}
@@ -560,6 +597,100 @@ function TeamRow({ game, dispatch, team }: { game: Game; dispatch: Dispatch; tea
           {teamOps(game, team.id).length} operatives
           {team.faction ? ` · ${team.faction} cards` : ' · no cards'}
         </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * One team's draft settings: the pool its player chooses from, and the two limits.
+ *
+ * The pool seeds from the team's current roster the first time the GM touches it, so the default
+ * — do nothing — means "the list I already built, tick what you are fielding". `pool` is written
+ * only on the first edit, which is also why `TeamDef.pool` is optional rather than mirrored on
+ * every team: a match nobody curates carries no extra bytes through the relay.
+ *
+ * Candidates come from the same place `TeamCard`'s add-select does, and ids are minted the same
+ * way, because a pool entry and a roster entry are the same kind of thing — that is what lets a
+ * re-picked operative keep its wound track.
+ */
+function PlayerPicks({ game, dispatch, team }: { game: Game; dispatch: Dispatch; team: TeamDef }) {
+  const faction = useFaction(team.faction)
+  const catalogue = CATALOGUE[team.faction ?? ''] ?? faction?.operatives ?? []
+  const roster = teamOps(game, team.id)
+  // Same three tiers the player's phone sees, so the GM is never curating a different list.
+  const pool = draftPool(team, faction, roster)
+  const patch = (p: Partial<TeamDef>) => dispatch({ type: 'teamPatch', teamId: team.id, patch: p })
+
+  const add = (value: string) => {
+    if (!value) return
+    const src = catalogue.find((c) => c.id === value)
+    const op: Operative = src
+      ? { ...src, id: `${team.id}-${slug(src.name)}-${crypto.randomUUID().slice(0, 4)}` }
+      : blankOperative(team.id)
+    patch({ pool: [...pool, op] })
+  }
+
+  return (
+    <div className="border border-rule bg-wash/40 p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <TeamPill team={team} />
+        {team.claimed ? (
+          <>
+            <span className="text-xs text-ink/55">claimed by {team.player}</span>
+            {/* The escape hatch: a player claims the wrong team and their phone then dies, and
+                nothing else in the app can unstick it. */}
+            <Btn onClick={() => dispatch({ type: 'claim', teamId: team.id, name: '' })}>Release</Btn>
+          </>
+        ) : (
+          <span className="text-xs text-ink/40">unclaimed</span>
+        )}
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        {/* `||`, not `??`: a team added from the library has no roster, so `teamAdd` set its
+            limit to 0 — which as a limit means "pick nothing" and is never what anyone wants. */}
+        <Num label="Pick" value={team.opLimit || pool.length} onEdit={(n) => patch({ opLimit: Math.max(0, n) })} />
+        <Num label="Gear" value={team.gearLimit ?? GEAR_LIMIT} onEdit={(n) => patch({ gearLimit: Math.max(0, n) })} />
+        <span className="text-xs text-ink/40">of {pool.length} offered</span>
+      </div>
+
+      <ul className="mb-2 space-y-0.5">
+        {pool.map((o) => (
+          <li key={o.id} className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 flex-1 truncate">{o.name}</span>
+            <span className="shrink-0 tabular-nums text-ink/40">{o.w}W</span>
+            <button
+              onClick={() => patch({ pool: pool.filter((x) => x.id !== o.id) })}
+              aria-label={`Remove ${o.name} from the pool`}
+              className="shrink-0 rounded px-1 text-xenos hover:bg-black/10"
+            >
+              ×
+            </button>
+          </li>
+        ))}
+        {!pool.length && (
+          <li className="text-xs text-ink/40">Nothing to offer — this team has no roster and no datacards.</li>
+        )}
+      </ul>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value=""
+          onChange={(e) => add(e.target.value)}
+          className="min-w-0 flex-1 border border-rule bg-paper px-1 py-0.5 text-xs"
+        >
+          <option value="">+ offer another operative…</option>
+          <optgroup label="Datacards">
+            {catalogue.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} — {c.apl}AP {c.move} {c.save} {c.w}W
+              </option>
+            ))}
+          </optgroup>
+          <option value="__custom">Blank operative</option>
+        </select>
+        {team.pool && <Btn onClick={() => patch({ pool: undefined })}>Use roster</Btn>}
       </div>
     </div>
   )

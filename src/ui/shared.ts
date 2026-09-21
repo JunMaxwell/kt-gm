@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 
+import { CATALOGUE, type Operative, type TeamDef, slug } from '../rules'
 import { type FactionData, factionData, loadFaction } from '../factions'
 import type { useGame } from '../state'
 
@@ -90,3 +91,26 @@ export const teamUrl = (id: string) => `${location.origin}${location.pathname}?$
  */
 export const meInUrl = () => param(ME)
 export const setMeInUrl = (id: string) => setParam(ME, id)
+
+/**
+ * What a player may choose from in the draft, and what the GM's Setup panel seeds itself with.
+ *
+ * Three tiers, narrowest first:
+ *   1. `team.pool`  — the GM curated one.
+ *   2. the roster   — he did not, but the team came with models. Ticking which of your own
+ *                     eleven Kommandos you are fielding is a sensible default.
+ *   3. the faction  — neither. Only the six preset factions carry a `DEFAULT_ROSTER`, so the
+ *                     other 42 start empty and tier 2 would hand the player a blank screen.
+ *
+ * **Tier 3 re-mints every id against the team.** Library operatives are keyed by FACTION
+ * (`dw:deathwatch-aegis-veteran`), and `g.ops` is one flat id-keyed map — so two teams of one
+ * faction drafting the same operative would share a single wound track. This is the same trap
+ * `DEFAULT_ROSTER` is keyed by team id to avoid. Deterministic rather than random, so a player
+ * who unticks an operative and changes their mind gets the same id and keeps its state.
+ */
+export const draftPool = (team: TeamDef, faction: FactionData | undefined, roster: Operative[]): Operative[] => {
+  if (team.pool) return team.pool
+  if (roster.length) return roster
+  const src = CATALOGUE[team.faction ?? ''] ?? faction?.operatives ?? []
+  return src.map((o) => ({ ...o, id: `${team.id}-${slug(o.name)}` }))
+}

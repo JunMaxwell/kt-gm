@@ -18,6 +18,7 @@ import {
 } from './rules'
 import { OWN_RULE, PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
 import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
+import { draftPool } from './ui/shared'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
 const preset = (id: string) => PRESET_TEAMS.find((t) => t.id === id)!
@@ -1442,4 +1443,195 @@ test('a player link carries the team ahead of the room hash, and parses back', (
   } finally {
     ;(globalThis as { location?: unknown }).location = real
   }
+})
+
+/* ---------- the player's draft ----------
+ *
+ * Three actions a phone may ask the GM to run, and the gate over two of them. The transport is
+ * verified in a browser — these pin the rules the transport carries.
+ */
+
+test('a claim names the team and locks it, and switching teams releases the old one', () => {
+  const g = reduce(initialGame(), { type: 'claim', teamId: 'kom', name: 'Minh' })
+  expect(g.teams.kom.player).toBe('Minh')
+  expect(g.teams.kom.claimed).toBe(true)
+  // Nothing else is touched: `claimed` is a separate flag precisely because the presets ship
+  // "Player 1".."Player 7", so a non-empty name cannot mean taken.
+  expect(g.teams.dw.claimed).toBeFalsy()
+  expect(g.teams.dw.player).toBe('Player 1')
+
+  // One action, so changing your mind can never leave two teams held or one stranded.
+  const moved = reduce(g, { type: 'claim', teamId: 'rav', name: 'Minh', from: 'kom' })
+  expect(moved.teams.kom.claimed).toBe(false)
+  expect(moved.teams.rav.claimed).toBe(true)
+  expect(moved.teams.rav.player).toBe('Minh')
+})
+
+test('an empty claim name is the release, and keeps the label the GM typed', () => {
+  const g = reduce(initialGame(), { type: 'claim', teamId: 'kom', name: 'Minh' })
+  const freed = reduce(g, { type: 'claim', teamId: 'kom', name: '' })
+  expect(freed.teams.kom.claimed).toBe(false)
+  expect(freed.teams.kom.player).toBe('Minh') // a stale name tells the GM more than a blank does
+})
+
+test('a claim still works once the draft has closed — a late player has to say who they are', () => {
+  const shut = reduce(initialGame(), { type: 'picks', value: false })
+  expect(reduce(shut, { type: 'claim', teamId: 'kom', name: 'Minh' }).teams.kom.claimed).toBe(true)
+})
+
+test('the picks a player sends ARE the roster, and surviving operatives keep their wounds', () => {
+  const g = initialGame()
+  const kept = teamOps(g, 'kom').slice(0, 3)
+  const hurt = reduce(g, { type: 'wound', opId: kept[0].id, delta: -2 })
+  const hp = hurt.ops[kept[0].id].hp
+  const dropped = teamOps(g, 'kom')[5].id
+
+  const next = reduce(hurt, { type: 'setRoster', teamId: 'kom', ops: kept })
+  expect(ids(next, 'kom')).toEqual(kept.map((o) => o.id))
+  // The GM can reopen the draft mid-match, so re-picking must not heal the whole team.
+  expect(next.ops[kept[0].id].hp).toBe(hp)
+  // An operative that left takes its state with it, the way `removeOp` does.
+  expect(next.ops[dropped]).toBeUndefined()
+  // Every other team is untouched — `setRoster` only ever prunes its own.
+  expect(teamOps(next, 'rav').length).toBe(10)
+})
+
+test('an operative added by a re-pick starts at full wounds', () => {
+  const g = initialGame()
+  const all = teamOps(g, 'kom')
+  const cut = reduce(g, { type: 'setRoster', teamId: 'kom', ops: all.slice(0, 2) })
+  const back = reduce(cut, { type: 'setRoster', teamId: 'kom', ops: all.slice(0, 3) })
+  expect(back.ops[all[2].id].hp).toBe(all[2].w)
+  expect(back.ops[all[2].id].expended).toBe(false)
+})
+
+test('gear is clamped to the limit, because the ask arrives from a phone that may be stale', () => {
+  const g = initialGame()
+  const six = ['a', 'b', 'c', 'd', 'e', 'f']
+  expect(reduce(g, { type: 'gear', teamId: 'kom', names: six }).teams.kom.gear).toEqual(['a', 'b', 'c', 'd'])
+
+  // "Limit 4 unless stated otherwise" — the GM states otherwise per team.
+  const raised = reduce(g, { type: 'teamPatch', teamId: 'kom', patch: { gearLimit: 6 } })
+  expect(reduce(raised, { type: 'gear', teamId: 'kom', names: six }).teams.kom.gear).toEqual(six)
+})
+
+test('the FIRST ACTIVATION closes the draft, and merely opening the board does not', () => {
+  const g = initialGame()
+  expect(g.picks).toBe(true)
+  // Walking onto the console is something the GM does all through setup — to read the
+  // scoreboard, to hand out the room link printed there. Closing the draft then locks seven
+  // phones out before anyone has drafted, which is exactly the bug this pins.
+  const board = reduce(g, { type: 'stage', value: 'play' })
+  expect(board.picks).toBe(true)
+  expect(reduce(board, { type: 'stage', value: 'teams' }).picks).toBe(true)
+
+  // An activation is unambiguous: the match is underway and a roster change is now dangerous.
+  const opId = teamOps(g, 'kom')[0].id
+  const started = reduce(board, { type: 'activate', opId })
+  expect(started.picks).toBe(false)
+  // Only the GM's header toggle reopens it — that is what "locked, GM can reopen" means.
+  expect(reduce(started, { type: 'picks', value: true }).picks).toBe(true)
+})
+
+test('un-activating an operative is a correction and does not reopen the draft', () => {
+  const opId = teamOps(initialGame(), 'kom')[0].id
+  const started = reduce(initialGame(), { type: 'activate', opId })
+  expect(reduce(started, { type: 'activate', opId }).picks).toBe(false)
+})
+
+test('a team from the faction library drafts from its datacards, with ids minted per team', () => {
+  const f = FACTIONS.find((x) => !x.preset && !x.custom)!
+  const mk = (id: string) => ({
+    id, player: 'P', name: f.name, short: 'X', side: 'xenos', color: f.color,
+    archetypes: [...f.archetypes], faction: f.id, cp: 0, tacOp: '', tacVp: 0,
+  })
+  let g = reduce(initialGame(), { type: 'teamAdd', team: mk('lib1'), roster: [] })
+  g = reduce(g, { type: 'teamAdd', team: mk('lib2'), roster: [] })
+  const data = factionData(f.id) ?? { operatives: [] }
+  // Only the six preset factions carry a DEFAULT_ROSTER, so without the faction fallback the
+  // other 42 hand their player a blank draft.
+  const a = draftPool(g.teams.lib1, data as never, [])
+  const b = draftPool(g.teams.lib2, data as never, [])
+  expect(a.length).toBeGreaterThan(0)
+  // `g.ops` is one flat map, so two teams of one faction must never share an operative id.
+  expect(a.map((o) => o.id)).not.toEqual(b.map((o) => o.id))
+  expect(new Set([...a, ...b].map((o) => o.id)).size).toBe(a.length + b.length)
+  // Deterministic, so unticking an operative and changing your mind keeps its wound track.
+  expect(draftPool(g.teams.lib1, data as never, []).map((o) => o.id)).toEqual(a.map((o) => o.id))
+})
+
+test('a closed draft refuses a roster and a gear ask, so a stale phone cannot edit mid-match', () => {
+  const shut = reduce(initialGame(), { type: 'picks', value: false })
+  expect(reduce(shut, { type: 'setRoster', teamId: 'kom', ops: [] })).toBe(shut)
+  expect(reduce(shut, { type: 'gear', teamId: 'kom', names: ['a'] })).toBe(shut)
+})
+
+test('deleting a team takes its pool with it, the way it already takes its cards', () => {
+  const g = reduce(initialGame(), {
+    type: 'teamPatch',
+    teamId: 'kom',
+    patch: { pool: [blankOperative('kom')] },
+  })
+  expect(g.teams.kom.pool?.length).toBe(1)
+  // `pool` lives on `TeamDef`, so `normalize` prunes it for free — no cleanup code exists.
+  expect(reduce(g, { type: 'teamRemove', teamId: 'kom' }).teams.kom).toBeUndefined()
+})
+
+test('every preset team opens with its own legal size as the draft limit', () => {
+  const g = initialGame()
+  // 5/6/5/9 Imperium, 10/7/11 Xenos — the numbers the match was written around.
+  expect(PRESET_TEAMS.map((t) => g.teams[t.id].opLimit)).toEqual([5, 6, 5, 9, 10, 7, 11])
+  for (const t of PRESET_TEAMS) expect(g.teams[t.id].opLimit).toBe(teamOps(g, t.id).length)
+})
+
+test('drafting freezes the pool, so a dropped operative can always be picked back', () => {
+  const g = initialGame()
+  const all = teamOps(g, 'kom')
+  expect(g.teams.kom.pool).toBeUndefined() // uncurated: the pool IS the roster, by fallback
+
+  // ...and the roster is what this action overwrites. Without the freeze the offered list
+  // ratchets down with every draft and an operative dropped once is gone for good.
+  const cut = reduce(g, { type: 'setRoster', teamId: 'kom', ops: all.slice(0, 4) })
+  expect(cut.teams.kom.pool?.length).toBe(11)
+  expect(teamOps(cut, 'kom').length).toBe(4)
+
+  // Frozen once, not re-frozen: a second draft must not overwrite it with the shorter list.
+  const again = reduce(cut, { type: 'setRoster', teamId: 'kom', ops: all.slice(0, 2) })
+  expect(again.teams.kom.pool?.length).toBe(11)
+  // And the whole eleven really is still pickable.
+  const back = reduce(again, { type: 'setRoster', teamId: 'kom', ops: again.teams.kom.pool! })
+  expect(teamOps(back, 'kom').length).toBe(11)
+})
+
+test("a GM's curated pool is never overwritten by a draft", () => {
+  const three = teamOps(initialGame(), 'kom').slice(0, 3)
+  const curated = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { pool: three } })
+  const after = reduce(curated, { type: 'setRoster', teamId: 'kom', ops: three.slice(0, 1) })
+  expect(after.teams.kom.pool?.length).toBe(3)
+})
+
+test('a team with no roster keeps falling through to its faction, which cannot shrink', () => {
+  const f = FACTIONS.find((x) => !x.preset && !x.custom)!
+  const team = {
+    id: 'lib', player: 'P', name: f.name, short: 'X', side: 'xenos', color: f.color,
+    archetypes: [...f.archetypes], faction: f.id, cp: 0, tacOp: '', tacVp: 0,
+  }
+  const g = reduce(initialGame(), { type: 'teamAdd', team, roster: [] })
+  const drafted = reduce(g, { type: 'setRoster', teamId: 'lib', ops: [] })
+  // Freezing an EMPTY roster would pin the pool to nothing and strand the team for good.
+  expect(drafted.teams.lib.pool).toBeUndefined()
+})
+
+test("the GM's pick limit is the rule, and the reducer holds it", () => {
+  const g = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { opLimit: 5 } })
+  const all = teamOps(g, 'kom')
+  expect(all.length).toBe(11)
+  // The UI stops you going over; this is the backstop, because the ask crosses a network from a
+  // phone that may be showing a stale limit. `gear` has always been clamped — this matches it.
+  expect(teamOps(reduce(g, { type: 'setRoster', teamId: 'kom', ops: all }), 'kom').length).toBe(5)
+  // Under the limit is untouched.
+  expect(teamOps(reduce(g, { type: 'setRoster', teamId: 'kom', ops: all.slice(0, 3) }), 'kom').length).toBe(3)
+  // And a limit of 0 means "never set", which is how a library team starts — not "pick nothing".
+  const none = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { opLimit: 0 } })
+  expect(teamOps(reduce(none, { type: 'setRoster', teamId: 'kom', ops: all }), 'kom').length).toBe(11)
 })

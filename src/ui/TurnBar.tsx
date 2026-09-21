@@ -194,6 +194,17 @@ export function TurnBar({
             <DarkBtn on={editing} onClick={() => setEditing(!editing)} className="display">
               {editing ? 'Done editing' : 'Edit rosters'}
             </DarkBtn>
+            {/* Closes itself when the match starts, so this is the reopen. Unlike the tac op
+                toggle beside it this is `Game` state, not device state: it has to reach seven
+                phones, and a GM peeking at his own screen is not the same as unlocking theirs. */}
+            <DarkBtn
+              on={game.picks}
+              onClick={() => dispatch({ type: 'picks', value: !game.picks })}
+              className="display"
+              title="Whether players can claim a team and build their list on their own phone. Closes on its own when the match starts."
+            >
+              {game.picks ? 'Picks open' : 'Picks closed'}
+            </DarkBtn>
             {/* The escape hatch. Late players arrive and teams get cut, so every wizard step
                 stays one tap away mid-match — each one returns here on its own. */}
             <label className="display flex items-center gap-1 text-xs text-white/50">

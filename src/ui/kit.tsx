@@ -4,20 +4,26 @@ import type { TeamDef } from '../rules'
 
 /* ---------- shared bits ---------- */
 
+/** Dimming is on the base, not per call: neither button styled `disabled` at all, so a blocked
+ *  Next and a live one looked identical on every panel in the app. Eighteen call sites pass
+ *  `disabled`; exactly one used to dim itself. */
+const OFF = 'disabled:opacity-40 disabled:cursor-not-allowed'
+
 export const Btn = ({ on, ...p }: { on?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
   <button
     {...p}
-    className={`rounded px-2 py-1 text-sm tabular-nums transition-colors ${
+    className={`rounded px-2 py-1 text-sm tabular-nums transition-colors ${OFF} ${
       on ? 'bg-card font-semibold text-white' : 'bg-black/5 text-ink hover:bg-black/12'
     } ${p.className ?? ''}`}
   />
 )
 
-/** Dark-chrome variant, for use inside the ink header bar. */
+/** Dark-chrome variant, for the ink header bars. `Btn`'s `text-ink` on `bg-card` is dark on
+ *  dark — legible enough on paper to miss in review, and unreadable on a screen. */
 export const DarkBtn = ({ on, ...p }: { on?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
   <button
     {...p}
-    className={`rounded px-2 py-1 text-sm tabular-nums transition-colors ${
+    className={`rounded px-2 py-1 text-sm tabular-nums transition-colors ${OFF} ${
       on ? 'bg-white font-semibold text-ink' : 'bg-white/12 text-white hover:bg-white/25'
     } ${p.className ?? ''}`}
   />
@@ -75,7 +81,7 @@ export const Stepper = ({
   onSet?: (v: number) => void
 }) => (
   <span className="inline-flex items-center gap-1">
-    <Btn onClick={() => onChange(-1)} disabled={value <= 0} className="w-7 disabled:opacity-25">
+    <Btn onClick={() => onChange(-1)} disabled={value <= 0} className="w-7">
       –
     </Btn>
     {onSet ? (
@@ -92,7 +98,7 @@ export const Stepper = ({
     ) : (
       <span className="w-6 text-center font-semibold tabular-nums">{value}</span>
     )}
-    <Btn onClick={() => onChange(1)} disabled={max !== undefined && value >= max} className="w-7 disabled:opacity-25">
+    <Btn onClick={() => onChange(1)} disabled={max !== undefined && value >= max} className="w-7">
       +
     </Btn>
   </span>

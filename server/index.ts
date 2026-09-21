@@ -5,10 +5,13 @@
  *   - live sync   : the GM POSTs whole-game snapshots, we fan them out over WebSocket.
  *                   In memory only. The GM's localStorage is the source of truth, so a
  *                   restart here costs nothing — the next tap re-seeds the room.
+ *                   The socket also runs the other way: a player's phone sends an `{ ask }`
+ *                   frame and we forward it to the GM, who is still the only reducer.
  *   - save slots  : Postgres, written only when someone clicks "Save match".
  *
- * The server never runs the reducer and never imports rules.ts. A snapshot is an opaque
- * blob. Zero dependencies: Bun.serve does the WebSocket pub/sub, Bun's SQL does Postgres.
+ * The server never runs the reducer and never imports rules.ts. A snapshot is an opaque blob
+ * and so is an ask — we do not know what either one says, which is what keeps the rules in one
+ * place. Zero dependencies: Bun.serve does the WebSocket pub/sub, Bun's SQL does Postgres.
  */
 import { SQL } from 'bun'
 
@@ -76,7 +79,7 @@ const guard = async (req: Request, code: string) =>
 
 /* ---------- server ---------- */
 
-const server = Bun.serve<{ code: string }, Record<string, never>>({
+const server = Bun.serve<{ code: string; gm: boolean }, Record<string, never>>({
   port: PORT,
   idleTimeout: 120, // a spectator tab sits idle between activations; default 10s would churn
 
@@ -119,8 +122,17 @@ const server = Bun.serve<{ code: string }, Record<string, never>>({
       },
     },
 
+    // Two topics on one socket. `<code>` carries snapshots out to spectators; `<code>:ask`
+    // carries player requests back to the GM. Keeping them apart is what stops the GM
+    // receiving its own snapshot echo — it POSTs one on every debounced change.
+    //
+    // `?gm=1` is unauthenticated on purpose: it grants only the ability to HEAR asks, which
+    // are a strict subset of what the open snapshot stream already tells you. Acting on one
+    // still requires being the GM's browser.
     '/rooms/:code/ws': (req) =>
-      server.upgrade(req, { data: { code: req.params.code } })
+      server.upgrade(req, {
+        data: { code: req.params.code, gm: new URL(req.url).searchParams.get('gm') === '1' },
+      })
         ? undefined
         : new Response('expected a websocket', { status: 426 }),
 
@@ -173,13 +185,19 @@ const server = Bun.serve<{ code: string }, Record<string, never>>({
 
   websocket: {
     open(ws) {
+      if (ws.data.gm) return ws.subscribe(`${ws.data.code}:ask`) // the GM has its own state already
       ws.subscribe(ws.data.code)
       const snapshot = live.get(ws.data.code)
       if (snapshot) ws.send(snapshot) // catch a late joiner up before the next GM change
     },
-    message() {}, // viewers are read-only; nothing they say matters
+    // A player asking the GM for something — claiming a team, submitting a roster. Forwarded
+    // verbatim and understood no more than a snapshot is: the GM's client decides what is a
+    // legal ask and runs the reducer, exactly as it always has. We stay a pipe.
+    message(ws, raw) {
+      server.publish(`${ws.data.code}:ask`, raw)
+    },
     close(ws) {
-      ws.unsubscribe(ws.data.code)
+      ws.unsubscribe(ws.data.gm ? `${ws.data.code}:ask` : ws.data.code)
     },
   },
 })
