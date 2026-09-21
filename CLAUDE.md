@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 173 tests: the reducer, and a render pass over every panel
+bun test           # 177 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -454,7 +454,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 173 tests in two files:
+`bun test` is 177 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -804,7 +804,7 @@ hand-built team and every stale save stay valid.
 | `pool?: Operative[]` | What the player may choose from. Absent means the team's own roster. |
 | `opLimit?: number` | How many of it they may take. Set from the roster size when the team is added. |
 | `gear?: string[]` | Chosen equipment, by `RefCard.name`. |
-| `gearLimit?: number` | Absent means `GEAR_LIMIT`, which is 4. |
+| `gearLimit?: number` | The GM's number. Absent means `GEAR_LIMIT`, which is 4. The operatives add to it — see below. |
 | `Game.picks: boolean` | Is the draft open. Closes itself on the **first activation**; the GM's header toggle is the one way back. |
 
 - **`pool` holds minted operatives, not catalogue ids**, for three reasons. The phone mints no ids
@@ -859,6 +859,40 @@ hand-built team and every stale save stay valid.
 - **The limit caps what you TAKE, never what you see.** All eleven stay in the carousel at a limit
   of five, and that is what makes swapping one for another possible at all. The effective limit is
   itself capped at the pool size, since a counter reading `11/20` only looks broken.
+
+### The operatives who raise the equipment limit
+
+"Limit 4 **unless stated otherwise**" is the printed rule, and four operatives in 53 factions are
+the otherwise. `gearAllowance(g, teamId)` is `gearLimit + gearBonus(roster)`, and the roster is
+the point: a Watch Sergeant you did not field grants nothing.
+
+| Faction | Operative | Rule | |
+|---|---|---|---|
+| Deathwatch | Watch Sergeant | *Adaptable Armoury* | +1 |
+| Hearthkyn Salvagers | Lugger | *Well Supplied* | +1 (also 1CP, not modelled) |
+| Ratlings | Fixer | *Munitorum Contacts* | +1 |
+| Spectre Squad | Guide | *Prepared Killzone* | +1, **restricted** |
+
+- **Found by reading every datacard, not by guessing** — the same reason `lockOrder` is an
+  explicit list. A wide regex over all 53 factions threw up eleven candidates and seven were
+  noise: the Ratling Stashmaster grants an extra Ammo Cache *marker* rather than an extra
+  selection, and Inquisitorial Requisition is about operatives. **A test keeps that audit
+  runnable**, failing if any datacard says "you can select one additional equipment" and is not
+  in `GEAR_BONUS` — so a faction added later cannot quietly short its player.
+- **`GEAR_BONUS` is keyed by NAME, and carries both names each operative has.** The preset six
+  field the short `CATALOGUE` names while the library carries the PDF's full ones. Names rather
+  than ids is what lets the **reducer** use it: no faction chunk has to be loaded, so the clamp
+  cannot depend on whether a dynamic import has resolved. A second test checks every key resolves
+  to a real operative, since a typo would otherwise fail silently.
+- **The Spectre Guide's extra pick must be an Ammo Cache or an equipment terrain feature**, and
+  that restriction is *not* enforced — it is on the card the player is reading, and refereed at
+  the table like every other distance in this app.
+- **Dropping the grantor trims the gear list.** The limit moves with the operatives, so unticking
+  the Watch Sergeant while holding five cards has to drop the fifth, or the player saves a list
+  the reducer then silently truncates. The draft trims the newest first.
+- **The phone says who is granting it** — *"Watch Sergeant grants the extra pick."* under the gear
+  carousel — and the GM's Setup panel shows `+1 gear from Watch Sergeant`. Without it a fifth slot
+  looks like a bug, and losing it when you drop him looks like a worse one.
 - `pool` lives on `TeamDef`, so `normalize` prunes it when a team is deleted — no cleanup code was
   written, the same free ride `TeamDef.cards` gets.
 

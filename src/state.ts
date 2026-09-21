@@ -7,6 +7,7 @@ import {
   type CritOpId,
   DEFAULT_ROSTER,
   GEAR_LIMIT,
+  gearBonus,
   OBJECTIVE_MARKERS,
   OP_CAP,
   type OpKind,
@@ -582,7 +583,10 @@ export function reduce(g: Game, a: Action): Game {
       if (!g.picks || !team) return g
       // Clamped here as well as in the UI: the limit is the rule, and the ask arrives over a
       // network from a phone that may be showing a stale one.
-      return { ...g, teams: { ...g.teams, [a.teamId]: { ...team, gear: a.names.slice(0, team.gearLimit ?? GEAR_LIMIT) } } }
+      return {
+        ...g,
+        teams: { ...g.teams, [a.teamId]: { ...team, gear: a.names.slice(0, gearAllowance(g, a.teamId)) } },
+      }
     }
 
     case 'picks':
@@ -683,6 +687,17 @@ const orderedIds = (g: Game, s: SideId) => {
 
 const sideTeams = (g: Game, s: SideId) => orderedIds(g, s).map((id) => g.teams[id])
 export const teamOps = (g: Game, teamId: string) => g.roster[teamId] ?? []
+
+/**
+ * How many equipment cards a team may take: the GM's number, plus whatever the operatives it
+ * actually FIELDED bring with them — the Deathwatch Watch Sergeant's *Adaptable Armoury* and
+ * the three others like it. Off the roster, not the pool: a Watch Sergeant you did not take
+ * grants nothing.
+ *
+ * `gearBonus` matches on name, so this needs no faction chunk loaded and the reducer can use it.
+ */
+export const gearAllowance = (g: Game, teamId: string) =>
+  (g.teams[teamId]?.gearLimit ?? GEAR_LIMIT) + gearBonus(teamOps(g, teamId))
 
 /** Below half starting wounds: −2" Move and −1 to the weapon's Hit stat. Not an APL penalty. */
 export const injured = (o: Operative, st: OpState) => !st.dead && st.hp * 2 < o.w

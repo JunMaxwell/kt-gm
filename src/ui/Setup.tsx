@@ -8,6 +8,8 @@ import {
   type CritOpId,
   DEFAULT_ROSTER,
   GEAR_LIMIT,
+  gearBonus,
+  gearGrantors,
   type Operative,
   type OwnCard,
   STARTING_CP,
@@ -621,6 +623,7 @@ function PlayerPicks({ game, dispatch, team }: { game: Game; dispatch: Dispatch;
   // Same three tiers the player's phone sees, so the GM is never curating a different list.
   const pool = draftPool(team, faction, roster)
   const patch = (p: Partial<TeamDef>) => dispatch({ type: 'teamPatch', teamId: team.id, patch: p })
+  const granted = gearBonus(roster)
 
   const add = (value: string) => {
     if (!value) return
@@ -653,6 +656,13 @@ function PlayerPicks({ game, dispatch, team }: { game: Game; dispatch: Dispatch;
         <Num label="Pick" value={team.opLimit || pool.length} onEdit={(n) => patch({ opLimit: Math.max(0, n) })} />
         <Num label="Gear" value={team.gearLimit ?? GEAR_LIMIT} onEdit={(n) => patch({ gearLimit: Math.max(0, n) })} />
         <span className="text-xs text-ink/40">of {pool.length} offered</span>
+        {/* The "unless stated otherwise" the printed rule allows for. Shown against the roster
+            the player actually fielded, which is what `gearAllowance` counts. */}
+        {granted > 0 && (
+          <span className="text-xs text-flare" title={gearGrantors(roster).join(', ')}>
+            +{granted} gear from {gearGrantors(roster).join(', ')}
+          </span>
+        )}
       </div>
 
       <ul className="mb-2 space-y-0.5">

@@ -111,6 +111,40 @@ export type TeamDef = {
 /** "Limit 4 selection unless stated otherwise" — the printed rule, and the default `gearLimit`. */
 export const GEAR_LIMIT = 4
 
+/**
+ * The operatives who ARE the "unless stated otherwise": their own datacard rule grants the team
+ * extra equipment selections, so the limit depends on who the player actually fielded.
+ *
+ * Four of them in 53 factions, found by reading every datacard ability and action rather than by
+ * guessing — the same reason `lockOrder` is an explicit list and not a regex over rules text.
+ * Three are unconditional; the Spectre Guide's extra pick must be an Ammo Cache or an equipment
+ * terrain feature, which is on its card and is NOT enforced here. `ponytail: one restricted
+ * grant, stated on the card and refereed at the table; model it if a second one shows up.`
+ *
+ * Keyed by NAME, and by both names each operative has: the six preset factions field the short
+ * hand-curated `CATALOGUE` names while the library carries the PDF's full ones, and the two
+ * conventions never merged. Names rather than ids because this then needs no faction chunk to
+ * be loaded, which is what lets the reducer clamp with it.
+ * `ponytail: a name collision across factions would grant wrongly; give operatives stable keys
+ * if the library ever gets one.`
+ */
+export const GEAR_BONUS: Record<string, number> = {
+  'Watch Sergeant': 1, // Deathwatch — Adaptable Armoury
+  'Deathwatch Watch Sergeant': 1,
+  'Hearthkyn Lugger': 1, // Hearthkyn Salvagers — Well Supplied (also grants 1CP, not modelled)
+  'Ratling Fixer': 1, // Ratlings — Munitorum Contacts
+  'Spectre Guide': 1, // Spectre Squad — Prepared Killzone (restricted; see above)
+}
+
+/** Extra equipment these operatives earn between them. A roster duplicate's trailing number is
+ *  stripped first, the same way `datacardOf` strips it before joining. */
+export const gearBonus = (ops: Operative[]) =>
+  ops.reduce((n, o) => n + (GEAR_BONUS[o.name.replace(/ \d+$/, '')] ?? 0), 0)
+
+/** Who in a list is granting it, for a UI that has to explain why the limit is 5 and not 4. */
+export const gearGrantors = (ops: Operative[]) =>
+  ops.filter((o) => GEAR_BONUS[o.name.replace(/ \d+$/, '')]).map((o) => o.name)
+
 /** A team before it has play state. `initialGame` adds the CP and tac op columns. */
 export type TeamPreset = Omit<TeamDef, 'cp' | 'tacOp' | 'tacVp'>
 

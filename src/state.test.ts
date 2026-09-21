@@ -5,6 +5,7 @@ import {
   ARCHETYPES,
   CATALOGUE,
   CRIT_OPS,
+  GEAR_BONUS,
   TAC_OPS,
   PRESET_TEAMS,
   STARTING_CP,
@@ -35,6 +36,7 @@ import {
   rotation,
   type Game,
   initialGame,
+  gearAllowance,
   killGrade,
   kills,
   held,
@@ -1634,4 +1636,50 @@ test("the GM's pick limit is the rule, and the reducer holds it", () => {
   // And a limit of 0 means "never set", which is how a library team starts — not "pick nothing".
   const none = reduce(initialGame(), { type: 'teamPatch', teamId: 'kom', patch: { opLimit: 0 } })
   expect(teamOps(reduce(none, { type: 'setRoster', teamId: 'kom', ops: all }), 'kom').length).toBe(11)
+})
+
+/* ---------- equipment the operatives themselves grant ---------- */
+
+test('the Watch Sergeant is worth a fifth equipment card, and only while fielded', () => {
+  const g = initialGame()
+  // "Limit 4 unless stated otherwise" — Adaptable Armoury is the otherwise.
+  expect(gearAllowance(g, 'dw')).toBe(5)
+  expect(gearAllowance(g, 'kom')).toBe(4)
+
+  const without = teamOps(g, 'dw').filter((o) => o.name !== 'Watch Sergeant')
+  expect(gearAllowance(reduce(g, { type: 'setRoster', teamId: 'dw', ops: without }), 'dw')).toBe(4)
+})
+
+test('the reducer clamps gear to the allowance, bonus included', () => {
+  const g = initialGame()
+  const five = ['a', 'b', 'c', 'd', 'e']
+  // Deathwatch field a Watch Sergeant, so five is legal for them...
+  expect(reduce(g, { type: 'gear', teamId: 'dw', names: five }).teams.dw.gear).toEqual(five)
+  // ...and not for anyone else.
+  expect(reduce(g, { type: 'gear', teamId: 'kom', names: five }).teams.kom.gear).toEqual(five.slice(0, 4))
+  // The GM's own number still stacks with it.
+  const raised = reduce(g, { type: 'teamPatch', teamId: 'dw', patch: { gearLimit: 6 } })
+  expect(gearAllowance(raised, 'dw')).toBe(7)
+})
+
+test('every GEAR_BONUS name resolves to a real operative, under both naming conventions', async () => {
+  // The map is keyed by name because that needs no faction chunk loaded — which means a typo or
+  // a renamed datacard fails silently. This is the check that it does not.
+  const catalogued = new Set(Object.values(CATALOGUE).flat().map((o) => o.name))
+  const carded = new Set<string>()
+  for (const f of FACTIONS) for (const d of (await loadFaction(f.id))?.datacards ?? []) carded.add(d.name)
+  for (const name of Object.keys(GEAR_BONUS))
+    expect(catalogued.has(name) || carded.has(name)).toBe(true)
+})
+
+test('no datacard grants extra equipment without being in GEAR_BONUS', async () => {
+  // The audit that found these four, kept runnable: a faction added later that grants a fifth
+  // card should fail here rather than quietly shorting its player.
+  const GRANTS = /you can select (one|two|\d+) additional equipment/i
+  const missed: string[] = []
+  for (const f of FACTIONS)
+    for (const d of (await loadFaction(f.id))?.datacards ?? [])
+      for (const a of [...d.abilities, ...d.actions])
+        if (GRANTS.test(a.text) && !GEAR_BONUS[d.name]) missed.push(`${f.id}/${d.name}/${a.name}`)
+  expect(missed).toEqual([])
 })

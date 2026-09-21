@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { UNIVERSAL_EQUIPMENT, cardsOfKind } from '../compendium'
 import { datacardOf } from '../factions'
-import { GEAR_LIMIT, type Operative } from '../rules'
+import { GEAR_LIMIT, type Operative, gearBonus, gearGrantors } from '../rules'
 import { teamOps } from '../state'
 import { Btn, DarkBtn } from './kit'
 import { Carousel, SLIDE_CARD } from './Carousel'
@@ -59,7 +59,7 @@ export function Draft({
   // Capped at what is actually offered: a limit above the pool can never be reached, and a
   // counter reading 11/20 just looks broken.
   const opLimit = Math.min(team?.opLimit || pool.length, pool.length)
-  const gearLimit = team?.gearLimit ?? GEAR_LIMIT
+
 
   // The team's own gear: its faction's four, plus anything the GM wrote for it. Universal
   // equipment is the other tab — the ten cards in the core rules that belong to everybody.
@@ -104,6 +104,13 @@ export function Draft({
   const status = landed && sent !== '' ? 'ok' : sent
   useEffect(() => () => clearTimeout(timer.current), [])
 
+  // The gear limit moves with the operatives, not with the saved roster: a Watch Sergeant's
+  // *Adaptable Armoury* is worth a fifth card the moment you tick him, and worth nothing the
+  // moment you drop him. Computed off the LOCAL selection so the two tabs agree before a save.
+  const picked = pool.filter((o) => ops.includes(o.id))
+  const grantors = gearGrantors(picked)
+  const gearLimit = (team?.gearLimit ?? GEAR_LIMIT) + gearBonus(picked)
+
   const onOps = tab === 'ops'
   const chosen = onOps ? ops : gear
   const limit = onOps ? opLimit : gearLimit
@@ -116,7 +123,17 @@ export function Draft({
     if (!here) return
     setSent('')
     const set = onOps ? setOps : setGear
-    if (holding) return set(chosen.filter((x) => x !== here))
+    if (holding) {
+      // Dropping an operative can drop the gear limit under a list already at it — the Watch
+      // Sergeant's fifth card has to go with him, or the player saves an illegal list and the
+      // reducer silently truncates it. Trim the newest first, which is the one they just added.
+      if (onOps) {
+        const left = pool.filter((o) => o.id !== here && ops.includes(o.id))
+        const room = (team.gearLimit ?? GEAR_LIMIT) + gearBonus(left)
+        if (gear.length > room) setGear(gear.slice(0, room))
+      }
+      return set(chosen.filter((x) => x !== here))
+    }
     if (chosen.length >= limit) {
       setFull(true)
       return setTimeout(() => setFull(false), 700)
@@ -194,9 +211,15 @@ export function Draft({
             : 'No equipment for this team.'
         }
         note={
-          !onOps && gear.length >= gearLimit ? (
+          onOps ? undefined : gear.length >= gearLimit ? (
             <p className="border-t border-rule px-2 py-1 text-center text-[11px] text-flare">
               That is all {gearLimit} — drop something to take this instead.
+            </p>
+          ) : grantors.length ? (
+            // Says WHY the limit is five rather than four. Without it the extra slot looks like
+            // a bug, and dropping the operative that granted it looks like a worse one.
+            <p className="border-t border-rule px-2 py-1 text-center text-[11px] text-ink/55">
+              {grantors.join(' and ')} {grantors.length > 1 ? 'grant' : 'grants'} the extra pick.
             </p>
           ) : undefined
         }
