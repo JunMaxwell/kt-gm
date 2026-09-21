@@ -83,7 +83,33 @@ export type TeamDef = {
    *  other way to tell a player anything, since the player view is the card deck and nothing
    *  else. Optional, so `TeamPreset` and every stale save stay valid. */
   cards?: OwnCard[]
+
+  /* ---------- the player's draft ----------
+   * All optional, so `TeamPreset`, every hand-built team and every stale save stay valid.
+   * The GM sets `pool` / `opLimit` / `gearLimit`; the player's phone asks for the rest.
+   */
+  /** A phone has claimed this team. NOT `player !== ''` — the presets ship "Player 1".."Player 7",
+   *  so a non-empty name cannot mean "taken" without every team reading as claimed on day one. */
+  claimed?: boolean
+  /** What the player may choose from. Absent means the team's current roster.
+   *  Fully-minted operatives rather than catalogue ids, for three reasons: the phone never mints
+   *  an id (they come in four shapes and the reducer has never minted one); duplicates work,
+   *  because the Raveners' `Warrior 1..5` are five tickable rows instead of one catalogue entry
+   *  takeable once; and a re-picked operative keeps its id, so `setRoster` can keep its wounds. */
+  pool?: Operative[]
+  /** How many of the pool the player may take. Set from the roster size when the team is added. */
+  opLimit?: number
+  /** Equipment the player chose, by `RefCard.name` — cards have no id, and `kind:name` is
+   *  already the de-facto key. Every entry here is `kind: 'equipment'`, so the name alone is
+   *  enough. ponytail: a faction card sharing a name with a universal one selects both; give
+   *  cards ids if that ever happens. */
+  gear?: string[]
+  /** How many equipment cards the player may take. Absent means `GEAR_LIMIT`. */
+  gearLimit?: number
 }
+
+/** "Limit 4 selection unless stated otherwise" — the printed rule, and the default `gearLimit`. */
+export const GEAR_LIMIT = 4
 
 /** A team before it has play state. `initialGame` adds the CP and tac op columns. */
 export type TeamPreset = Omit<TeamDef, 'cp' | 'tacOp' | 'tacVp'>

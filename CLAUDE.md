@@ -57,7 +57,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 |---|---|
 | `src/rules.ts` | All static data and every tunable: the **preset** sides and teams, operative catalogues, default rosters, 9 crit ops, 12 tac ops, colours, caps, the kill-grade formula and cheat-sheet text |
 | `src/compendium.ts` | The three turning-point phases, the `RefCard` type, universal equipment, and the universal **weapon rules** glossary. The per-faction cards moved to `src/factions/` |
-| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1362 weapons, 744 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
+| `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1362 weapons, 759 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
@@ -775,9 +775,15 @@ Facts that cost time to establish, and will again if this is redone:
   token (an ALL-CAPS keyword, a measurement, a stat). *Both* signals are needed — bare
   `When`/`While` are not rule openers, because flavour opens that way too ("When roused to
   anger, a battle-brother...") and matching them left the flavour in.
-- **Errata are already folded into the card text.** Each PDF says so: *"Rules changes will be
-  updated directly into online documents and then listed below."* Transcribe the cards, ignore
-  the update log at the end.
+- **Errata are USUALLY folded into the card text, and the update log is the check on that.**
+  Each PDF says so: *"Rules changes will be updated directly into online documents and then
+  listed below."* It is not always true — Blooded's `APRIL '26` log amends Glory Kill's first
+  sentence and the card face in the same PDF still prints the old one. Parsing free-prose
+  errata is not worth it for one entry in 48 teams, so `ERRATA` in `tools/kt_generate.py` is an
+  explicit `(fid, card) -> (find, replace)` list, the same call `LOCK_ORDER` makes. Its `find`
+  half is **asserted**, so a reprint that folds the change in fails the generator loudly rather
+  than silently applying nothing. Read the log when a card looks stale; do not transcribe from
+  it wholesale.
 - **Wahapedia no longer 403s automated fetches** — this file used to say it did. `core-rules`,
   `appendix`, `killzones` and `the-missions` all return 200. Two caveats that cost time: pages are
   **truncated at ~39.4k characters** and the cut point is deterministic across re-fetches, so the
@@ -897,6 +903,32 @@ of which print a weapon table). Several garbage entries the old parser invented
 (`'WELD SHUT Select a closed hatchway (e.g. Killzone'`) resolve into the real actions they were
 (`Weld Shut`, `Wayfind`, `Signal`, `Markerlight`). Nothing real was lost anywhere — the check is
 a **name-level diff of every ability and action**, not a count, because a count hides a swap.
+
+Two more, found by checking the Blooded modules against the two PDFs the user supplied:
+
+6. **A card that runs off the SIDE of its column was cut in half.** A wide card — the faction
+   rule, the kill team composition — fills the page across two internal columns and prints
+   `CONTINUES ON OTHER SIDE` where the first one runs out. The rest sits in the **next column
+   over the same rows**, carrying no kind banner, so `split_cards` saw no card there at all and
+   the fragment-merge (which keys on a repeated name) never got a chance; `cut_furniture` then
+   trimmed the marker and the card simply ended mid-rule. Blooded lost both remaining paragraphs
+   of its faction rule — the token assignment, GAZE OF THE GODS and the whole Accurate 1 rule.
+   `columns()` is now `pages()`, because the stitch needs a page's columns side by side:
+   `split_page` slices every line at the same offset, so column N's row *i* sits beside column
+   N+1's row *i*. `split_cards` reports each card's row range, and the range starts at the
+   **kicker line above the banner**, not at the banner — the neighbouring column's half begins
+   two rows higher, at the top of the printed box. 11 faction cards across 11 teams grew back.
+7. **An ability whose name is a header on its own line was dropped outright.** `ABILITY`
+   demanded text after the colon, which held only because `dewrap` glues a header to the
+   paragraph below it when no blank line separates them. Where the layout does leave one — the
+   Blooded Corpseman's `STIMM Rules:`, every `Drone:` and `Machine:` — the header matched
+   nothing and its body had no `cur` to attach to, so both halves vanished. It is `:\s*` now,
+   and `rules_of` drops a header that never picks up a body. 15 abilities came back, including
+   the rules that say what a drone may do at all.
+
+Net of those two: abilities 567 → 582, and no card, operative, weapon or action changed. Same
+check as before — a name-level diff of every card and every ability against a regeneration with
+the old parser, not a count.
 
 **`NOTES` is in `DC_NOISE` now.** The printed notes box below the last datacard on a page was
 being swallowed as a continuation of that operative's last ability, so the Deathwatch Marksman's
@@ -1258,7 +1290,7 @@ the module and spread into both the Rules card and the datacard — the same ant
 guard is, because homebrew is not bound by the printed layout — but every operative needs its own
 weapons and rules whoever wrote it, and scoping that check is exactly what let all three
 hand-written factions ship with no datacards while the other 48 had them. 53 factions, 471
-operatives, 1423 weapons, 597 abilities, 178 unique actions, and a test that fails on any gap.
+operatives, 1423 weapons, 612 abilities, 178 unique actions, and a test that fails on any gap.
 
 **`Operative.lockOrder` is how an order becomes a stat rather than a call.** Every NEMESIS
 operative has **Towering Size** — *"in the Firefight phase, whenever you determine this operative's

@@ -28,6 +28,18 @@ LOCK_ORDER = {
     'kom:kommando-bomb-squig': 'engage',   # Stoopid
 }
 
+# CLAUDE.md used to say errata are always folded into the card text and the update log at the
+# back can be ignored. That is not true: Blooded's APRIL '26 log amends Glory Kill and the card
+# face still prints the old first sentence. Parsing free-prose errata is not worth it for one
+# entry in 48 teams, so it is an explicit list, the same call LOCK_ORDER makes. The replacement
+# is verbatim from the log AND from the separate online-rules booklet, which agrees.
+# The `find` half is asserted, so if GW ever reprints the card this fails loudly instead of
+# silently doing nothing.
+ERRATA = {
+    ('blooded', 'Glory Kill'): ('Select one enemy operative.',
+                                'Select one enemy operative visible to a friendly BLOODED operative.'),
+}
+
 def ts(s):
     return json.dumps(s, ensure_ascii=False)
 
@@ -52,6 +64,10 @@ for path in sorted(glob.glob(f'{SRC}/txt/*.txt')):
         f"export const cards: RefCard[] = [",
     ]
     for c in data['cards']:
+        find, repl = ERRATA.get((fid, c['name']), (None, None))
+        if find:
+            assert find in c['text'], f"errata for {fid}/{c['name']} no longer applies"
+            c['text'] = c['text'].replace(find, repl, 1)
         lines.append(f"  {{ kind: '{c['kind']}', name: {ts(c['name'])}, text: {ts(c['text'])} }},")
     lines.append("]")
     lines.append("")

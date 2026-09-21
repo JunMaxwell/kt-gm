@@ -58,12 +58,16 @@ def split_page(page, floor=6, ok=None):
             return [left, right]
     return [lines]
 
-def columns(path):
-    out = []
+def pages(path):
+    """Each page as its columns. Line indices line up ACROSS a page's columns, because
+    split_page slices every line at the same offset — so column N's line i sits beside
+    column N+1's line i. `parse_cards` needs that to stitch a card that runs off the
+    side of its column."""
     for page in open(path, encoding='utf-8').read().split('\f'):
-        for col in split_page(page):
-            out.append([l.rstrip() for l in col])
-    return out
+        yield [[l.rstrip() for l in col] for col in split_page(page)]
+
+def columns(path):
+    return [col for page in pages(path) for col in page]
 
 # ---------- card extraction ----------
 
@@ -93,7 +97,8 @@ def is_caps(line):
     return bool(letters) and all(c.isupper() for c in letters)
 
 def split_cards(col):
-    """A column can hold two cards stacked vertically. Cut on every kind banner."""
+    """A column can hold two cards stacked vertically. Cut on every kind banner, and
+    report each card's row range so a wide card can be stitched to the column beside it."""
     hits = [i for i, l in enumerate(col) if KIND_RE.match(l)]
     if not hits:
         return []
@@ -106,7 +111,14 @@ def split_cards(col):
             stop -= 1
             if end - stop > 3:
                 break
-        out.append((KIND[KIND_RE.match(col[i]).group(1)], col[i + 1:stop]))
+        # ...and this card's own sits just above ITS banner. The printed box starts there, so
+        # that is where a neighbouring column's half of the same card starts too.
+        top = i
+        while top and (not col[top - 1].strip() or is_caps(col[top - 1].strip())):
+            top -= 1
+            if i - top > 3:
+                break
+        out.append((KIND[KIND_RE.match(col[i]).group(1)], i + 1, stop, top, end))
     return out
 
 def name_and_body(rest):
@@ -138,6 +150,7 @@ RULE_OPEN = re.compile(
     r'After (rolling|your|this|the)|When (a|an|this|that|the|you|your|setting|selecting|determining)|'
     r'Select|You can|You cannot|Your |This operative|This rule|Friendly|Enemy operatives|Each friendly|'
     r'Each enemy|Add \d|Subtract \d|Change |Until |In the |If a|If this|If you|If an|Perform|Roll |'
+    r'You gain|'
     r'Place|Remove|Note that|For each|Unless|The first|Re-roll|STRATEGIC GAMBIT|Operatives|'
     r'An operative|One friendly|Up to|Instead|Otherwise|\u2022)')
 GAME_TOKEN = re.compile(r'\b[A-Z]{3,}\b|\d"|\bAPL\b|\bATK\b|\bD3\b|\bD6\b|\b\d\+')
@@ -262,10 +275,23 @@ def body_text(lines):
     out = rejoin(cut_furniture(out))
     return fold_action_rows(fold_weapon_tables(strip_flavour('\n'.join(out).strip())))
 
+# A wide card — the faction rule, the kill team composition — fills the page across two
+# internal columns and prints this where the first one runs out. The rest of it sits in the
+# NEXT column over the SAME rows, carrying no kind banner of its own, so it is no card at all
+# and the fragment-merge below never sees it; cut_furniture then trims the marker and the card
+# ends mid-rule. The Blooded faction rule lost both of its remaining paragraphs that way.
+CONTINUES = re.compile(r'CONTINUES ON OTHER SIDE')
+
 def parse_cards(path):
     seen, cards = set(), []
-    for col in columns(path):
-      for kind, chunk in split_cards(col):
+    for page in pages(path):
+      for ci, col in enumerate(page):
+       for kind, lo, hi, top, end in split_cards(col):
+        chunk = col[lo:hi]
+        if any(CONTINUES.search(l) for l in col[top:end]) and ci + 1 < len(page):
+            more = page[ci + 1][top:hi]
+            if not any(KIND_RE.match(l) for l in more):
+                chunk = chunk + [''] + more
         got = name_and_body(chunk)
         if not got: continue
         name, rest = got
@@ -309,7 +335,11 @@ ACTION = re.compile(r'^\s*([A-Z][A-Z0-9 \'\u2019\-\u2026!\.]{2,})\s{2,}(\d)\s*AP
 # `*` or `¹` that the weapon's WR column points at (`Shock, Shield*`, `Wreathed¹`). Requiring the
 # name to start with a capital dropped all 49 of them, so the marker appeared on the weapon line
 # with nothing anywhere defining it — the exact gap the universal glossary exists to close.
-ABILITY = re.compile(r'^\s*[*¹²³†‡]?\s*([A-Z][^:]{2,60}?):\s+(.*)$')
+# `\s*` rather than `\s+` after the colon: a header can stand alone on its line with its
+# body in the paragraph below (the Blooded Corpseman's STIMM Rules), and dewrap only
+# glues the two together when no blank line separates them. rules_of drops the ones
+# that never pick up a body.
+ABILITY = re.compile(r'^\s*[*¹²³†‡]?\s*([A-Z][^:]{2,60}?):\s*(.*)$')
 # Sheet furniture, never the operative's rules. NOTES is the printed notes box below the last
 # datacard on a page; it used to be swallowed as a continuation of that operative's last ability.
 DC_NOISE = re.compile(r'RULES CONTINUE ON|^\s*NOTES:')
@@ -383,7 +413,7 @@ def rules_of(lines):
                 cur = abilities[-1]
             elif cur is not None:
                 cur['text'] = (cur['text'] + '\n' + para).strip()
-    return abilities, actions
+    return [a for a in abilities if a['text']], actions
 
 def parse_datacard(b):
     name = stats = None
