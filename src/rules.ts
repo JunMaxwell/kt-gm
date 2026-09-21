@@ -145,6 +145,88 @@ export const gearBonus = (ops: Operative[]) =>
 export const gearGrantors = (ops: Operative[]) =>
   ops.filter((o) => GEAR_BONUS[o.name.replace(/ \d+$/, '')]).map((o) => o.name)
 
+/* ---------- stat arithmetic ----------
+ *
+ * A datacard prints its stats as strings — Move is `6"`, Save and a weapon's Hit are `3+` — and
+ * until now nothing in the app ever did arithmetic on them. It printed what the PDF printed.
+ * Injured has always been rendered as prose underneath the unmodified numbers.
+ *
+ * These four are the whole of it. They live here beside `Operative` because that is what they
+ * are about, and `state.ts` builds `live()` on top of them.
+ */
+
+const bound = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+
+/** `6"` -> 6. `parseInt` stops at the quote, which is exactly what we want. */
+export const moveIn = (m: string) => parseInt(m, 10) || 0
+export const asMove = (n: number) => `${n}"`
+/** `3+` -> 3. Same trick, stopping at the plus. */
+export const rollIn = (s: string) => parseInt(s, 10) || 0
+/** A dice roll is never better than 2+ and never worse than 6+. */
+export const asRoll = (n: number) => `${bound(n, 2, 6)}+`
+
+/**
+ * The two floors the core rules put on stat changes, and both take precedence over everything
+ * else — which is why they belong here rather than in each caller.
+ *
+ *   MOVE_FLOOR  "a Move stat can never be changed to less than 4\""
+ *   APL_SWING   "APL changes can never total more than −1 or +1" from the operative's normal APL
+ *
+ * A 5" operative that is injured moves 4", not 3".
+ */
+export const MOVE_FLOOR = 4
+export const APL_SWING = 1
+
+/** Move after a total change of `delta` inches, floored. A change, not an override. */
+export const moveAfter = (move: string, delta: number) =>
+  delta === 0 ? move : asMove(Math.max(MOVE_FLOOR, moveIn(move) + delta))
+
+/** APL after a total change, clamped to ±1 of normal and never below 0. */
+export const aplAfter = (apl: number, delta: number) => Math.max(0, apl + bound(delta, -APL_SWING, APL_SWING))
+
+/** A roll stat after a change. POSITIVE IS WORSE: `3+` worsened by 1 is `4+`, which is the
+ *  direction Injured and most penalties move, and the opposite of what the number looks like. */
+export const rollAfter = (roll: string, worse: number) => (worse === 0 ? roll : asRoll(rollIn(roll) + worse))
+
+/**
+ * Operatives whose own rule ignores the Injured penalty, and which half of it.
+ *
+ * Only the four that are FLAT, SELF-ONLY and UNCONDITIONAL are here. Ten operatives across the
+ * library have an injury-ignoring rule, but most read "whenever a friendly X operative is within
+ * 6" of this operative, you can ignore…" — this app has no board, on purpose, so a distance is
+ * always a table call, and "you can" makes it a choice besides. Those are `OpState.tough`, a
+ * toggle the GM flips, rather than entries here pretending to be complete.
+ *
+ * Keyed by name like `GEAR_BONUS`, and for the same reason: it needs no faction chunk loaded.
+ */
+export const INJURY_IGNORES: Record<string, 'all' | 'weapons'> = {
+  Angron: 'weapons', // Implacable — keeps HIT 3+ on both weapons, still loses the 2"
+  'Arbites Castigator': 'all', // Engendered Focus
+  'Penal Legionnaire Agent': 'all', // Chem-mask
+  'Dragon Master Leystalker': 'weapons', // Implacable Darkscale
+}
+
+/**
+ * Operatives who grant that to their WHOLE TEAM just by being on the roster.
+ *
+ * One of them, and it is flat rather than an aura: *Spiritual Chirurgy* says the team has it
+ * "if you select this operative for the battle (even if it's incapacitated later)" — so it is a
+ * roster scan, not a distance, and it survives the Fangbearer dying. Exactly the shape
+ * `GEAR_BONUS` already has, which is why this is a lookup and not a toggle.
+ */
+export const INJURY_GRANTS: Record<string, 'all' | 'weapons'> = {
+  'Wolf Scout Fangbearer': 'all', // Spiritual Chirurgy — excluding FENRISIAN WOLF, see below
+}
+
+/** Whether anyone on this roster hands the team injury immunity. */
+export const grantedIgnore = (ops: Operative[]) => {
+  for (const o of ops) {
+    const g = INJURY_GRANTS[o.name.replace(/ \d+$/, '')]
+    if (g) return g
+  }
+  return undefined
+}
+
 /** A team before it has play state. `initialGame` adds the CP and tac op columns. */
 export type TeamPreset = Omit<TeamDef, 'cp' | 'tacOp' | 'tacVp'>
 

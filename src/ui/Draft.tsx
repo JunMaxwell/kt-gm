@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { UNIVERSAL_EQUIPMENT, cardsOfKind } from '../compendium'
 import { datacardOf } from '../factions'
 import { GEAR_LIMIT, type Operative, gearBonus, gearGrantors } from '../rules'
-import { teamOps } from '../state'
+import { liveStats, teamOps } from '../state'
 import { Btn, DarkBtn } from './kit'
 import { Carousel, SLIDE_CARD } from './Carousel'
 import { OperativeCard, RefCardView } from './cards'
@@ -163,6 +163,9 @@ export function Draft({
           st={game.ops[o.id]}
           card={datacardOf(faction, o.name)}
           kicker={team.name}
+          // A drafted operative already shows its live wounds here, so it shows its live Move
+          // and Hit too — a card that is half printed and half current is the confusing one.
+          now={liveStats(game, o, game.ops[o.id])}
           className={SLIDE_CARD}
         />
       ))

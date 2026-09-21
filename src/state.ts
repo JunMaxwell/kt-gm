@@ -7,6 +7,7 @@ import {
   type CritOpId,
   DEFAULT_ROSTER,
   GEAR_LIMIT,
+  INJURY_IGNORES,
   gearBonus,
   OBJECTIVE_MARKERS,
   OP_CAP,
@@ -23,9 +24,12 @@ import {
   type TeamDef,
   TURNING_POINTS,
   killThresholds,
+  grantedIgnore,
   killWorth,
+  moveAfter,
+  rollAfter,
 } from './rules'
-import type { PhaseId, RefKind } from './compendium'
+import type { PhaseId, RefKind, Weapon } from './compendium'
 
 // `Order` moved to rules.ts, because `Operative.lockOrder` needs it. Re-exported so the
 // panels that `import type { Order } from '../state'` keep working.
@@ -39,6 +43,11 @@ export type OpState = {
   expended: boolean
   dead: boolean
   order: Order
+  /** This operative ignores the Injured penalty. Seeded from `INJURY_IGNORES` for the four
+   *  operatives whose rule is flat and unconditional, and a GM toggle otherwise — the rest of
+   *  the library's injury-ignoring rules are auras ("within 6\" of this operative") or optional
+   *  ("you can ignore"), and this app has no board and does not make the player's choices. */
+  tough?: boolean
 }
 /** Kept as an alias: `TeamDef` absorbed it when teams became runtime data. */
 export type PlayerState = TeamDef
@@ -181,6 +190,7 @@ export type Action =
   | { type: 'counteractBank'; side: SideId; delta: number }
   | { type: 'passPair' }
   | { type: 'order'; opId: string; value: Order }
+  | { type: 'tough'; opId: string; value: boolean }
   | { type: 'teamOrder'; teamId: string; value: Order }
   | { type: 'cp'; teamId: string; delta: number }
   | { type: 'tacOp'; teamId: string; value: string }
@@ -426,6 +436,13 @@ export function reduce(g: Game, a: Action): Game {
       ;[ids[i], ids[j]] = [ids[j], ids[i]]
       // the cursor counts slots, so its meaning changes once the order does
       return { ...g, order: { ...g.order, [team.side]: ids }, turnIdx: 0 }
+    }
+    // "This one ignores the Injured penalty." A toggle rather than a lookup because the rules
+    // that grant it are mostly auras or optional — see `INJURY_IGNORES`.
+    case 'tough': {
+      const o = g.ops[a.opId]
+      if (!o) return g
+      return { ...g, ops: { ...g.ops, [a.opId]: { ...o, tough: a.value } } }
     }
     case 'order': {
       // A locked operative does not move. The GM is the referee everywhere else in this app,
@@ -701,6 +718,64 @@ export const gearAllowance = (g: Game, teamId: string) =>
 
 /** Below half starting wounds: −2" Move and −1 to the weapon's Hit stat. Not an APL penalty. */
 export const injured = (o: Operative, st: OpState) => !st.dead && st.hp * 2 < o.w
+
+/** How much of the Injured penalty actually lands on this operative: the GM's toggle, its own
+ *  datacard rule, or one a team-mate grants the whole roster. */
+const ignores = (g: Game, o: Operative, st?: OpState) => {
+  if (st?.tough) return 'all'
+  const own = INJURY_IGNORES[o.name.replace(/ \d+$/, '')]
+  if (own) return own
+  // The Fenrisian Wolf is excluded from its own team's grant, and the card says so.
+  if (/Fenrisian Wolf/i.test(o.name)) return undefined
+  return grantedIgnore(teamOps(g, teamIdOf(g, o.id) ?? ''))
+}
+
+/**
+ * What this operative ACTUALLY rolls, as opposed to what its datacard prints.
+ *
+ * One function, because there are three places that render a stat — the phone's card, the GM's
+ * team row, and the printable glossary — and before this each of them printed the raw datacard
+ * while the app knew perfectly well the operative was injured and said so in prose right
+ * underneath. The glossary keeps printing the printed card on purpose; the other two come here.
+ *
+ * `hit` is a function rather than a value because the penalty lands on each WEAPON's Hit stat,
+ * and an operative has up to nine of them.
+ *
+ * Takes the whole game because stage 2 folds ploy effects in here too — the floors in
+ * `moveAfter`/`aplAfter` are the reason this is one place and not three.
+ *
+ * NOT called `live`: `RefCardView.live` already means "belongs to the current phase" and
+ * `Compendium` has a local `live` meaning "the open deck". A third meaning of one word in one
+ * render path is how you get a bug nobody can see.
+ */
+export type Live = {
+  apl: number
+  move: string
+  save: string
+  hit: (w: Weapon) => string
+  /** Below half wounds. True even when something is ignoring the penalty — the wound bar and
+   *  the badge both want to know, and `ignoring` says whether the numbers actually moved. */
+  hurt: boolean
+  /** What is being ignored, and absent when nothing is. `'weapons'` is Angron's *Implacable*:
+   *  he keeps HIT 3+ and still loses the 2". */
+  ignoring?: 'all' | 'weapons'
+}
+
+export const liveStats = (g: Game, o: Operative, st?: OpState): Live => {
+  const hurt = !!st && injured(o, st)
+  const skip = ignores(g, o, st)
+  // Injured is −2" Move and −1 to the weapons' Hit stat. Never APL, and never Save.
+  const slowed = hurt && skip !== 'all'
+  const missing = hurt && !skip
+  return {
+    apl: o.apl,
+    move: moveAfter(o.move, slowed ? -2 : 0),
+    save: o.save,
+    hit: (w: Weapon) => rollAfter(w.hit, missing ? 1 : 0),
+    hurt,
+    ignoring: hurt ? skip : undefined,
+  }
+}
 export const sideOps = (g: Game, s: SideId) => sideTeams(g, s).flatMap((t) => teamOps(g, t.id))
 
 /** Everything the side is fighting — one alliance's operatives, or several. */
@@ -860,7 +935,7 @@ export const counteract = (g: Game, s: SideId) => {
 // One game PER ROOM, so switching back to an old room restores it with no network at all.
 // `local` is the no-room fallback — if `POST /rooms` fails the GM still gets a game, because
 // the relay is never a prerequisite for starting one.
-const gameKey = (code = 'local') => `killteam-gm/v19/${code}`
+const gameKey = (code = 'local') => `killteam-gm/v20/${code}`
 const ROOM_KEY = 'killteam-gm/room' // the room this device is CURRENTLY in
 const ROOMS_KEY = 'killteam-gm/rooms' // every room this device knows, newest first
 

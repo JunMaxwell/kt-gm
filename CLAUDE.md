@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 177 tests: the reducer, and a render pass over every panel
+bun test           # 184 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -106,9 +106,9 @@ Two conventions the split rests on:
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
 Game state persists to `localStorage` under a **versioned key, one game per room**:
-`killteam-gm/v19/<code>`, or `killteam-gm/v19/local` when no room could be opened. Any change to
+`killteam-gm/v20/<code>`, or `killteam-gm/v20/local` when no room could be opened. Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-nineteen times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+twenty times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 The `local` key is written even on a fresh device that has never opened a room — the reducer boots
@@ -454,7 +454,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 177 tests in two files:
+`bun test` is 184 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -2117,6 +2117,77 @@ every player who opened the glossary. A search param is orthogonal: the two live
 helpers are in `ui/shared.ts` beside the other non-component exports, and they guard `typeof
 location` because **`bun test` has no `location`, `history` or `localStorage`** — which is also
 why `read()` in `state.ts` has always been wrapped in a try/catch.
+
+## Effective stats — what the operative actually rolls
+
+A datacard prints its stats as strings: Move is `6"`, Save and a weapon's Hit are `3+`. For a
+long time nothing in the app did arithmetic on any of them — it printed what the PDF printed. An
+operative at 6 wounds of 15 showed `Move 6"` and `Hit 3+` with a badge underneath reading
+*"Injured — −2" Move, and −1 to its weapons' Hit stat"*: the app knew, said so, and then showed
+the undamaged numbers anyway.
+
+**`liveStats(g, o, st)` in `state.ts` is the single answer to "what does this roll".** It returns
+`{ apl, move, save, hit(w), hurt, ignoring }`, and every renderer that shows a live stat goes
+through it.
+
+- **NOT called `live`.** `RefCardView.live` already means "belongs to the current phase" and
+  `Compendium` has a local `live` meaning "the open deck". A third meaning of one word in one
+  render path is a bug nobody can see; the first attempt at this collided on exactly that.
+- **`hit` is a function, not a value**, because the penalty lands on each weapon's Hit stat and an
+  operative has up to nine of them.
+- **`OperativeCard` takes the result as a `now` prop and never the game.** It is a leaf shared by
+  the deck, the draft and the GM's browser; handing it `game` would make it a panel. Absent `now`
+  means print the printed card.
+
+### The arithmetic, and the two floors
+
+`moveIn` / `asMove` / `rollIn` / `asRoll` in `rules.ts`, plus `moveAfter` / `aplAfter` /
+`rollAfter` which apply the core rules' own limits — both recorded in the 2024 rules section
+above and both binding here:
+
+- **A Move stat can never be changed to less than 4"**, so a 5" operative injured is 4", not 3".
+- **APL changes can never total more than −1 or +1** from normal.
+
+**Positive is worse on a roll stat**: `rollAfter('3+', 1)` is `4+`. That reads backwards and is
+the direction Injured and most penalties move, so the argument is named `worse`. A roll never
+passes 2+ or 6+.
+
+### Three renderers, and the fourth that is deliberately left alone
+
+| | |
+|---|---|
+| `cards.tsx` `STATS` + the weapon table | the phone's card — goes through `liveStats` |
+| `TeamCard.tsx` `PlayRow` | the GM's row — same, so the two can never disagree |
+| `Glossary.tsx` `stats(o)` | the **printable pack** — untouched on purpose. A rules reference prints the printed card. |
+
+### Injury immunity is mostly NOT modellable, and the toggle says so
+
+Ten operatives in the library have a rule that ignores the Injured penalty. Most read *"whenever a
+friendly X operative is within 6" of this operative, you can ignore…"* — and **there is no board
+in this app, on purpose**, so a distance is always a table call; *"you can"* makes it a choice
+besides. So there are three routes, in that order of precedence:
+
+1. **`OpState.tough`** — the GM's per-operative toggle, the `inj` chip on `PlayRow`. This is the
+   answer for every aura and every optional rule, and it is the same call the GM already makes
+   for every other distance in the app.
+2. **`INJURY_IGNORES`** — the four that are flat, self-only and unconditional. `'weapons'` is
+   Angron's *Implacable*: he keeps HIT 3+ and still loses the 2".
+3. **`INJURY_GRANTS`** — one entry, and it earns its own map because it is a **roster scan rather
+   than an aura**: *Spiritual Chirurgy* gives the whole Wolf Scout team immunity "if you select
+   this operative for the battle (even if it's incapacitated later)". No distance, survives the
+   Fangbearer dying. The Fenrisian Wolf is excluded by name, as the card says.
+
+Both maps are keyed by **name** for the reason `GEAR_BONUS` is: no faction chunk has to be loaded,
+so the reducer and the card agree without waiting on a dynamic import. **Two audit tests keep them
+honest** — every key resolves to a real datacard, and no datacard carries a flat unconditional
+injury rule that is in neither map. That second test is what found *Spiritual Chirurgy*.
+
+### What the badge says now
+
+It used to state a penalty over a stat row that ignored it. It now explains numbers that have
+already moved, and branches: *"Already counted above"*, or *"a rule lets it ignore the penalty, so
+nothing above moved"*, or Angron's *"…keeps its weapons' Hit stat"*. `hurt` stays true even when
+something is ignoring the penalty, because the wound bar and the badge both still want to know.
 
 ## Known gaps
 

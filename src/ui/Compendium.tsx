@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { tacOp, teamTacOps } from '../rules'
 import { cardsOfKind, phaseCards, type RefCard, UNIVERSAL_EQUIPMENT } from '../compendium'
 import { datacardOf } from '../factions'
-import { allTeams, teamOps } from '../state'
+import { allTeams, liveStats, teamOps } from '../state'
 import { Carousel, SLIDE_CARD } from './Carousel'
 import { OperativeCard, RefCardView } from './cards'
 import { type Game, useFaction } from './shared'
@@ -102,6 +102,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
           st={game.ops[o.id]}
           card={datacardOf(faction, o.name)}
           kicker={team?.name ?? ''}
+          now={liveStats(game, o, game.ops[o.id])}
           className={SLIDE_CARD}
         />
       ))

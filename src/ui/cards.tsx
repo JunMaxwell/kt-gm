@@ -10,7 +10,7 @@
  */
 import { type Datacard, KIND_LABEL, PLOY_CP, type RefCard, weaponRules } from '../compendium'
 import type { Operative } from '../rules'
-import { injured, type OpState } from '../state'
+import { type Live, type OpState } from '../state'
 import { KtCard, Rules } from './kit'
 
 /** One card, in the shape the printed sheets use: faction keyword, card type, then the name. */
@@ -47,12 +47,16 @@ export function RefCardView({
   )
 }
 
-/** The four stats a datacard prints across its header, in the order it prints them. */
-const STATS = (o: Operative, hp: number) =>
+/**
+ * The four stats across a datacard's header, in the order it prints them — but the numbers the
+ * operative actually rolls, not the ones the PDF printed. `now` is absent in the draft, where
+ * nothing is on the table yet and the printed card is the right thing to show.
+ */
+const STATS = (o: Operative, hp: number, now?: Live) =>
   [
-    ['APL', o.apl],
-    ['Move', o.move],
-    ['Save', o.save],
+    ['APL', now?.apl ?? o.apl],
+    ['Move', now?.move ?? o.move],
+    ['Save', now?.save ?? o.save],
     ['Wounds', `${hp}/${o.w}`],
   ] as const
 
@@ -68,19 +72,22 @@ export function OperativeCard({
   st,
   card,
   kicker,
+  now,
   className = '',
 }: {
   o: Operative
   st?: OpState
   card?: Datacard
   kicker: string
+  /** What this operative actually rolls right now, from `live()`. Absent means print the card. */
+  now?: Live
   className?: string
 }) {
   const acts = Math.max(1, o.acts ?? 1)
   // Its own abilities are read as well as its weapons — an operative whose rule grants Ceaseless
   // needs Ceaseless spelled out just as much as one whose weapon prints it.
   const glossary = weaponRules(card?.weapons, [...(card?.abilities ?? []), ...(card?.actions ?? [])].map((a) => a.text))
-  const hurt = !!st && injured(o, st)
+  const hurt = !!now?.hurt
   const hp = st?.hp ?? o.w
   // A boss is the only operative that activates more than once, and then the count is the thing
   // you need to see. Everyone else just needs to know whether they have gone yet.
@@ -97,7 +104,7 @@ export function OperativeCard({
       className={className}
     >
       <dl className="grid grid-cols-4 gap-1 text-center">
-        {STATS(o, hp).map(([k, v]) => (
+        {STATS(o, hp, now).map(([k, v]) => (
           <div key={k} className="kt-strip px-1 py-1">
             <dt className="display text-[10px] text-fade">{k}</dt>
             <dd className="display text-lg leading-none tabular-nums text-card">{v}</dd>
@@ -117,11 +124,18 @@ export function OperativeCard({
         </div>
       )}
 
-      {/* The two rules a first-time player keeps having to ask about, spelled out rather than named. */}
+      {/* The badge now explains numbers that have ALREADY moved, above — it used to state the
+          penalty over a stat row that still showed the undamaged card, which is the whole bug. */}
       {hurt && (
         <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
           <span className="display shrink-0 rounded bg-recon px-1.5 text-white">Injured</span>
-          <span className="text-fade">&minus;2&quot; Move, and &minus;1 to its weapons&rsquo; Hit stat.</span>
+          <span className="text-fade">
+            {now?.ignoring === 'all'
+              ? 'Below half wounds \u2014 but a rule lets it ignore the penalty, so nothing above moved.'
+              : now?.ignoring === 'weapons'
+                ? 'Already counted above: \u22122" Move. A rule of its own keeps its weapons\u2019 Hit stat.'
+                : 'Already counted above: \u22122" Move, and \u22121 to its weapons\u2019 Hit stat.'}
+          </span>
         </p>
       )}
       {st && !st.dead && (
@@ -163,7 +177,7 @@ export function OperativeCard({
                   {w.wr && <Rules text={w.wr} className="text-[11px] text-fade" />}
                 </td>
                 <td className="py-0.5 text-right tabular-nums">{w.atk}</td>
-                <td className="py-0.5 text-right tabular-nums">{w.hit}</td>
+                <td className="py-0.5 text-right tabular-nums">{now ? now.hit(w) : w.hit}</td>
                 <td className="py-0.5 text-right tabular-nums">{w.dmg}</td>
               </tr>
             ))}

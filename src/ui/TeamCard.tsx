@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { blankOperative, CATALOGUE, killWorth, type Operative, slug, tacOp, teamTacOps } from '../rules'
-import { currentTeamId, injured, type Order, orderCounts, pairEligible, pairTarget, readyCount, teamOps } from '../state'
+import { currentTeamId, liveStats, type Order, orderCounts, pairEligible, pairTarget, readyCount, teamOps } from '../state'
 import { Btn, BufferedInput, Card, Label, Stepper } from './kit'
 import { type Dispatch, type Game, onInt, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -68,6 +68,7 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
   const st = game.ops[o.id]
   if (!st) return null
   const acts = Math.max(1, o.acts ?? 1)
+  const now = liveStats(game, o, st)
 
   return (
     <li
@@ -79,7 +80,7 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
         onClick={() => dispatch({ type: 'activate', opId: o.id })}
         disabled={st.dead}
         className="min-w-0 flex-1 basis-24 truncate text-left font-medium hover:text-security"
-        title={`${o.name} · ${o.apl}AP · Move ${o.move} · Save ${o.save} · ${o.w}W${
+        title={`${o.name} · ${now.apl}AP · Move ${now.move} · Save ${now.save} · ${o.w}W${
           acts > 1 ? ` · ${acts} activations` : ''
         } — ${st.expended ? 'expended, click to ready' : 'click when activated'}`}
       >
@@ -107,10 +108,34 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
         {/* A locked operative's chip is not a control — say so rather than look broken. */}
         {o.lockOrder && <span className="ml-0.5 opacity-70">*</span>}
       </button>
-      <span className="shrink-0 text-xs tabular-nums text-ink/40" title={`${o.apl}AP · ${o.w}W`}>
-        {o.move} {o.save}
+      {/* The same effective numbers the player's phone shows, from the same `liveStats` — three
+          renderers printed the raw datacard before this, and they would drift apart again. */}
+      <span
+        className="shrink-0 text-xs tabular-nums text-ink/40"
+        title={`${o.apl}AP · ${o.w}W${now.move !== o.move ? ` · prints ${o.move}` : ''}`}
+      >
+        {now.move} {now.save}
       </span>
-      {injured(o, st) && <span className="display shrink-0 rounded bg-recon px-1 text-xs text-white">inj</span>}
+      {now.hurt && (
+        // The toggle for every injury rule the app cannot resolve on its own: the library's
+        // others are auras ("within 6\" of this operative") or optional ("you can ignore"), and
+        // there is no board here. Flipping it says "this one is ignoring the penalty".
+        <button
+          onClick={() => dispatch({ type: 'tough', opId: o.id, value: !st.tough })}
+          title={
+            now.ignoring === 'all'
+              ? 'Ignoring the Injured penalty — click to apply it again'
+              : now.ignoring === 'weapons'
+                ? 'Its own rule keeps its weapons\u2019 Hit stat; it still loses the 2"'
+                : 'Injured: \u22122" Move, \u22121 Hit. Click if a rule lets this one ignore it'
+          }
+          className={`display shrink-0 rounded px-1 text-xs ${
+            now.ignoring === 'all' ? 'bg-black/10 text-ink/45 line-through' : 'bg-recon text-white'
+          }`}
+        >
+          inj
+        </button>
+      )}
       <Stepper
         value={st.hp}
         max={o.w}

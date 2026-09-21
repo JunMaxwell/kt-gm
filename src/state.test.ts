@@ -6,6 +6,13 @@ import {
   CATALOGUE,
   CRIT_OPS,
   GEAR_BONUS,
+  INJURY_GRANTS,
+  INJURY_IGNORES,
+  aplAfter,
+  moveAfter,
+  moveIn,
+  rollAfter,
+  rollIn,
   TAC_OPS,
   PRESET_TEAMS,
   STARTING_CP,
@@ -38,6 +45,7 @@ import {
   initialGame,
   gearAllowance,
   killGrade,
+  liveStats,
   kills,
   held,
   heldByNobody,
@@ -1682,4 +1690,121 @@ test('no datacard grants extra equipment without being in GEAR_BONUS', async () 
       for (const a of [...d.abilities, ...d.actions])
         if (GRANTS.test(a.text) && !GEAR_BONUS[d.name]) missed.push(`${f.id}/${d.name}/${a.name}`)
   expect(missed).toEqual([])
+})
+
+/* ---------- effective stats: what the operative actually rolls ---------- */
+
+test('the stat helpers parse the printed strings and hold the core rules floors', () => {
+  expect(moveIn('6"')).toBe(6)
+  expect(rollIn('3+')).toBe(3)
+  // "A Move stat can never be changed to less than 4\"" — so a 5" operative injured is 4", not 3".
+  expect(moveAfter('6"', -2)).toBe('4"')
+  expect(moveAfter('5"', -2)).toBe('4"')
+  expect(moveAfter('6"', 0)).toBe('6"')
+  // Positive is WORSE on a roll stat, and it never passes 2+ or 6+.
+  expect(rollAfter('3+', 1)).toBe('4+')
+  expect(rollAfter('6+', 1)).toBe('6+')
+  expect(rollAfter('2+', -1)).toBe('2+')
+  // "APL changes can never total more than −1 or +1."
+  expect(aplAfter(2, 3)).toBe(3)
+  expect(aplAfter(2, -3)).toBe(1)
+})
+
+test('an injured operative rolls the reduced numbers, not the printed ones', () => {
+  const g = initialGame()
+  const gunner = teamOps(g, 'dw').find((o) => o.name === 'Gunner')!
+  const well = liveStats(g, gunner, g.ops[gunner.id])
+  expect(well.move).toBe(gunner.move)
+  expect(well.hurt).toBe(false)
+
+  // Below half wounds. The app always knew this and printed the undamaged card anyway.
+  const hurt = reduce(g, { type: 'wound', opId: gunner.id, delta: -10 })
+  const now = liveStats(hurt, gunner, hurt.ops[gunner.id])
+  expect(now.hurt).toBe(true)
+  expect(now.move).toBe('4"')
+  expect(now.hit({ name: 'bolt rifle', atk: 4, hit: '3+', dmg: '3/4' })).toBe('4+')
+  // Injured is Move and Hit only — never APL, never Save. `injured`'s own docstring says so.
+  expect(now.apl).toBe(gunner.apl)
+  expect(now.save).toBe(gunner.save)
+})
+
+test('a dead operative is not injured, however few wounds it has', () => {
+  const g = initialGame()
+  const o = teamOps(g, 'dw')[0]
+  const dead = reduce(g, { type: 'dead', opId: o.id, dead: true })
+  expect(liveStats(dead, o, dead.ops[o.id]).hurt).toBe(false)
+})
+
+test('the tough toggle drops the whole penalty, and a datacard rule drops its own half', () => {
+  const g = initialGame()
+  const o = teamOps(g, 'dw').find((x) => x.name === 'Gunner')!
+  const hurt = reduce(g, { type: 'wound', opId: o.id, delta: -10 })
+  const off = reduce(hurt, { type: 'tough', opId: o.id, value: true })
+  const now = liveStats(off, o, off.ops[o.id])
+  expect(now.ignoring).toBe('all')
+  expect(now.move).toBe(o.move)
+  expect(now.hit({ name: 'x', atk: 4, hit: '3+', dmg: '3/4' })).toBe('3+')
+  expect(now.hurt).toBe(true) // still below half — the wound bar and the badge both want to know
+
+  // Angron's Implacable is weapons only: he keeps HIT 3+ and still loses the 2".
+  const angron = { id: 'a1', name: 'Angron', apl: 5, move: '6"', save: '4+', w: 75 }
+  const st = { hp: 20, expended: false, dead: false, order: 'engage' as const }
+  const boss = liveStats(g, angron, st)
+  expect(boss.ignoring).toBe('weapons')
+  expect(boss.move).toBe('4"')
+  expect(boss.hit({ name: 'x', atk: 5, hit: '3+', dmg: '6/8' })).toBe('3+')
+})
+
+test('every INJURY_IGNORES name resolves to a real datacard', async () => {
+  // Keyed by name so the reducer needs no faction chunk loaded — which means a typo fails
+  // silently. Same guard as GEAR_BONUS.
+  const carded = new Set<string>()
+  for (const f of FACTIONS) for (const d of (await loadFaction(f.id))?.datacards ?? []) carded.add(d.name)
+  for (const name of Object.keys(INJURY_IGNORES)) expect(carded.has(name)).toBe(true)
+})
+
+test('the injury-ignoring rules this app does NOT model are all conditional', async () => {
+  // Ten operatives have one. Only the flat, self-only, unconditional four are in the map; the
+  // rest are auras ("within 6\"") or optional ("you can ignore"), and there is no board here.
+  // If a future faction ships a flat one, it should land in the map rather than be silently lost.
+  const loose: string[] = []
+  for (const f of FACTIONS)
+    for (const d of (await loadFaction(f.id))?.datacards ?? [])
+      for (const a of d.abilities)
+        if (
+          /from being injured/i.test(a.text) &&
+          !INJURY_IGNORES[d.name] &&
+          !INJURY_GRANTS[d.name] &&
+          !/within|whenever/i.test(a.text)
+        )
+          loose.push(`${f.id}/${d.name}/${a.name}`)
+  expect(loose).toEqual([])
+})
+
+test("a roster-mate's rule can hand the whole team injury immunity", async () => {
+  // Spiritual Chirurgy: the team has it "if you select this operative for the battle (even if
+  // it's incapacitated later)" — a roster scan, not an aura, so no board is needed for it.
+  const f = (await loadFaction('wolf-scouts'))!
+  const pick = (n: RegExp) => f.operatives.find((o) => n.test(o.name))!
+  const bearer = { ...pick(/Fangbearer/), id: 'ws-bearer' }
+  const mate = { ...pick(/Wolf Scout (?!Fangbearer)/), id: 'ws-mate' }
+  const wolf = { ...pick(/Fenrisian Wolf/), id: 'ws-wolf', name: 'Fenrisian Wolf' }
+
+  const team = {
+    id: 'ws', player: 'P', name: 'Wolf Scouts', short: 'WS', side: 'imperium',
+    color: '#888', archetypes: [], faction: 'wolf-scouts', cp: 0, tacOp: '', tacVp: 0,
+  }
+  let g = reduce(initialGame(), { type: 'teamAdd', team, roster: [bearer, mate, wolf] })
+  const hurtAll = (gg: Game) =>
+    [bearer, mate, wolf].reduce((acc, o) => reduce(acc, { type: 'wound', opId: o.id, delta: -(o.w - 1) }), gg)
+  g = hurtAll(g)
+
+  expect(liveStats(g, mate, g.ops[mate.id]).ignoring).toBe('all')
+  // ...and the card excludes the wolf by name, so it still takes the penalty.
+  expect(liveStats(g, wolf, g.ops[wolf.id]).ignoring).toBeUndefined()
+  expect(liveStats(g, wolf, g.ops[wolf.id]).move).not.toBe(wolf.move)
+
+  // Nobody else's team is affected by it.
+  expect(liveStats(g, teamOps(g, 'dw')[0], { hp: 1, expended: false, dead: false, order: 'engage' }).ignoring)
+    .toBeUndefined()
 })
