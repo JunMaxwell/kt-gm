@@ -116,6 +116,16 @@ export function PlayRow({ o, game, dispatch }: { o: Operative; game: Game; dispa
       >
         {now.move} {now.save}
       </span>
+      {/* Riders are for the player's card; the GM's row just says how many are hanging off this
+          operative, so he can see at a glance that something is modifying it. */}
+      {!!now.riders.length && (
+        <span
+          className="display shrink-0 rounded bg-recon/20 px-1 text-xs text-recon"
+          title={now.riders.map((r) => `${r.label}: ${[r.fx.scope && `${r.fx.scope} weapons`, r.fx.when].filter(Boolean).join(' — ')}`).join('\n')}
+        >
+          +{now.riders.length}
+        </span>
+      )}
       {now.hurt && (
         // The toggle for every injury rule the app cannot resolve on its own: the library's
         // others are auras ("within 6\" of this operative") or optional ("you can ignore"), and

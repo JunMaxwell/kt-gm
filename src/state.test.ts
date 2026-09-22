@@ -26,6 +26,8 @@ import {
 } from './rules'
 import { OWN_RULE, PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
 import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
+import { ployEffect } from './ui/shared'
+import { MAPPED } from './fx'
 import { draftPool } from './ui/shared'
 
 /** The preset teams still carry archetypes and a faction; these keep the old test shape. */
@@ -44,6 +46,7 @@ import {
   type Game,
   initialGame,
   gearAllowance,
+  effectsFor,
   killGrade,
   liveStats,
   kills,
@@ -1807,4 +1810,229 @@ test("a roster-mate's rule can hand the whole team injury immunity", async () =>
   // Nobody else's team is affected by it.
   expect(liveStats(g, teamOps(g, 'dw')[0], { hp: 1, expended: false, dead: false, order: 'engage' }).ignoring)
     .toBeUndefined()
+})
+
+/* ---------- effects: what is true right now ---------- */
+
+const PLOY = { label: "Kau'yon", kind: 'strategy' as const, teamId: 'dw', until: 'tp' as const, fx: [] }
+const w = { name: 'bolt rifle', atk: 4, hit: '3+', dmg: '3/4' }
+
+test('a ploy in effect moves the numbers, and spends the CP', () => {
+  const g = initialGame()
+  const before = g.teams.dw.cp
+  const on = reduce(g, { type: 'effectAdd', cost: 1, effect: { ...PLOY, fx: [{ apl: 1, hit: 1, rules: 'Balanced, Ceaseless' }] } })
+  expect(on.teams.dw.cp).toBe(before - 1)
+
+  const sgt = teamOps(on, 'dw')[0]
+  const now = liveStats(on, sgt, on.ops[sgt.id])
+  expect(now.apl).toBe(sgt.apl + 1)
+  // Positive IMPROVES a roll stat in an effect, which is the opposite of `rollAfter`'s argument.
+  expect(now.hit(w)).toBe('2+')
+  expect(now.adds).toEqual(['Balanced', 'Ceaseless'])
+  expect(now.from.map((e) => e.label)).toEqual(["Kau'yon"])
+})
+
+test('an effect reaches only its own team, and only its target when it has one', () => {
+  const g = initialGame()
+  const dw = teamOps(g, 'dw')
+  const aimed = reduce(g, { type: 'effectAdd', effect: { ...PLOY, opId: dw[0].id, fx: [{ apl: 1 }] } })
+  expect(liveStats(aimed, dw[0], aimed.ops[dw[0].id]).apl).toBe(dw[0].apl + 1)
+  expect(liveStats(aimed, dw[1], aimed.ops[dw[1].id]).apl).toBe(dw[1].apl)
+  // Another team is never touched, even one of the same faction.
+  const dw2 = teamOps(g, 'dw2')[0]
+  expect(liveStats(aimed, dw2, aimed.ops[dw2.id]).from).toEqual([])
+})
+
+test('effects stack, and the core rules floors still bind', () => {
+  let g = initialGame()
+  const sgt = teamOps(g, 'dw')[0]
+  for (let i = 0; i < 3; i++) g = reduce(g, { type: 'effectAdd', effect: { ...PLOY, fx: [{ apl: 1, move: -1 }] } })
+  const now = liveStats(g, sgt, g.ops[sgt.id])
+  // "APL changes can never total more than +1", however many ploys say otherwise.
+  expect(now.apl).toBe(sgt.apl + 1)
+  // ...and Move never drops below 4".
+  expect(now.move).toBe('4"')
+})
+
+test('injury and a ploy compose on the same weapon', () => {
+  const g = initialGame()
+  const sgt = teamOps(g, 'dw')[0]
+  let hurt = reduce(g, { type: 'wound', opId: sgt.id, delta: -(sgt.w - 1) })
+  expect(liveStats(hurt, sgt, hurt.ops[sgt.id]).hit(w)).toBe('4+') // injured alone
+  hurt = reduce(hurt, { type: 'effectAdd', effect: { ...PLOY, fx: [{ hit: 1 }] } })
+  expect(liveStats(hurt, sgt, hurt.ops[sgt.id]).hit(w)).toBe('3+') // the ploy cancels it out
+})
+
+test('a turning point ends everything but a battle-long effect', () => {
+  let g = initialGame()
+  const sgt = teamOps(g, 'dw')[0]
+  for (const until of ['activation', 'tp', 'battle'] as const)
+    g = reduce(g, { type: 'effectAdd', effect: { ...PLOY, until, label: until } })
+  expect(g.effects.length).toBe(3)
+  expect(reduce(g, { type: 'nextTp' }).effects.map((e) => e.label)).toEqual(['battle'])
+
+  // An activation effect aimed at an operative ends when that operative activates...
+  const aimed = reduce(g, { type: 'effectAdd', effect: { ...PLOY, until: 'activation', opId: sgt.id, label: 'aimed' } })
+  const gone = reduce(aimed, { type: 'activate', opId: sgt.id })
+  expect(gone.effects.some((e) => e.label === 'aimed')).toBe(false)
+  // ...and readying it again is a correction, not an activation, so it ends nothing.
+  const other = teamOps(g, 'dw')[1]
+  const kept = reduce(aimed, { type: 'activate', opId: other.id })
+  expect(kept.effects.some((e) => e.label === 'aimed')).toBe(true)
+})
+
+test('ending an effect does not refund the CP, and cannot resurrect one', () => {
+  const g = reduce(initialGame(), { type: 'effectAdd', cost: 1, effect: PLOY })
+  const spent = g.teams.dw.cp
+  const off = reduce(g, { type: 'effectRemove', id: g.effects[0].id })
+  expect(off.effects).toEqual([])
+  expect(off.teams.dw.cp).toBe(spent) // a ploy that was used was used
+  expect(reduce(off, { type: 'effectRemove', id: 'nonsense' }).effects).toEqual([])
+})
+
+test('deleting a team or an operative takes its effects with it', () => {
+  const g = initialGame()
+  const sgt = teamOps(g, 'dw')[0]
+  let with2 = reduce(g, { type: 'effectAdd', effect: PLOY })
+  with2 = reduce(with2, { type: 'effectAdd', effect: { ...PLOY, opId: sgt.id, label: 'aimed' } })
+  expect(with2.effects.length).toBe(2)
+  // `normalize` prunes them, so a dangling effect can never buff a re-minted id that happens to match.
+  expect(reduce(with2, { type: 'teamRemove', teamId: 'dw' }).effects).toEqual([])
+  // The roster cases bypass `normalize` on purpose, so dropping the operative an effect names
+  // leaves it stored — and `effectsFor` heals it at read time, the way `pairUsed` is left inert.
+  const cut = reduce(with2, { type: 'setRoster', teamId: 'dw', ops: teamOps(with2, 'dw').slice(1) })
+  expect(effectsFor(cut, 'dw').map((e) => e.label)).toEqual(["Kau'yon"])
+  expect(liveStats(cut, sgt, { hp: 1, expended: false, dead: false, order: 'engage' }).from).toEqual([])
+})
+
+test('a mapped ploy applies its effect with no one typing a number', () => {
+  const g = initialGame()
+  const atsknf = factionData('dw')!.cards.find((c) => c.name === 'And They Shall Know No Fear')!
+  const g2 = reduce(g, ployEffect('dw', atsknf, 'dw'))
+  expect(g2.teams.dw.cp).toBe(g.teams.dw.cp - 1)
+
+  const sgt = teamOps(g2, 'dw')[0]
+  const hurt = reduce(g2, { type: 'wound', opId: sgt.id, delta: -(sgt.w - 1) })
+  const now = liveStats(hurt, sgt, hurt.ops[sgt.id])
+  // "You can ignore any changes to the stats of friendly DEATHWATCH operatives from being
+  // injured" — flat, whole-team, no trigger. The one shape this app can apply and be right about.
+  expect(now.hurt).toBe(true)
+  expect(now.ignoring).toBe('all')
+  expect(now.move).toBe(sgt.move)
+})
+
+test('an unmapped ploy still applies, carrying its own printed text', () => {
+  const g = initialGame()
+  const card = factionData('dw')!.cards.find((c) => c.name === 'The Long Vigil')!
+  const g2 = reduce(g, ployEffect('dw', card, 'dw'))
+  const e = g2.effects[0]
+  expect(e.label).toBe('The Long Vigil')
+  expect(e.kind).toBe('strategy')
+  expect(e.text).toBe(card.text) // what the player actually reads
+  // Its whole effect is a defence re-roll, so it moves no number — it is a rider carrying its
+  // own trigger, which is the honest result for most ploys in the game.
+  const sgt = teamOps(g2, 'dw')[0]
+  const now = liveStats(g2, sgt, g2.ops[sgt.id])
+  expect(now.apl).toBe(sgt.apl)
+  expect(now.adds).toEqual([])
+  expect(now.riders.length).toBeGreaterThan(0)
+  expect(now.riders[0].fx.when).toBeTruthy()
+})
+
+test('a ploy defaults to the duration its kind almost always has', () => {
+  const g = initialGame()
+  const cards = factionData('dw')!.cards
+  const strat = reduce(g, ployEffect('dw', cards.find((c) => c.kind === 'strategy')!, 'dw'))
+  const fire = reduce(g, ployEffect('dw', cards.find((c) => c.kind === 'firefight')!, 'dw'))
+  expect(strat.effects[0].until).toBe('tp')
+  expect(fire.effects[0].until).toBe('activation')
+})
+
+test('every mapped card name exists on the faction that claims it', async () => {
+  // `src/fx/` is hand-written beside the GENERATED `src/factions/`, so a renamed or re-extracted
+  // card would silently stop matching and the effect would just never apply.
+  for (const [faction, cards] of Object.entries(MAPPED)) {
+    const d = await loadFaction(faction)
+    const names = new Set((d?.cards ?? []).map((c) => c.name))
+    for (const name of Object.keys(cards)) expect([faction, name, names.has(name)]).toEqual([faction, name, true])
+  }
+})
+
+test('every mapped faction covers all of its ploys and equipment', async () => {
+  // Partial coverage is the trap: a player sees three of four ploys explain themselves and
+  // assumes the fourth does nothing.
+  for (const [faction, cards] of Object.entries(MAPPED)) {
+    const d = await loadFaction(faction)
+    const want = (d?.cards ?? []).filter((c) => c.kind !== 'faction').map((c) => c.name)
+    for (const name of want) expect([faction, name, !!cards[name]]).toEqual([faction, name, true])
+  }
+})
+
+test('a mapped modifier only moves the numbers when it is unconditional and unscoped', () => {
+  for (const [faction, cards] of Object.entries(MAPPED))
+    for (const [name, list] of Object.entries(cards))
+      for (const f of list) {
+        // A scoped or conditional entry is a rider. It may still carry numbers — they are for
+        // the player to read and apply — but it must never be silently folded into a stat.
+        const applied = !f.when && !f.scope
+        if (applied) {
+          // An applied entry has to actually say something, or it is a mapping mistake.
+          const says = [f.apl, f.move, f.hit, f.save, f.atk, f.rules, f.tough].some((x) => x !== undefined)
+          expect([faction, name, says]).toEqual([faction, name, true])
+        }
+      }
+})
+
+test('no applied effect comes from a card that names a single operative', async () => {
+  // An applied entry lands on the WHOLE TEAM — the app is never told which model a ploy was
+  // used on. This caught Raw Physiology, which reads "a friendly SCOUT SQUAD operative … add 1"
+  // to its Move stat" and would otherwise have moved all nine Scouts.
+  // "Whenever a friendly X operative is shooting" means ANY of them, so the singular there is
+  // generic and applying is right — *Crucible of Battle* is exactly that. What is not safe is a
+  // ploy that SELECTS one at the moment of use, which never says "whenever".
+  const SINGULAR = /\ba friendly [A-Z][^.]{0,60}?\boperative\b(?!s)/
+  const GENERIC = /\bwhenever a friendly\b/i
+  const loose: string[] = []
+  for (const [faction, cards] of Object.entries(MAPPED)) {
+    const d = await loadFaction(faction)
+    for (const [name, list] of Object.entries(cards)) {
+      const text = d?.cards.find((c) => c.name === name)?.text ?? ''
+      if (!SINGULAR.test(text) || GENERIC.test(text)) continue
+      if (list.some((f) => !f.when && !f.scope)) loose.push(`${faction}:${name}`)
+    }
+  }
+  expect(loose).toEqual([])
+})
+
+test('a scoped or conditional mapping is a rider and never moves a number', () => {
+  const g = initialGame()
+  // Waaagh! grants Balanced to MELEE weapons, and the app cannot tell a melee weapon from a
+  // ranged one — the glyph is a graphic the PDFs never gave up. So it prints, it does not apply.
+  const waaagh = factionData('kom')!.cards.find((c) => c.name === 'Waaagh!')!
+  const on = reduce(g, ployEffect('kom', waaagh, 'kom'))
+  const boss = teamOps(on, 'kom')[0]
+  const now = liveStats(on, boss, on.ops[boss.id])
+  expect(now.adds).toEqual([]) // nothing folded into the weapon table
+  expect(now.riders.map((r) => [r.label, r.fx.scope, r.fx.rules])).toEqual([['Waaagh!', 'melee', 'Balanced']])
+})
+
+test("equipment the team took is always on, with no Effect record at all", () => {
+  const g = initialGame()
+  // Gear is chosen, not used — so its mapped effects ride along off `team.gear` rather than
+  // needing anyone to activate anything.
+  const kit = factionData('kom')!.cards.find((c) => c.kind === 'equipment')!
+  const armed = reduce(g, { type: 'gear', teamId: 'kom', names: [kit.name] })
+  const boss = teamOps(armed, 'kom')[0]
+  const now = liveStats(armed, boss, armed.ops[boss.id])
+  expect(armed.effects).toEqual([]) // nothing was "used"
+  expect(now.riders.some((r) => r.label === kit.name)).toBe(true)
+})
+
+test('all thirteen mapped factions are wired into the index', () => {
+  // The index is hand-written, like `src/factions/index.ts` — a module that exists but is not
+  // registered simply never applies, silently.
+  expect(Object.keys(MAPPED).sort()).toEqual(
+    ['angron', 'aod', 'canoptek-circle', 'companions', 'dreadnought', 'dw', 'farsight',
+     'kasrkin', 'kom', 'rav', 'relic-seekers', 'sct', 'xv26'].sort(),
+  )
 })

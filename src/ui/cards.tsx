@@ -8,9 +8,12 @@
  * Neither takes a `dispatch`, and neither should. The player's deck is read-only by construction,
  * and the draft writes through `net.ask` at the screen level rather than from inside a card.
  */
+import { useEffect, useState } from 'react'
+
 import { type Datacard, KIND_LABEL, PLOY_CP, type RefCard, weaponRules } from '../compendium'
 import type { Operative } from '../rules'
-import { type Live, type OpState } from '../state'
+import { type Effect, type Live, type OpState } from '../state'
+import type { Fx } from '../compendium'
 import { KtCard, Rules } from './kit'
 
 /** One card, in the shape the printed sheets use: faction keyword, card type, then the name. */
@@ -19,12 +22,19 @@ export function RefCardView({
   kicker,
   cp,
   live,
+  going,
+  onUse,
   className = '',
 }: {
   card: RefCard
   kicker: string
   cp?: number
+  /** Belongs to the phase the table is in. NOT "in effect" — that is `going`. */
   live?: boolean
+  /** This card is in effect right now. A third meaning of `live` would be the bug. */
+  going?: boolean
+  /** Offered only where someone may spend the CP: the GM's browser, and a player's own deck. */
+  onUse?: () => void
   className?: string
 }) {
   const ploy = card.kind === 'strategy' || card.kind === 'firefight'
@@ -36,15 +46,116 @@ export function RefCardView({
       kicker={kicker}
       title={KIND_LABEL[card.kind]}
       name={card.name}
-      dim={broke}
-      outline={live ? 'var(--color-flare)' : undefined}
+      dim={broke && !going}
+      outline={going ? 'var(--color-recon)' : live ? 'var(--color-flare)' : undefined}
       tone={card.kind === 'strategy' ? 'green' : card.kind === 'firefight' ? 'black' : undefined}
       tag={ploy && (broke ? `need ${cost}CP` : `${cost}CP`)}
+      // The black band's free slot. `OperativeCard` puts Ready/Activated here; a ploy that is
+      // running says so in the same place, so the eye learns one spot.
+      aside={going ? <span className="text-recon">In effect</span> : undefined}
       className={className}
     >
       <Rules text={card.text} />
+      {onUse && <UseButton cost={cost} broke={broke} going={going} onUse={onUse} />}
     </KtCard>
   )
+}
+
+/**
+ * Two taps, not a dialog. The ploy applies the moment it is confirmed and the CP goes with it,
+ * so there has to be a step between a stray thumb and a spent point — but there is no `fixed`,
+ * no overlay and no `<dialog>` anywhere in this app, and one button that changes its mind is
+ * cheaper than becoming the first. It forgets after three seconds.
+ */
+function UseButton({ cost, broke, going, onUse }: { cost: number; broke?: boolean; going?: boolean; onUse: () => void }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 3000)
+    return () => clearTimeout(t)
+  }, [armed])
+
+  return (
+    <button
+      onClick={() => (armed ? (setArmed(false), onUse()) : setArmed(true))}
+      disabled={broke}
+      className={`display mt-2 w-full rounded px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+        armed ? 'bg-flare text-white' : 'bg-card text-white'
+      }`}
+    >
+      {armed ? `Tap again to spend ${cost}CP` : going ? `Use again \u2014 ${cost}CP` : `Use this ploy \u2014 ${cost}CP`}
+    </button>
+  )
+}
+
+/** One effect, said in as few words as it can be. Used on the operative card and the GM's list. */
+export function EffectChip({ e, onDrop }: { e: Effect; onDrop?: () => void }) {
+  const bits = e.fx.flatMap(fxWords)
+  const head = (
+    <>
+      <b className="display shrink-0 text-recon">{e.label}</b>
+      {!!bits.length && <span className="min-w-0 text-fade">{bits.join(' \u00b7 ')}</span>}
+      <span className="display shrink-0 text-[10px] text-fade">{UNTIL[e.until]}</span>
+      {onDrop && (
+        <button onClick={onDrop} aria-label={`End ${e.label}`} className="shrink-0 text-xenos">
+          \u00d7
+        </button>
+      )}
+    </>
+  )
+
+  // Most ploys change no number at all — their whole effect is a re-roll, a free action or a
+  // retained success, none of which this app can know. The card's own words ARE the effect, so
+  // they travel with it and open in place. `<details>` because it is native and this view still
+  // takes no dispatch.
+  if (!e.text)
+    return (
+      <span className="inline-flex max-w-full items-baseline gap-1.5 rounded bg-recon/15 px-1.5 py-0.5">
+        {head}
+      </span>
+    )
+  return (
+    // `list-none` + an explicit caret: a `display:flex` summary loses Chrome's own disclosure
+    // triangle, and without one the chip reads as a label rather than something you can open.
+    <details className="group max-w-full rounded bg-recon/15 px-1.5 py-0.5">
+      <summary className="flex cursor-pointer list-none items-baseline gap-1.5 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="display shrink-0 text-[9px] text-recon group-open:hidden">
+          &#9656;
+        </span>
+        <span aria-hidden className="display hidden shrink-0 text-[9px] text-recon group-open:inline">
+          &#9662;
+        </span>
+        {head}
+      </summary>
+      <Rules text={e.text} className="mt-1 mb-0.5 text-[11px] text-fade" />
+    </details>
+  )
+}
+
+/**
+ * One modifier in as few words as it will go, in the game's own language.
+ *
+ * Positive is better on a roll stat, which reads backwards as a number and right as a sentence —
+ * so it is said as "Hit better by 1" rather than "+1 Hit".
+ */
+function fxWords(f: Fx): string[] {
+  const out = [
+    f.apl && `${f.apl > 0 ? '+' : ''}${f.apl} APL`,
+    f.move && `${f.move > 0 ? '+' : ''}${f.move}" Move`,
+    f.atk && `${f.atk > 0 ? '+' : ''}${f.atk} Atk`,
+    f.hit && `Hit ${f.hit > 0 ? 'better' : 'worse'} by ${Math.abs(f.hit)}`,
+    f.save && `Save ${f.save > 0 ? 'better' : 'worse'} by ${Math.abs(f.save)}`,
+    f.rules,
+    f.tough && 'ignores Injured',
+  ].filter(Boolean) as string[]
+  // A card whose whole effect is a trigger has nothing else to say, and the trigger IS the words.
+  return out.length ? out : []
+}
+
+const UNTIL: Record<Effect['until'], string> = {
+  activation: 'this activation',
+  tp: 'this TP',
+  battle: 'all battle',
 }
 
 /**
@@ -138,6 +249,15 @@ export function OperativeCard({
           </span>
         </p>
       )}
+      {/* What is true right now and is not on the printed card. Above the weapon table, because
+          the numbers it explains are the ones in the stat row just above it. */}
+      {!!now?.from.length && (
+        <div className="mt-2 flex flex-wrap items-baseline gap-1 text-xs">
+          {now.from.map((e) => (
+            <EffectChip key={e.id} e={e} />
+          ))}
+        </div>
+      )}
       {st && !st.dead && (
         <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
           <span
@@ -183,6 +303,35 @@ export function OperativeCard({
             ))}
           </tbody>
         </table>
+      )}
+      {/* `Rules` renders a <p>, so it is the whole line rather than nested in one. Said once
+          rather than on all nine rows of an Intercessor Sergeant — the rule is on the operative. */}
+      {!!now?.adds.length && (
+        <Rules
+          text={`Every weapon above also has ${now.adds.join(', ')}.`}
+          className="mt-1 text-[11px] text-recon"
+        />
+      )}
+
+      {/* The riders: everything the app will not fold into the numbers because it depends on a
+          board, a die, or knowing which of these weapons is a sword. Named, with its trigger, so
+          the player applies it — rather than the app guessing and printing something untrue. */}
+      {!!now?.riders.length && (
+        <ul className="mt-1 space-y-0.5">
+          {now.riders.map(({ label, fx }, i) => (
+            <li key={`${label}-${i}`} className="flex items-baseline gap-1 text-[11px]">
+              <span aria-hidden className="shrink-0 text-recon">
+                +
+              </span>
+              <span className="min-w-0">
+                {fx.scope && <b className="text-card">{fx.scope} weapons: </b>}
+                {fxWords(fx).join(', ')}
+                {fx.when && <span className="text-fade">{fxWords(fx).length ? ' \u2014 ' : ''}{fx.when}</span>}
+                <span className="display ml-1 text-[10px] text-recon">{label}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
 
       {card?.abilities.map((a) => (

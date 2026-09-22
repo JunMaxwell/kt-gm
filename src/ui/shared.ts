@@ -3,7 +3,10 @@
 
 import { useEffect, useState } from 'react'
 
+import { PLOY_CP, type RefCard } from '../compendium'
+import { cardFx } from '../fx'
 import { CATALOGUE, type Operative, type TeamDef, slug } from '../rules'
+import type { Effect } from '../state'
 import { type FactionData, factionData, loadFaction } from '../factions'
 import type { useGame } from '../state'
 
@@ -114,3 +117,29 @@ export const draftPool = (team: TeamDef, faction: FactionData | undefined, roste
   const src = CATALOGUE[team.faction ?? ''] ?? faction?.operatives ?? []
   return src.map((o) => ({ ...o, id: `${team.id}-${slug(o.name)}` }))
 }
+
+/**
+ * Using a ploy: the whole of it, from a card, with no questions asked.
+ *
+ * Tapping a ploy applies it and spends the CP. What it does comes from `src/fx/`, and the effect
+ * always carries the card's name, its kind and its **printed text** besides — which for most
+ * ploys is the whole of it, because most resolve as a re-roll or a free action. A strategy ploy lasts the
+ * turning point; a firefight one is almost always "until the end of its next activation".
+ * Defaults, not rules: both are editable afterwards, and the GM can end either in one tap.
+ */
+export const ployEffect = (
+  faction: string | undefined,
+  card: RefCard,
+  teamId: string,
+): { type: 'effectAdd'; effect: Omit<Effect, 'id'>; cost?: number } => ({
+  type: 'effectAdd',
+  cost: card.cp ?? PLOY_CP,
+  effect: {
+    label: card.name,
+    text: card.text,
+    kind: card.kind,
+    teamId,
+    fx: cardFx(faction, card.name),
+    until: card.kind === 'firefight' ? 'activation' : 'tp',
+  },
+})

@@ -3,10 +3,12 @@ import { useState } from 'react'
 import { tacOp, teamTacOps } from '../rules'
 import { cardsOfKind, phaseCards, type RefCard, UNIVERSAL_EQUIPMENT } from '../compendium'
 import { datacardOf } from '../factions'
-import { allTeams, liveStats, teamOps } from '../state'
+import { allTeams, effectsFor, liveStats, teamOps } from '../state'
+import { Btn } from './kit'
 import { Carousel, SLIDE_CARD } from './Carousel'
 import { OperativeCard, RefCardView } from './cards'
-import { type Game, useFaction } from './shared'
+import { EffectForm, EffectList } from './Effects'
+import { type Dispatch, type Game, ployEffect, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
 
 // `OperativeCard` and `RefCardView` moved to `./cards`, and the rail to `./Carousel`, so the
@@ -37,7 +39,17 @@ const DECK_LABEL: Record<Deck, string> = {
  * momentum swiping on a phone, trackpad swiping on a laptop, and keyboard scrolling, for free.
  * The only JS is reading `scrollLeft` back out to light the right dot.
  */
-export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
+export function Compendium({
+  game,
+  teamId,
+  onPloy,
+}: {
+  game: Game
+  teamId: string
+  /** Offered where someone may spend the CP — the GM's browser, and a player's own deck. Absent
+   *  everywhere else, which keeps the deck the read-only thing it has always been. */
+  onPloy?: (card: RefCard) => void
+}) {
   // Teams can be deleted in setup, and a spectator's stored pick may name one that is gone.
   const team = game.teams[teamId] ?? allTeams(game)[0]
   const op = tacOp(team?.tacOp ?? '')
@@ -54,6 +66,9 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
   // The GM's own cards come first: a boss's rules matter more than the stock deck, and for a
   // hand-built team they are the only cards there are.
   const cards = [...(team?.cards ?? []), ...(faction?.cards ?? [])]
+
+  // Which of this team's cards are running. By name, the same key `TeamDef.gear` uses.
+  const going = new Set(effectsFor(game, team?.id ?? '').map((e) => e.label))
 
   const [deck, setDeck] = useState<Deck>('now')
 
@@ -122,6 +137,8 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
               kicker={team?.name ?? ''}
               cp={team?.cp ?? 0}
               live={live === 'now'}
+              going={going.has(c.name)}
+              onUse={onPloy && (c.kind === 'strategy' || c.kind === 'firefight') ? () => onPloy(c) : undefined}
               className={SLIDE_CARD}
             />
         ))
@@ -133,6 +150,7 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
       <Carousel
         key={live}
         slides={slides}
+        marked={live === 'strategy' || live === 'firefight' ? cardsIn(live).map((c) => going.has(c.name)) : undefined}
         note={
           live === 'tac' && !op ? (
             <p className="border-t border-rule px-2 py-1 text-center text-[11px] text-flare">
@@ -167,9 +185,10 @@ export function Compendium({ game, teamId }: { game: Game; teamId: string }) {
 }
 
 /** The GM's copy: same cards, any team, in the reference drawer's Ploys & equipment tab. */
-export function CompendiumBrowser({ game }: { game: Game }) {
+export function CompendiumBrowser({ game, dispatch }: { game: Game; dispatch: Dispatch }) {
   const teams = allTeams(game)
   const [pick, setTeamId] = useState('')
+  const [adding, setAdding] = useState(false)
   // Validated at render, not once at mount: setup can delete the team under us.
   const teamId = teams.some((t) => t.id === pick) ? pick : (teams[0]?.id ?? '')
 
@@ -200,8 +219,24 @@ export function CompendiumBrowser({ game }: { game: Game }) {
         the card and the page takes the scroll, which is what a reference drawer should do. The cap
         is only so one pathological card cannot fill the screen.
       */}
+      {/* What is running on this team, and the form to add to it. Above the deck rather than
+          inside it: it is about the team, and the deck is one card at a time. */}
+      <div className="mb-2 space-y-2">
+        <EffectList game={game} teamId={teamId} onDrop={(id) => dispatch({ type: 'effectRemove', id })} />
+        {adding ? (
+          <EffectForm game={game} onApply={dispatch} teamId={teamId} onDone={() => setAdding(false)} />
+        ) : (
+          <Btn onClick={() => setAdding(true)} className="display">
+            + Note an effect
+          </Btn>
+        )}
+      </div>
       <div className="flex max-h-[85vh]">
-        <Compendium game={game} teamId={teamId} />
+        <Compendium
+          game={game}
+          teamId={teamId}
+          onPloy={(card) => dispatch(ployEffect(game.teams[teamId]?.faction, card, teamId))}
+        />
       </div>
     </div>
   )

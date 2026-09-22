@@ -44,6 +44,64 @@ export type Datacard = {
 
 export const PLOY_CP = 1
 
+/**
+ * What a card actually does, in a shape the app can show.
+ *
+ * `Fx` is one modifier. A card may carry several — *Sting* improves a named weapon's Hit AND
+ * grants it two rules; *Implacable* has a conditional half and an unconditional one.
+ *
+ * **The scope and the condition are what make this honest.** Almost every Kill Team ploy is
+ * either conditional ("whenever shooting an operative that has that order") or weapon-scoped
+ * ("melee weapons"), and this app can resolve neither: it has no board, no dice, and **no way to
+ * tell a melee weapon from a ranged one** — the glyph is a graphic in the source PDFs,
+ * `pdftotext` never produced it, and the weapon-rules column cannot stand in (a bolt carbine is
+ * ranged with no Range rule; fists are melee with none).
+ *
+ * So the rule is simple and absolute:
+ *
+ *   - **No `when` and no `scope`** → the numbers move, ON EVERY OPERATIVE IN THE TEAM. A card
+ *     that names "a friendly X operative" in the singular is therefore a rider, not an applied
+ *     entry: the app is never told which one it was. The GM's form can pin an effect to a single
+ *     operative; a one-tap ploy cannot.
+ *   - **Either one set** → the modifier is printed as a RIDER under the weapon table, naming its
+ *     scope and its condition, and nothing moves. The player reads it and applies it themselves.
+ *
+ * Nothing is ever silently wrong, and every card in the library can be described this way.
+ */
+export type Fx = {
+  /** Deltas. Positive is BETTER on every one, including the two roll stats: the rules say
+   *  "improve the Hit stat by 1" and that is what a person writing one of these types. */
+  apl?: number
+  move?: number // inches
+  hit?: number
+  save?: number
+  atk?: number
+  /** Weapon rules to add, comma separated. */
+  rules?: string
+  /** Ignore the Injured penalty, the way `OpState.tough` does. */
+  tough?: boolean
+  /** Which weapons. Absent means all of them; `'melee'` / `'ranged'` are named but never
+   *  resolved, and anything else is matched against the weapon's own name. */
+  scope?: 'melee' | 'ranged' | string
+  /** When it applies, in the card's own words, shortened. Present means DISPLAY ONLY. */
+  when?: string
+}
+
+/**
+ * The mapped effects of a ploy or a piece of equipment, keyed `faction:card name`.
+ *
+ * Hand-maintained in `src/fx/`, one module per faction and an index that is also hand-written —
+ * deliberately NOT in the generated faction modules, which `tools/kt_generate.py` rewrites.
+ * Same reason `GEAR_BONUS` and `INJURY_IGNORES` live in hand-written files.
+ *
+ * Thirteen factions are mapped: the six the preset match uses, the five hand-written homebrew
+ * ones, plus Kasrkin and the Canoptek Circle. Every other faction's cards still apply as a
+ * named, timed effect carrying the card's printed text, which is what a player reads anyway.
+ */
+export type CardFx = Fx[]
+
+
+
 export const KIND_LABEL: Record<RefKind, string> = {
   faction: 'Faction rule',
   strategy: 'Strategy ploy',

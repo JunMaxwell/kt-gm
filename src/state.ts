@@ -24,12 +24,14 @@ import {
   type TeamDef,
   TURNING_POINTS,
   killThresholds,
+  aplAfter,
   grantedIgnore,
   killWorth,
   moveAfter,
   rollAfter,
 } from './rules'
-import type { PhaseId, RefKind, Weapon } from './compendium'
+import type { Fx, PhaseId, RefKind, Weapon } from './compendium'
+import { cardFx } from './fx'
 
 // `Order` moved to rules.ts, because `Operative.lockOrder` needs it. Re-exported so the
 // panels that `import type { Order } from '../state'` keep working.
@@ -67,6 +69,34 @@ export type Stage = 'rooms' | 'alliances' | 'teams' | 'config' | 'tacops' | 'pla
 /** The wizard steps, in order — the rail, the Back/Next cursor and the escape-hatch menu. */
 export const STEPS: Stage[] = ['alliances', 'teams', 'config', 'tacops']
 
+/**
+ * Something that is true right now and was not true when the card was printed: a ploy in effect,
+ * a Stun, a house call the GM made.
+ *
+ * **The numbers are stated, never inferred.** There is no structured meaning behind any of the
+ * app's 774 cards — they are prose extracted from PDFs — so nothing here can work out that
+ * Kau'yon grants +1 APL. Whoever applies the effect says what it does; the app remembers it,
+ * shows it on the right cards, and expires it. That division is the whole design: no rules
+ * engine, ever.
+ *
+ * `text` is copied off the card rather than looked up, because the reducer has no faction data
+ * and a phone reading this may never load that faction's chunk.
+ */
+export type Effect = {
+  id: string
+  label: string // 'Kau'yon', or whatever was typed
+  text?: string // the card's own prose, so the phone can show what it actually says
+  kind?: RefKind // badges it as a strategy / firefight ploy
+  teamId: string
+  opId?: string // narrowed to one operative; absent means the whole team
+  /** What it does, from `src/fx/` when it came from a card and from the GM's form otherwise.
+   *  A list because one card often does several things — *Sting* improves a named weapon's Hit
+   *  AND grants it two rules. An empty list is normal and common: most ploys resolve as a dice
+   *  re-roll or a free action, and then the card's own `text` is the whole of the effect. */
+  fx: Fx[]
+  until: 'activation' | 'tp' | 'battle'
+}
+
 export type Game = {
   stage: Stage // which view the GM is on; see `Stage`
   sides: SideDef[] // the alliances, in order — order picks the console's columns
@@ -95,6 +125,9 @@ export type Game = {
   /** Is the players' draft open? Closes on its own when the match starts; the GM reopens it
    *  from the header. Lives on `Game`, not on a device, because it has to reach seven phones. */
   picks: boolean
+  /** What is in effect right now. On `Game`, so it reaches all seven phones for free — the
+   *  whole snapshot is already relayed and `replace` merges over `initialGame()`. */
+  effects: Effect[]
 }
 
 /** Everyone starts Concealed, except an operative a rule forbids it to. */
@@ -144,6 +177,7 @@ export const initialGame = (): Game => {
     ),
     turnIdx: 0,
     picks: true,
+    effects: [],
   }
 }
 
@@ -208,6 +242,9 @@ export type Action =
   | { type: 'setRoster'; teamId: string; ops: Operative[] }
   | { type: 'gear'; teamId: string; names: string[] }
   | { type: 'picks'; value: boolean }
+  // --- what is in effect. `cost` spends CP, which is what makes one of these "use a ploy". ---
+  | { type: 'effectAdd'; effect: Omit<Effect, 'id'>; cost?: number }
+  | { type: 'effectRemove'; id: string }
   // --- setup: the match itself is editable, so these change who is playing ---
   | { type: 'stage'; value: Stage }
   | { type: 'sideAdd' }
@@ -289,6 +326,10 @@ const normalize = (g: Game): Game => {
     teams,
     roster,
     ops: Object.fromEntries(Object.entries(g.ops).filter(([id]) => keep.has(id))),
+    // An effect belongs to a team and sometimes to one operative. Both can be deleted under it,
+    // and `liveStats` sums whatever it finds — so a dangling one would keep buffing nothing, or
+    // worse, a re-minted id that happens to match.
+    effects: (g.effects ?? []).filter((e) => ids.has(e.teamId) && (!e.opId || keep.has(e.opId))),
     objectives: g.objectives.map((o) => (o && live.has(o) ? o : null)),
     primary: bySide(sides, g.primary, () => null),
     crit: bySide(sides, g.crit, () => Array(g.tpCount).fill(0)),
@@ -398,6 +439,10 @@ export function reduce(g: Game, a: Action): Game {
         phase: spending ? ('firefight' as const) : g.phase,
         picks: g.picks && !spending,
         ops: { ...g.ops, [a.opId]: { ...o, used: spent, expended: spent >= acts } },
+        // "Until the end of its next activation" is the commonest duration in the game, and this
+        // is the end of it. Only the ones aimed at THIS operative — an `activation` effect with
+        // no target has nothing to hang off, so it waits for the turning point.
+        effects: spending ? g.effects.filter((e) => !(e.until === 'activation' && e.opId === a.opId)) : g.effects,
       }
 
       if (!g.paired) {
@@ -497,6 +542,8 @@ export function reduce(g: Game, a: Action): Game {
         sideTurn: g.initiative,
         pairUsed: [],
         counteracts: blankBySide(g.sides, 0), // a Counteract is a this-turn opportunity
+        // Everything but 'battle' is over. Same tradition as the two lines above it.
+        effects: g.effects.filter((e) => e.until === 'battle'),
       }
     }
     // One action, so "End battle" stays one undo step. `finished` is NOT derived from
@@ -608,6 +655,21 @@ export function reduce(g: Game, a: Action): Game {
 
     case 'picks':
       return { ...g, picks: a.value }
+
+    // One action for "use a ploy" and for "note an effect", because they differ only by whether
+    // CP changes hands. The id is minted here, the way `cardAdd` mints a card's.
+    case 'effectAdd': {
+      const team = g.teams[a.effect.teamId]
+      if (!team) return g
+      const teams = a.cost
+        ? { ...g.teams, [a.effect.teamId]: { ...team, cp: Math.max(0, team.cp - a.cost) } }
+        : g.teams
+      return { ...g, teams, effects: [...g.effects, { ...a.effect, id: `e-${crypto.randomUUID().slice(0, 8)}` }] }
+    }
+    // Removing does NOT refund. A ploy that was used was used; the GM has a CP stepper for a
+    // genuine mistake, and undo for the rest.
+    case 'effectRemove':
+      return { ...g, effects: g.effects.filter((e) => e.id !== a.id) }
 
     /* ---------- setup ----------
      * Everything below changes who is playing, so every case ends in `normalize`.
@@ -721,8 +783,9 @@ export const injured = (o: Operative, st: OpState) => !st.dead && st.hp * 2 < o.
 
 /** How much of the Injured penalty actually lands on this operative: the GM's toggle, its own
  *  datacard rule, or one a team-mate grants the whole roster. */
-const ignores = (g: Game, o: Operative, st?: OpState) => {
-  if (st?.tough) return 'all'
+const ignores = (g: Game, o: Operative, st?: OpState, from: Effect[] = []) => {
+  // A card's `tough` counts only when it is unconditional — a conditional one is a rider.
+  if (st?.tough || from.some((e) => e.fx.some((f) => f.tough && !f.when && !f.scope))) return 'all'
   const own = INJURY_IGNORES[o.name.replace(/ \d+$/, '')]
   if (own) return own
   // The Fenrisian Wolf is excluded from its own team's grant, and the card says so.
@@ -759,21 +822,71 @@ export type Live = {
   /** What is being ignored, and absent when nothing is. `'weapons'` is Angron's *Implacable*:
    *  he keeps HIT 3+ and still loses the 2". */
   ignoring?: 'all' | 'weapons'
+  /** Weapon rules applied to every weapon, already split and deduped. */
+  adds: string[]
+  /** The effects in play on this operative, for a card that wants to explain itself. */
+  from: Effect[]
+  /** Everything that could NOT be folded into the numbers: conditional, or scoped to weapons
+   *  the app cannot identify. Printed under the weapon table with its scope and trigger named,
+   *  so the player applies it themselves rather than the app guessing. */
+  riders: { label: string; fx: Fx }[]
 }
 
+/** Equipment the team took is always on, so its effects need no `Effect` record at all. */
+const gearFx = (g: Game, teamId: string): { label: string; fx: Fx }[] => {
+  const team = g.teams[teamId]
+  return (team?.gear ?? []).flatMap((name) =>
+    cardFx(team?.faction, name).map((fx) => ({ label: name, fx })),
+  )
+}
+
+/** Every effect landing on this operative: its team's, plus the ones aimed at it by name. */
+export const effectsOn = (g: Game, opId: string) => {
+  const teamId = teamIdOf(g, opId)
+  return g.effects.filter((e) => e.teamId === teamId && (!e.opId || e.opId === opId))
+}
+
+/**
+ * Every effect on a team, whoever it is aimed at — for the "in effect" banner.
+ *
+ * Heals at read time rather than storing the invariant: the roster cases (`setRoster`,
+ * `removeOp`, `resetRoster`) deliberately bypass `normalize` and manage `g.ops` by hand, so an
+ * effect aimed at an operative the player has just dropped would otherwise sit in the banner
+ * naming a model that is not on the table. `effectsOn` can never match it anyway. Same trade as
+ * `orderedIds` and `pairUsed` — fewer stored invariants, fewer things to drift.
+ */
+export const effectsFor = (g: Game, teamId: string) =>
+  g.effects.filter((e) => e.teamId === teamId && (!e.opId || !!g.ops[e.opId]))
+
 export const liveStats = (g: Game, o: Operative, st?: OpState): Live => {
+  const from = effectsOn(g, o.id)
   const hurt = !!st && injured(o, st)
-  const skip = ignores(g, o, st)
+  const skip = ignores(g, o, st, from)
   // Injured is −2" Move and −1 to the weapons' Hit stat. Never APL, and never Save.
   const slowed = hurt && skip !== 'all'
   const missing = hurt && !skip
+  // Ploys and GM calls, plus the gear the team is carrying — which is simply always on.
+  const all = [...from.flatMap((e) => e.fx.map((fx) => ({ label: e.label, fx }))), ...gearFx(g, teamIdOf(g, o.id) ?? '')]
+  // A modifier moves the numbers only when it is unconditional AND applies to every weapon.
+  // Anything else is printed as a rider, because this app has no board, no dice and no way to
+  // tell a melee weapon from a ranged one.
+  const on = all.filter((x) => !x.fx.when && !x.fx.scope).map((x) => x.fx)
+  const riders = all.filter((x) => x.fx.when || x.fx.scope)
+
+  const sum = (k: 'apl' | 'move' | 'hit' | 'save') => on.reduce((n, f) => n + (f[k] ?? 0), 0)
+  // Positive IMPROVES a roll stat in an effect and WORSENS it in `rollAfter`. One negation, here.
+  const adds = [...new Set(on.flatMap((f) => (f.rules ?? '').split(',').map((r) => r.trim()).filter(Boolean)))]
+
   return {
-    apl: o.apl,
-    move: moveAfter(o.move, slowed ? -2 : 0),
-    save: o.save,
-    hit: (w: Weapon) => rollAfter(w.hit, missing ? 1 : 0),
+    apl: aplAfter(o.apl, sum('apl')),
+    move: moveAfter(o.move, (slowed ? -2 : 0) + sum('move')),
+    save: rollAfter(o.save, -sum('save')),
+    hit: (w: Weapon) => rollAfter(w.hit, (missing ? 1 : 0) - sum('hit')),
     hurt,
     ignoring: hurt ? skip : undefined,
+    adds,
+    from,
+    riders,
   }
 }
 export const sideOps = (g: Game, s: SideId) => sideTeams(g, s).flatMap((t) => teamOps(g, t.id))
@@ -1154,10 +1267,15 @@ export const withHistory = (h: History, a: UiAction): History => {
  * type and applies nothing else. All three are scoped to one team, and none of them can reach
  * VP, wounds, initiative or the turn cursor.
  *
+ * `effectAdd` and `effectRemove` are the loosest two: a phone can name any team and any numbers,
+ * where the other three are inert outside the sender's own team. That is deliberate and cheap —
+ * every effect is listed, by team, on the GM's console and on all seven phones, and the GM can
+ * drop any of them in one tap. An audit trail beats a permission model for seven friends.
+ *
  * ponytail: type-level whitelist over a shared code. Sign each ask with a per-player token if
  * this ever guards something that matters.
  */
-const PLAYER_ASKS = new Set(['claim', 'setRoster', 'gear'])
+const PLAYER_ASKS = new Set(['claim', 'setRoster', 'gear', 'effectAdd', 'effectRemove'])
 
 export function useGame() {
   // Above the reducer, because the reducer's lazy initialiser now needs the room to pick its

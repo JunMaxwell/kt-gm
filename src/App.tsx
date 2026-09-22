@@ -3,9 +3,10 @@ import { useState } from 'react'
 import { CHEAT_SHEET } from './rules'
 import { phaseMeta } from './compendium'
 import { allTeams, scores, teamsOf, useGame } from './state'
-import { type Dispatch, type Game, type Net, meInUrl, setMeInUrl, teamInUrl, usePrefetchFactions } from './ui/shared'
+import { type Dispatch, type Game, type Net, meInUrl, ployEffect, setMeInUrl, teamInUrl, usePrefetchFactions } from './ui/shared'
 import { ActivationOrder } from './ui/ActivationOrder'
 import { Compendium, CompendiumBrowser } from './ui/Compendium'
+import { EffectList } from './ui/Effects'
 import { Draft } from './ui/Draft'
 import { EndScreen } from './ui/EndScreen'
 import { Glossary } from './ui/Glossary'
@@ -44,6 +45,7 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
   const [saved, setSaved] = useState(() => meInUrl() || (localStorage.getItem(ME_KEY) ?? ''))
   const [picking, setPicking] = useState(false)
   const [drafting, setDrafting] = useState(false)
+  const [lost, setLost] = useState(false)
   // Checked every render: the GM can delete a team in setup, and the relay will ship that
   // snapshot straight to this phone. A stale pick falls back to NOTHING, not to the first team —
   // a silent default is how a first-time player reads someone else's cards for a whole match.
@@ -147,8 +149,30 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
         </div>
       </div>
 
+      {/* What is running on this team, said once at the top rather than hunted for card by
+          card. A player needs to know a ploy is up while reading a different deck entirely. */}
+      {!!game.effects.length && (
+        <div className="shrink-0 border-b border-rule bg-paper px-2 py-1">
+          <EffectList game={game} teamId={me} />
+        </div>
+      )}
+
+      {/* An ask into a shut socket is silent, and the GM's browser is the only reducer there is,
+          so a ploy that went nowhere has to say so rather than look spent. */}
+      {lost && (
+        <p className="shrink-0 bg-xenos px-2 py-1 text-center text-[11px] text-white">
+          Could not reach the GM — that ploy was not used. Is the console open?
+        </p>
+      )}
+
       <div className="flex min-h-0 flex-1 flex-col p-2">
-        <Compendium game={game} teamId={me} />
+        {/* Tapping a ploy uses it outright: the card's own effect, its text, and the CP, with the
+            card's two-tap confirm as the only step in between. No form on a phone. */}
+        <Compendium
+          game={game}
+          teamId={me}
+          onPloy={canAsk ? (card) => setLost(!net.ask(ployEffect(team.faction, card, me))) : undefined}
+        />
       </div>
     </div>
   )
@@ -187,7 +211,7 @@ function Reference({ game, dispatch, reveal }: { game: Game; dispatch: Dispatch;
         )}
       </nav>
       {tab === 'ops' && <OpsBrowser game={game} reveal={reveal} />}
-      {tab === 'cards' && <CompendiumBrowser game={game} />}
+      {tab === 'cards' && <CompendiumBrowser game={game} dispatch={dispatch} />}
       {tab === 'order' && <ActivationOrder game={game} dispatch={dispatch} />}
       {tab === 'cheat' && (
         <div className="grid gap-4 p-3 md:grid-cols-2 xl:grid-cols-3">

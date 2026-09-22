@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 184 tests: the reducer, and a render pass over every panel
+bun test           # 207 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -59,6 +59,7 @@ Vite 8 + React 19 + TS 6 + Tailwind 4, bun. No router, no state library, no comp
 | `src/compendium.ts` | The three turning-point phases, the `RefCard` type, universal equipment, and the universal **weapon rules** glossary. The per-faction cards moved to `src/factions/` |
 | `src/factions/` | **Generated.** 48 kill teams — 697 cards and 454 datacards (1362 weapons, 759 abilities and unique actions) — one module each, plus `index.ts` holding the metadata and the loader |
 | `tools/kt_*` | The extractor that generates `src/factions/` from the official PDFs |
+| `src/fx/` | **Hand-written.** What each ploy and each piece of equipment DOES, one module per faction |
 | `src/state.ts` | `useReducer` + localStorage + the room client + the undo stack, plus every derived selector (`scores`, `killGrade`, `rotation`, `pairTarget`, `counteract`, …) |
 | `src/state.test.ts` | `bun test`. Reducer and selectors only |
 | `src/App.tsx` | The page shell only: `App`, the spectator `Viewer`, and `Console`'s layout |
@@ -89,6 +90,7 @@ the section markers that were already in it:
 | `ui/EndScreen.tsx` | Step 6: the final scoreboard |
 | `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen, and claiming a team |
 | `ui/Draft.tsx` | The player's own list: a carousel per tab — operatives, faction gear, universal gear |
+| `ui/Effects.tsx` | The effect form and the in-effect list. Shared by the GM's drawer and a phone |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
 
 Two conventions the split rests on:
@@ -454,7 +456,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 184 tests in two files:
+`bun test` is 207 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -2188,6 +2190,123 @@ It used to state a penalty over a stat row that ignored it. It now explains numb
 already moved, and branches: *"Already counted above"*, or *"a rule lets it ignore the penalty, so
 nothing above moved"*, or Angron's *"…keeps its weapons' Hit stat"*. `hurt` stays true even when
 something is ignoring the penalty, because the wound bar and the badge both still want to know.
+
+## Effects — what is true right now
+
+A ploy that grants the whole team Balanced used to be invisible: the GM said it out loud and six
+people tried to remember. `Game.effects` is the app's memory of it, and it reaches every phone
+for free — the whole snapshot is already relayed and `replace` merges over `initialGame()`.
+
+**Using a ploy asks no questions.** Tapping one applies it and spends the CP, with the card's own
+two-tap confirm as the only step in between — `ployEffect` in `ui/shared.ts` seeds the effect from
+the card's name, kind, printed text and whatever `PLOY_FX` knows about it. There is no form on a
+phone. `EffectForm` survives for the GM's house calls, behind *+ Note an effect*.
+
+### `src/fx/` — what each card actually does
+
+Thirteen factions are mapped card by card: the six the preset match fields, the five hand-written
+homebrew ones, plus Kasrkin and the Canoptek Circle. 156 cards, every ploy and every piece of
+equipment. One module per faction beside the **generated** `src/factions/`, with a hand-written
+index — the same arrangement, and `tools/kt_generate.py` would rewrite anything put in the other
+one. Mapping another faction is one module and one line in the index; everything unmapped still
+works, applying as a named, timed effect carrying the card's printed text.
+
+**`Fx` is one modifier, and a card carries a list** — *Sting* improves a named weapon's Hit AND
+grants it two rules. The whole design is one rule:
+
+> **No `when` and no `scope` → the numbers move. Either one set → it prints as a rider.**
+
+That is not timidity, it is what the cards say. Of 424 ploys in the library, **twenty-six are
+unconditional**, and most of those are still weapon-scoped. Almost every ploy is a trigger
+resolved mid-sequence — *"whenever shooting an operative that has that order"*, *"if you roll two
+or more fails"*, *"wholly within your opponent's territory"* — against a board and dice this app
+does not have. Across the thirteen mapped factions **7 entries apply and 149 ride.**
+
+Three traps, each of which bit once:
+
+- **The app cannot tell a melee weapon from a ranged one.** The glyph is a graphic in the source
+  PDFs, `pdftotext` never produced it, and the rules column cannot stand in (a bolt carbine is
+  ranged with no Range rule; fists are melee with none). So *Waaagh!* and *Dakka! Dakka! Dakka!*
+  are flat and unconditional and still ride — applying either would put Punishing on a choppa.
+- **An applied entry lands on the WHOLE TEAM.** A ploy that names "a friendly X operative" in the
+  singular is a rider, because a one-tap ploy is never told which one it was. *Raw Physiology*
+  was mapped as applied and would have given all nine Scouts +1" Move. **A test catches this
+  class** — and it has to know that *"whenever a friendly X operative"* is generic rather than a
+  selection, or it flags *Crucible of Battle*, which is correctly applied.
+- **A card that debuffs the ENEMY gets no delta**, or the number lands on your own operative.
+
+**Equipment needs no `Effect` record at all.** Gear is chosen rather than used, so `liveStats`
+folds `team.gear` straight in off the team — it is simply always on.
+
+Four tests hold the mapping honest: every key names a real card, every mapped faction covers all
+twelve of its cards (partial coverage is the trap — a player sees three ploys explain themselves
+and assumes the fourth does nothing), an applied entry must actually say something, and the
+single-operative guard above.
+
+
+
+### The record
+
+`Effect` is `{ id, label, text?, kind?, teamId, opId?, apl?, move?, hit?, save?, rules?, until }`.
+
+- **`text` is COPIED off the card, not looked up.** The reducer has no faction data, and a phone
+  reading this may never load that faction's chunk.
+- **Positive is BETTER in an effect, including on the two roll stats** — the rules say "improve
+  the Hit stat by 1" and that is what a person types. `rollAfter` takes the opposite sign, so
+  `liveStats` negates in exactly one place.
+- **`opId` absent means the whole team.** `effectsOn` folds both into `liveStats`.
+- **One action for "use a ploy" and "note an effect"**, `effectAdd`, because they differ only by
+  whether `cost` changes hands. `effectRemove` **does not refund** — a ploy that was used was
+  used, and the GM has a CP stepper for a real mistake and undo for the rest.
+
+### Expiry rides the reset points that already existed
+
+- `nextTp` keeps only `until: 'battle'`, beside `pairUsed` and `counteracts` — the two precedents
+  for per-turn ephemeral state.
+- `activate` drops `until: 'activation'` effects **aimed at the operative that just spent**.
+  "Until the end of its next activation" is the commonest duration in the game and this is the end
+  of it. Readying an operative again is a correction, not an activation, so it ends nothing. An
+  `activation` effect with no target has nothing to hang off and waits for the turning point.
+- `normalize` prunes effects whose team or target is gone. The roster cases (`setRoster`,
+  `removeOp`, `resetRoster`) deliberately bypass `normalize`, so **`effectsFor` heals at read
+  time** instead — same trade as `orderedIds` and a stale `pairUsed`, which this file already
+  argues for. `effectsOn` could never match a dead id anyway.
+
+### Where it shows
+
+| | |
+|---|---|
+| The stat row | already moved — `liveStats` sums the deltas under the same floors Injured uses |
+| An `EffectChip` on the operative card | above the weapon table, explaining the numbers right above it |
+| One line under the weapon table | *"Every weapon above also has Balanced."* Said once, not on all nine rows of an Intercessor Sergeant — the rule is on the operative |
+| A band under the player's phase strip | so a ploy is visible while reading a different deck entirely |
+| `RefCardView`'s `aside` slot | an `In effect` chip, in the same corner `OperativeCard` puts Ready/Activated |
+| `Carousel`'s `marked` dots | already built for the draft, free here |
+
+- **`going`, not `live`.** `RefCardView.live` means "belongs to the current phase" and
+  `Compendium` has a local `live` meaning "the open deck". The rename in stage 1 exists because a
+  third meaning is a bug nobody can see; do not undo it by naming this one `live` either.
+- **`EffectForm` takes an `onApply` callback, never a `dispatch`**, so the GM can hand it one and
+  anything else can hand it something narrower — the same seam `Draft` uses to be writable without
+  being a writer. It lives in `Effects.tsx`; `ployEffect` had to move to `ui/shared.ts`, because a
+  `.tsx` that exports a helper beside its components loses Fast Refresh for the whole file and
+  oxlint says so.
+- **A ploy that went nowhere says so.** An ask into a shut socket is silent and the GM's browser is
+  the only reducer there is, so a failed one puts a line across the player's screen rather than
+  letting the CP look spent. Same lesson as `Draft`.
+- **Two taps, not a dialog.** The ploy applies the moment it is confirmed, so there has to be a
+  step between a stray thumb and a spent point — but there is no `fixed`, no overlay and no
+  `<dialog>` anywhere in `src/`, and a button that changes its mind for three seconds is cheaper
+  than becoming the first.
+- **The chip is a `<details>` with an explicit caret.** A `display:flex` summary loses Chrome's own
+  disclosure triangle, and without one the chip reads as a label rather than something that opens.
+- **`effectAdd` and `effectRemove` are the loosest two player asks**: a phone can name any team
+  and any numbers, where the other three are inert outside its own team. Deliberate and cheap —
+  every effect is listed by team on the console and on all seven phones, and the GM ends any of
+  them in one tap. An audit trail beats a permission model for seven friends.
+- The form's **`free`** toggle applies a ploy at 0CP. Several rules hand one out — the Watch
+  Sergeant's *Strategic Command* does it twice a battle — and a checkbox is cheaper than modelling
+  any of them.
 
 ## Known gaps
 

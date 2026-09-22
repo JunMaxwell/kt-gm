@@ -16,6 +16,8 @@ import { Compendium, CompendiumBrowser, OperativeCard } from './Compendium'
 import { OpsBrowser } from './OpsBrowser'
 import { TeamPicker } from './TeamPicker'
 import { Draft } from './Draft'
+import { EffectForm } from './Effects'
+import { ployEffect } from './shared'
 import { Glossary, Pack } from './Glossary'
 import { Rules } from './kit'
 
@@ -33,7 +35,7 @@ const panels = (g: ReturnType<typeof initialGame>) =>
     R(<Objectives game={g} dispatch={noop} />),
     R(<ActivationOrder game={g} dispatch={noop} />),
     R(<OpsBrowser game={g} reveal />),
-    R(<CompendiumBrowser game={g} />),
+    R(<CompendiumBrowser game={g} dispatch={noop} />),
     // Once per wizard step: each one renders a different panel set, and `initialGame()` is
     // stage `play`, so a single render would only ever exercise the clamped fallback.
     ...STEPS.map((stage) => R(<Setup game={{ ...g, stage }} dispatch={noop} net={net} />)),
@@ -361,11 +363,12 @@ test('the draft offers a curated pool, and falls back to the roster when the GM 
 /** `Compendium` only mounts the deck that is OPEN, and `ops` wins by default. A GM-authored
  *  card sorts first and its kind decides the fallback, so this is how you make Gear the one
  *  on screen — the same route a boss's rules deck takes. */
-const gearOpen = (g: ReturnType<typeof initialGame>, teamId: string) => {
-  const withCard = reduce(g, { type: 'cardAdd', teamId, kind: 'equipment' })
+const deckOpen = (g: ReturnType<typeof initialGame>, teamId: string, kind: 'equipment' | 'strategy') => {
+  const withCard = reduce(g, { type: 'cardAdd', teamId, kind })
   const id = withCard.teams[teamId].cards![0].id
   return reduce(withCard, { type: 'cardPatch', teamId, cardId: id, patch: { name: 'GM kit', text: 'x' } })
 }
+const gearOpen = (g: ReturnType<typeof initialGame>, teamId: string) => deckOpen(g, teamId, 'equipment')
 
 test('faction and universal gear are separate tabs over one shared budget', () => {
   const g = initialGame()
@@ -462,4 +465,67 @@ test('a limit above the pool is capped to what is actually offered', () => {
   const html = R(<Draft game={g} teamId="kom" ask={yes} onClose={noop} />)
   expect(html).toContain('11/11')
   expect(html).not.toContain('/20')
+})
+
+test('an effect in play reaches the card, the band and the ploy it came from', () => {
+  const g = reduce(initialGame(), {
+    type: 'effectAdd',
+    cost: 1,
+    effect: {
+      label: 'Suffer Not the Alien',
+      kind: 'strategy',
+      teamId: 'dw',
+      until: 'tp',
+      fx: [{ apl: 1, rules: 'Balanced' }],
+    },
+  })
+  const html = R(<Compendium game={g} teamId="dw" />)
+  // The operative card carries the chip, the added rule and the duration.
+  expect(html).toContain('Suffer Not the Alien')
+  expect(html).toContain('Every weapon above also has')
+  expect(html).toContain('Balanced')
+  expect(html).toContain('this TP')
+  // The GM's browser lists it and offers the form.
+  const gm = R(<CompendiumBrowser game={g} dispatch={noop} />)
+  expect(gm).toContain('Suffer Not the Alien')
+  expect(gm).toContain('Note an effect')
+})
+
+test('the ploy deck only offers Use where someone may spend the CP', () => {
+  // Only the OPEN deck is mounted, and the Ops deck opens by default — so the strategy deck has
+  // to be the one on screen before there is a ploy card to look at.
+  const g = deckOpen(initialGame(), 'dw', 'strategy')
+  expect(R(<Compendium game={g} teamId="dw" />)).not.toContain('Use this ploy')
+  expect(R(<Compendium game={g} teamId="dw" onPloy={noop} />)).toContain('Use this ploy')
+})
+
+test('a ploy that is running says so on its own card', () => {
+  let g = deckOpen(initialGame(), 'dw', 'strategy')
+  const card = g.teams.dw.cards![0]
+  g = reduce(g, { type: 'effectAdd', effect: { label: card.name, kind: 'strategy', teamId: 'dw', until: 'tp', fx: [] } })
+  expect(R(<Compendium game={g} teamId="dw" />)).toContain('In effect')
+})
+
+test('the effect form names the team’s own operatives and the three durations', () => {
+  const html = R(<EffectForm game={initialGame()} onApply={noop} teamId="dw" />)
+  expect(html).toContain('Watch Sergeant')
+  expect(html).toContain('this turning point')
+  expect(html).toContain('the rest of the battle')
+  // No card, so no CP is being spent and the button does not pretend otherwise.
+  expect(html).toContain('Apply')
+})
+
+test('a ploy is used from the card itself, with a confirm and no form', () => {
+  const g = deckOpen(initialGame(), 'dw', 'strategy')
+  const html = R(<Compendium game={g} teamId="dw" onPloy={noop} />)
+  expect(html).toContain('Use this ploy')
+  // Nothing to fill in: the form's own fields are not on this screen.
+  expect(html).not.toContain('Weapon rules to add')
+  expect(html).not.toContain('the rest of the battle')
+})
+
+test("an effect carries the card's text to the phone", () => {
+  const card = factionData('dw')!.cards.find((c) => c.name === 'The Long Vigil')!
+  const g = reduce(initialGame(), ployEffect('dw', card, 'dw'))
+  expect(g.effects[0].text).toBe(card.text)
 })
