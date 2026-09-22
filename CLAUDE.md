@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 207 tests: the reducer, and a render pass over every panel
+bun test           # 208 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -108,9 +108,9 @@ Two conventions the split rests on:
   and the `Dispatch`/`Game`/`Net` aliases do not live in `kit.tsx`.
 
 Game state persists to `localStorage` under a **versioned key, one game per room**:
-`killteam-gm/v20/<code>`, or `killteam-gm/v20/local` when no room could be opened. Any change to
+`killteam-gm/v21/<code>`, or `killteam-gm/v21/local` when no room could be opened. Any change to
 the state shape bumps the version; old saves are ignored rather than migrated. That has happened
-twenty times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
+twenty-one times and is the right trade for a tool used on one evening. Note localStorage is per-origin, so the
 deployed copy and localhost keep entirely separate games.
 
 The `local` key is written even on a fresh device that has never opened a room — the reducer boots
@@ -456,7 +456,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 207 tests in two files:
+`bun test` is 208 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -2237,6 +2237,14 @@ Three traps, each of which bit once:
 
 **Equipment needs no `Effect` record at all.** Gear is chosen rather than used, so `liveStats`
 folds `team.gear` straight in off the team — it is simply always on.
+
+**`normalize` coerces `Effect.fx` to an array, and that is not belt-and-braces.** `replace` merges
+over `initialGame()` at the TOP level only — nothing defaults a field nested inside an array. When
+`Effect` changed from inline deltas to an `fx` list, stale snapshots kept their old shape and
+`liveStats` died on `e.fx.some`, white-screening the entire console. The storage key should have
+been bumped in the same commit (it now is) but that only helps this machine: a relay message from
+a GM on an older build arrives the same way. `normalize` is the single repair point precisely so
+no reader has to carry a `?.` for a shape that drifted.
 
 Four tests hold the mapping honest: every key names a real card, every mapped faction covers all
 twelve of its cards (partial coverage is the trap — a player sees three ploys explain themselves

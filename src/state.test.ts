@@ -2036,3 +2036,15 @@ test('all thirteen mapped factions are wired into the index', () => {
      'kasrkin', 'kom', 'rav', 'relic-seekers', 'sct', 'xv26'].sort(),
   )
 })
+
+test('a snapshot whose effects predate `fx` is repaired, not fatal', () => {
+  // `replace` merges over `initialGame()` at the top level only — nothing defaults a field
+  // nested inside an array. This shipped once and white-screened the console: a stale save's
+  // effects had no `fx`, and `liveStats` died on `e.fx.some`.
+  const g = initialGame()
+  const stale = { ...g, effects: [{ id: 'e-old', label: 'Old Ploy', teamId: 'dw', until: 'tp' }] } as unknown as Game
+  const fixed = reduce(g, { type: 'replace', game: stale })
+  expect(fixed.effects[0].fx).toEqual([])
+  const sgt = teamOps(fixed, 'dw')[0]
+  expect(() => liveStats(fixed, sgt, fixed.ops[sgt.id])).not.toThrow()
+})

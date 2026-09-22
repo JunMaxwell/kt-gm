@@ -329,7 +329,15 @@ const normalize = (g: Game): Game => {
     // An effect belongs to a team and sometimes to one operative. Both can be deleted under it,
     // and `liveStats` sums whatever it finds — so a dangling one would keep buffing nothing, or
     // worse, a re-minted id that happens to match.
-    effects: (g.effects ?? []).filter((e) => ids.has(e.teamId) && (!e.opId || keep.has(e.opId))),
+    //
+    // `fx` is coerced because `replace` merges over `initialGame()` at the TOP level only:
+    // nothing defaults a field nested inside an array. A snapshot written before `fx` existed —
+    // a stale save, or a relay message from a GM on an older build — would otherwise reach
+    // `liveStats` and white-screen the whole tree on `e.fx.some`. This is what `normalize` is
+    // for: the single repair point, so no reader has to carry a `?.` for a shape that drifted.
+    effects: (g.effects ?? [])
+      .filter((e) => ids.has(e.teamId) && (!e.opId || keep.has(e.opId)))
+      .map((e) => (Array.isArray(e.fx) ? e : { ...e, fx: [] })),
     objectives: g.objectives.map((o) => (o && live.has(o) ? o : null)),
     primary: bySide(sides, g.primary, () => null),
     crit: bySide(sides, g.crit, () => Array(g.tpCount).fill(0)),
@@ -1048,7 +1056,7 @@ export const counteract = (g: Game, s: SideId) => {
 // One game PER ROOM, so switching back to an old room restores it with no network at all.
 // `local` is the no-room fallback — if `POST /rooms` fails the GM still gets a game, because
 // the relay is never a prerequisite for starting one.
-const gameKey = (code = 'local') => `killteam-gm/v20/${code}`
+const gameKey = (code = 'local') => `killteam-gm/v21/${code}`
 const ROOM_KEY = 'killteam-gm/room' // the room this device is CURRENTLY in
 const ROOMS_KEY = 'killteam-gm/rooms' // every room this device knows, newest first
 
