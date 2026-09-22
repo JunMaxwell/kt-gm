@@ -128,7 +128,30 @@ export type Game = {
   /** What is in effect right now. On `Game`, so it reaches all seven phones for free — the
    *  whole snapshot is already relayed and `replace` merges over `initialGame()`. */
   effects: Effect[]
+  /** Per-team equipment state, keyed `teamId::card name` — the same name-keying `TeamDef.gear`
+   *  already uses, and for the same reason: a `RefCard` has no id. */
+  kit: Record<string, Kit>
 }
+
+/**
+ * One piece of equipment as the table is using it: who is carrying it, and how much of it is
+ * spent. Separate from `TeamDef.gear`, which is the DRAFT's list of what was chosen — these two
+ * have different lifetimes, and `used` resets every turning point while the choice does not.
+ */
+export type Kit = {
+  /** Which operative carries it. Optional and usually blank: of 196 faction equipment cards
+   *  exactly three are scoped to one model, and all 64 "once per turning point" ones are worded
+   *  kill-team wide. Equipment is a team's, not a model's. */
+  op?: string
+  used?: number
+  /** Copied from `gearUse` when the entry is made, so `nextTp` can clear the right ones without
+   *  the reducer needing a faction chunk loaded. Same reason `GEAR_BONUS` is keyed by name. */
+  per?: 'tp' | 'battle'
+  max?: number
+}
+
+/** `Game.kit`'s key. One string, one place, so the two sides cannot spell it differently. */
+export const kitKey = (teamId: string, card: string) => `${teamId}::${card}`
 
 /** Everyone starts Concealed, except an operative a rule forbids it to. */
 const startOrder = (o: Operative): Order => o.lockOrder ?? 'conceal'
@@ -178,6 +201,7 @@ export const initialGame = (): Game => {
     turnIdx: 0,
     picks: true,
     effects: [],
+    kit: {},
   }
 }
 
@@ -245,6 +269,7 @@ export type Action =
   // --- what is in effect. `cost` spends CP, which is what makes one of these "use a ploy". ---
   | { type: 'effectAdd'; effect: Omit<Effect, 'id'>; cost?: number }
   | { type: 'effectRemove'; id: string }
+  | { type: 'kit'; teamId: string; card: string; patch: Partial<Kit> }
   // --- setup: the match itself is editable, so these change who is playing ---
   | { type: 'stage'; value: Stage }
   | { type: 'sideAdd' }
@@ -335,6 +360,13 @@ const normalize = (g: Game): Game => {
     // a stale save, or a relay message from a GM on an older build — would otherwise reach
     // `liveStats` and white-screen the whole tree on `e.fx.some`. This is what `normalize` is
     // for: the single repair point, so no reader has to carry a `?.` for a shape that drifted.
+    // A team's kit goes with the team, and a carrier that is no longer on the roster is cleared
+    // rather than left naming a model nobody can see.
+    kit: Object.fromEntries(
+      Object.entries(g.kit ?? [])
+        .filter(([k]) => ids.has(k.split('::')[0]))
+        .map(([k, v]) => [k, v.op && !keep.has(v.op) ? { ...v, op: undefined } : v]),
+    ),
     effects: (g.effects ?? [])
       .filter((e) => ids.has(e.teamId) && (!e.opId || keep.has(e.opId)))
       .map((e) => (Array.isArray(e.fx) ? e : { ...e, fx: [] })),
@@ -552,6 +584,11 @@ export function reduce(g: Game, a: Action): Game {
         counteracts: blankBySide(g.sides, 0), // a Counteract is a this-turn opportunity
         // Everything but 'battle' is over. Same tradition as the two lines above it.
         effects: g.effects.filter((e) => e.until === 'battle'),
+        // ...and the same for equipment: a once-per-turning-point card is ready again, a
+        // once-per-battle one stays spent. The carrier survives either way.
+        kit: Object.fromEntries(
+          Object.entries(g.kit).map(([k, v]) => [k, v.per === 'battle' ? v : { ...v, used: 0 }]),
+        ),
       }
     }
     // One action, so "End battle" stays one undo step. `finished` is NOT derived from
@@ -678,6 +715,13 @@ export function reduce(g: Game, a: Action): Game {
     // genuine mistake, and undo for the rest.
     case 'effectRemove':
       return { ...g, effects: g.effects.filter((e) => e.id !== a.id) }
+
+    // Who is carrying a piece of equipment, and how much of it is spent. A merge rather than a
+    // write, so marking it used does not clear the carrier and vice versa.
+    case 'kit': {
+      const key = kitKey(a.teamId, a.card)
+      return { ...g, kit: { ...g.kit, [key]: { ...g.kit[key], ...a.patch } } }
+    }
 
     /* ---------- setup ----------
      * Everything below changes who is playing, so every case ends in `normalize`.
@@ -1283,7 +1327,7 @@ export const withHistory = (h: History, a: UiAction): History => {
  * ponytail: type-level whitelist over a shared code. Sign each ask with a per-player token if
  * this ever guards something that matters.
  */
-const PLAYER_ASKS = new Set(['claim', 'setRoster', 'gear', 'effectAdd', 'effectRemove'])
+const PLAYER_ASKS = new Set(['claim', 'setRoster', 'gear', 'effectAdd', 'effectRemove', 'kit'])
 
 export function useGame() {
   // Above the reducer, because the reducer's lazy initialiser now needs the room to pick its

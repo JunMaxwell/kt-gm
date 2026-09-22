@@ -24,6 +24,7 @@ export function RefCardView({
   live,
   going,
   onUse,
+  footer,
   className = '',
 }: {
   card: RefCard
@@ -35,6 +36,9 @@ export function RefCardView({
   going?: boolean
   /** Offered only where someone may spend the CP: the GM's browser, and a player's own deck. */
   onUse?: () => void
+  /** Anything to hang under the card's text — the equipment controls use this. A slot rather
+   *  than more props, so this leaf never learns what a `Game` is. */
+  footer?: React.ReactNode
   className?: string
 }) {
   const ploy = card.kind === 'strategy' || card.kind === 'firefight'
@@ -57,6 +61,7 @@ export function RefCardView({
     >
       <Rules text={card.text} />
       {onUse && <UseButton cost={cost} broke={broke} going={going} onUse={onUse} />}
+      {footer}
     </KtCard>
   )
 }

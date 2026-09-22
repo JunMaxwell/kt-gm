@@ -529,3 +529,32 @@ test("an effect carries the card's text to the phone", () => {
   const g = reduce(initialGame(), ployEffect('dw', card, 'dw'))
   expect(g.effects[0].text).toBe(card.text)
 })
+
+test('a limited gear card gets a used control and a passive one does not', () => {
+  const g = reduce(gearOpen(initialGame(), 'dw'), {
+    type: 'gear',
+    teamId: 'dw',
+    names: ['Digital Weapons', 'Razor Wire (1x)'],
+  })
+  const html = R(<Compendium game={g} teamId="dw" onKit={noop} />)
+  // Digital Weapons is once per turning point; Razor Wire is simply on.
+  expect(html).toContain('Once per TP')
+  expect(html).toContain('unused')
+  expect(html).toContain('Carried by')
+  // 119 of 222 equipment cards are passive. A tick box beside a barricade is a question the
+  // player has to answer for no reason.
+  const only = reduce(gearOpen(initialGame(), 'dw'), { type: 'gear', teamId: 'dw', names: ['Razor Wire (1x)'] })
+  const passive = R(<Compendium game={only} teamId="dw" />)
+  expect(passive).not.toContain('Once per')
+  expect(passive).not.toContain('unused')
+})
+
+test('the gear deck is read-only without an onKit, and says who is carrying', () => {
+  const g0 = reduce(gearOpen(initialGame(), 'dw'), { type: 'gear', teamId: 'dw', names: ['Digital Weapons'] })
+  const op = teamOps(g0, 'dw')[0]
+  const g = reduce(g0, { type: 'kit', teamId: 'dw', card: 'Digital Weapons', patch: { op: op.id, used: 1 } })
+  const html = R(<Compendium game={g} teamId="dw" />)
+  expect(html).toContain('used')
+  expect(html).toContain(`Carried by ${op.name}`)
+  expect(html).not.toContain('<select') // nothing to change it with
+})

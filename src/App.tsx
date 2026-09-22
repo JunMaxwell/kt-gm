@@ -172,6 +172,7 @@ function Viewer({ game, net, onGlossary }: { game: Game; net: Net; onGlossary: (
           game={game}
           teamId={me}
           onPloy={canAsk ? (card) => setLost(!net.ask(ployEffect(team.faction, card, me))) : undefined}
+          onKit={canAsk ? (card, patch) => setLost(!net.ask({ type: 'kit', teamId: me, card: card.name, patch })) : undefined}
         />
       </div>
     </div>

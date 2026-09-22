@@ -24,7 +24,7 @@ import {
   teamTacOps,
   teamsWithArchetype,
 } from './rules'
-import { OWN_RULE, PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
+import { gearUse, OWN_RULE, PHASES, type RefKind, phaseCards, phaseMeta, UNIVERSAL_EQUIPMENT, WEAPON_RULES, weaponRules } from './compendium'
 import { datacardOf, FACTIONS, factionData, loadFaction } from './factions'
 import { ployEffect } from './ui/shared'
 import { MAPPED } from './fx'
@@ -47,6 +47,7 @@ import {
   initialGame,
   gearAllowance,
   effectsFor,
+  kitKey,
   killGrade,
   liveStats,
   kills,
@@ -2047,4 +2048,81 @@ test('a snapshot whose effects predate `fx` is repaired, not fatal', () => {
   expect(fixed.effects[0].fx).toEqual([])
   const sgt = teamOps(fixed, 'dw')[0]
   expect(() => liveStats(fixed, sgt, fixed.ops[sgt.id])).not.toThrow()
+})
+
+/* ---------- equipment: what has been used ---------- */
+
+test('the three printed limits are read off the card, with nothing ambiguous', async () => {
+  // A regex over prose, which this codebase warns against — but the phrasings are exact and the
+  // failure mode is a missing tick box, never a wrong number. This is the check that says so.
+  expect(gearUse('Once per battle, when a friendly operative…')).toEqual({ per: 'battle', max: 1 })
+  expect(gearUse('Once per turning point, when a friendly…')).toEqual({ per: 'tp', max: 1 })
+  expect(gearUse('Up to twice per turning point, when a…')).toEqual({ per: 'tp', max: 2 })
+  expect(gearUse('While an operative is in cover from this…')).toBeUndefined()
+
+  // And across every equipment card in the library, no card matches two different limits.
+  let tracked = 0
+  const all = [...UNIVERSAL_EQUIPMENT]
+  for (const f of FACTIONS) for (const c of (await loadFaction(f.id))?.cards ?? []) if (c.kind === 'equipment') all.push(c)
+  for (const c of all) {
+    const twice = /up to twice per turning point/i.test(c.text)
+    const tp = /once per turning point/i.test(c.text)
+    const battle = /once per battle/i.test(c.text)
+    expect([c.name, twice && battle]).toEqual([c.name, false])
+    expect([c.name, tp && battle]).toEqual([c.name, false])
+    if (gearUse(c.text)) tracked++
+  }
+  // 103 of 222 carry a limit; the rest are passive and get no control at all.
+  expect(tracked).toBeGreaterThan(90)
+  expect(all.length - tracked).toBeGreaterThan(100)
+})
+
+test('a used mark survives an activation and clears on the right turning point', () => {
+  const g = initialGame()
+  const tp = reduce(g, { type: 'kit', teamId: 'dw', card: 'Digital Weapons', patch: { used: 1, per: 'tp', max: 1 } })
+  const batt = reduce(tp, { type: 'kit', teamId: 'dw', card: 'Ammunition Reserve', patch: { used: 1, per: 'battle', max: 1 } })
+  expect(batt.kit[kitKey('dw', 'Digital Weapons')].used).toBe(1)
+
+  const next = reduce(batt, { type: 'nextTp' })
+  expect(next.kit[kitKey('dw', 'Digital Weapons')].used).toBe(0) // ready again
+  expect(next.kit[kitKey('dw', 'Ammunition Reserve')].used).toBe(1) // spent for good
+})
+
+test('the carrier and the used mark do not clobber each other', () => {
+  const g = initialGame()
+  const op = teamOps(g, 'dw')[0]
+  let k = reduce(g, { type: 'kit', teamId: 'dw', card: 'Digital Weapons', patch: { op: op.id } })
+  k = reduce(k, { type: 'kit', teamId: 'dw', card: 'Digital Weapons', patch: { used: 1, per: 'tp', max: 1 } })
+  expect(k.kit[kitKey('dw', 'Digital Weapons')]).toEqual({ op: op.id, used: 1, per: 'tp', max: 1 })
+  // ...and a carrier survives the turning point that clears the mark.
+  expect(reduce(k, { type: 'nextTp' }).kit[kitKey('dw', 'Digital Weapons')].op).toBe(op.id)
+})
+
+test('kit follows its team, and forgets a carrier who left the roster', () => {
+  const g = initialGame()
+  const op = teamOps(g, 'dw')[0]
+  const k = reduce(g, { type: 'kit', teamId: 'dw', card: 'Digital Weapons', patch: { op: op.id, used: 1 } })
+  // The whole team goes: so does its kit.
+  expect(reduce(k, { type: 'teamRemove', teamId: 'dw' }).kit).toEqual({})
+  // Only the operative goes: the entry stays and keeps its used mark, but stops naming a model
+  // nobody can see. `setRoster` bypasses `normalize` on purpose, like the other roster cases, so
+  // this lands on the next setup edit — and until then the dangling id is simply inert, which is
+  // the same trade `pairUsed` and `effectsFor` already make.
+  const cut = reduce(k, { type: 'setRoster', teamId: 'dw', ops: teamOps(k, 'dw').slice(1) })
+  const after = reduce(cut, { type: 'teamPatch', teamId: 'dw', patch: { short: 'DW' } })
+  expect(after.kit[kitKey('dw', 'Digital Weapons')].op).toBeUndefined()
+  expect(after.kit[kitKey('dw', 'Digital Weapons')].used).toBe(1)
+})
+
+test('a snapshot missing a whole top-level field is merged, not fatal', () => {
+  // The distinction that cost a white screen: `replace` merges over `initialGame()` at the TOP
+  // level, so ADDING a field is safe forever — `picks`, `effects` and `kit` all arrived this way.
+  // What the merge never reaches is a shape change nested inside an array element, which is why
+  // `Effect.fx` needed repairing in `normalize` and this does not.
+  const { kit: _kit, effects: _fx, picks: _p, ...old } = initialGame()
+  const loaded = reduce(initialGame(), { type: 'replace', game: old as Game })
+  expect(loaded.kit).toEqual({})
+  expect(loaded.effects).toEqual([])
+  expect(loaded.picks).toBe(true)
+  expect(() => reduce(loaded, { type: 'nextTp' })).not.toThrow()
 })

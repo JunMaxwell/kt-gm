@@ -31,7 +31,7 @@ the table. If it runs away with the game, the cheapest dial is a Crit Op VP hand
 
 ```
 bun dev            # the user usually has this running on 5173 — do not kill it
-bun test           # 208 tests: the reducer, and a render pass over every panel
+bun test           # 215 tests: the reducer, and a render pass over every panel
 bun run lint       # oxlint
 bun run build      # tsc -b && vite build
 bun run preview    # serves at /, matching production
@@ -91,6 +91,7 @@ the section markers that were already in it:
 | `ui/TeamPicker.tsx` | The spectator's "who are you playing?" screen, and claiming a team |
 | `ui/Draft.tsx` | The player's own list: a carousel per tab — operatives, faction gear, universal gear |
 | `ui/Effects.tsx` | The effect form and the in-effect list. Shared by the GM's drawer and a phone |
+| `ui/KitRow.tsx` | The controls under a piece of equipment: used, and who carries it |
 | `ui/render.test.tsx` | Renders every panel at 2 sides, 3 sides, a degenerate 1-team match and a blank new game |
 
 Two conventions the split rests on:
@@ -456,7 +457,7 @@ Conventions that exist for a reason:
 
 ## Testing
 
-`bun test` is 208 tests in two files:
+`bun test` is 215 tests in two files:
 
 - `src/state.test.ts` — the reducer, the selectors and the weapon-rules glossary. `withHistory` is
   exported purely so undo is testable without a React harness.
@@ -2238,6 +2239,11 @@ Three traps, each of which bit once:
 **Equipment needs no `Effect` record at all.** Gear is chosen rather than used, so `liveStats`
 folds `team.gear` straight in off the team — it is simply always on.
 
+**Adding a top-level field to `Game` is safe; changing a shape nested inside one is not.**
+`replace` merges over `initialGame()` at the TOP level, which is why `picks`, `effects` and `kit`
+all arrived without a migration. The merge never reaches inside an array element — and that is
+exactly where the next paragraph's bug lived. A test pins both halves.
+
 **`normalize` coerces `Effect.fx` to an array, and that is not belt-and-braces.** `replace` merges
 over `initialGame()` at the TOP level only — nothing defaults a field nested inside an array. When
 `Effect` changed from inline deltas to an `fx` list, stale snapshots kept their old shape and
@@ -2315,6 +2321,36 @@ single-operative guard above.
 - The form's **`free`** toggle applies a ploy at 0CP. Several rules hand one out — the Watch
   Sergeant's *Strategic Command* does it twice a battle — and a checkbox is cheaper than modelling
   any of them.
+
+## Equipment — what has been used
+
+`TeamDef.gear` is what the player CHOSE. `Game.kit` is what the table is doing with it, keyed
+`teamId::card name` — the same name-keying `gear` already uses, because a `RefCard` has no id.
+The two have different lifetimes: `used` clears every turning point, the choice does not.
+
+**Usage first, carrier second, and that order is the card corpus talking.** Of 196 faction
+equipment cards exactly **three** are scoped to a single model, and all 64 "once per turning
+point" ones are worded kill-team wide — equipment in this edition belongs to a team, not to a
+model. But **103 of 222 cards carry a use limit**, and remembering which are spent is the thing
+nobody at the table can do. So the tick is the feature; the carrier picker is optional and blank
+by default.
+
+- **The limit is read off the card's own text** by `gearUse`: `once per battle`, `once per
+  turning point`, `up to twice per turning point`. That is a regex over prose, which this file
+  warns against — but the three phrasings are exact, **checked against all 222 cards with zero
+  ambiguity**, and the failure mode is mild in a way a rules heuristic never is: a miss costs a
+  tick box, never a wrong number.
+- **`per` is copied onto the entry when it is made**, so `nextTp` can clear the right ones
+  **without the reducer needing a faction chunk loaded** — the same reason `GEAR_BONUS` is keyed
+  by name. A per-turning-point card is ready again; a once-per-battle one stays spent; the
+  carrier survives both.
+- **119 of 222 cards are passive and get no control at all.** A tick box beside a barricade is a
+  question the player has to answer for no reason.
+- **Nothing is ever blocked.** A spent card still shows its rules and its action. The mark is an
+  aid, and the GM is the referee — as with every distance in this app.
+- `kit` is the **fifth** player ask. `normalize` drops a deleted team's kit and clears a carrier
+  who has left the roster; until the next setup edit a dangling id is simply inert, the same
+  trade `pairUsed` and `effectsFor` make.
 
 ## Known gaps
 

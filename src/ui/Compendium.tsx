@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { tacOp, teamTacOps } from '../rules'
 import { cardsOfKind, phaseCards, type RefCard, UNIVERSAL_EQUIPMENT } from '../compendium'
 import { datacardOf } from '../factions'
-import { allTeams, effectsFor, liveStats, teamOps } from '../state'
+import { allTeams, effectsFor, type Kit, liveStats, teamOps } from '../state'
 import { Btn } from './kit'
 import { Carousel, SLIDE_CARD } from './Carousel'
 import { OperativeCard, RefCardView } from './cards'
+import { KitRow } from './KitRow'
 import { EffectForm, EffectList } from './Effects'
 import { type Dispatch, type Game, ployEffect, useFaction } from './shared'
 import { TacOpCard } from './TacOpCard'
@@ -43,12 +44,15 @@ export function Compendium({
   game,
   teamId,
   onPloy,
+  onKit,
 }: {
   game: Game
   teamId: string
   /** Offered where someone may spend the CP — the GM's browser, and a player's own deck. Absent
    *  everywhere else, which keeps the deck the read-only thing it has always been. */
   onPloy?: (card: RefCard) => void
+  /** Same, for marking equipment used and saying who carries it. */
+  onKit?: (card: RefCard, patch: Partial<Kit>) => void
 }) {
   // Teams can be deleted in setup, and a spectator's stored pick may name one that is gone.
   const team = game.teams[teamId] ?? allTeams(game)[0]
@@ -139,6 +143,16 @@ export function Compendium({
               live={live === 'now'}
               going={going.has(c.name)}
               onUse={onPloy && (c.kind === 'strategy' || c.kind === 'firefight') ? () => onPloy(c) : undefined}
+              footer={
+                c.kind === 'equipment' && team ? (
+                  <KitRow
+                    game={game}
+                    teamId={team.id}
+                    card={c}
+                    onKit={onKit ? (patch) => onKit(c, patch) : undefined}
+                  />
+                ) : undefined
+              }
               className={SLIDE_CARD}
             />
         ))
@@ -236,6 +250,7 @@ export function CompendiumBrowser({ game, dispatch }: { game: Game; dispatch: Di
           game={game}
           teamId={teamId}
           onPloy={(card) => dispatch(ployEffect(game.teams[teamId]?.faction, card, teamId))}
+          onKit={(card, patch) => dispatch({ type: 'kit', teamId, card: card.name, patch })}
         />
       </div>
     </div>

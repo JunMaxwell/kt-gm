@@ -100,6 +100,27 @@ export type Fx = {
  */
 export type CardFx = Fx[]
 
+/**
+ * How often a piece of equipment may be used, read off its own printed text.
+ *
+ * Of 222 equipment cards in the library, **103 carry a limit and 119 are passive** — a barricade
+ * or a camo cloak is simply on, and gets no control at all. Of the 103, all but seven are a
+ * single boolean; the seven are "up to twice per turning point".
+ *
+ * This is a regex over prose, which this file warns against elsewhere — but the three phrasings
+ * are exact, and **checked against all 222 cards with zero ambiguity**. The failure mode is also
+ * mild in a way a rules heuristic never is: a miss costs a tick box, never a wrong number.
+ * Nothing is ever blocked either; the mark is an aid, and the GM is the referee.
+ */
+export const gearUse = (text: string): { per: 'tp' | 'battle'; max: number } | undefined =>
+  /up to twice per turning point/i.test(text)
+    ? { per: 'tp', max: 2 }
+    : /once per turning point/i.test(text)
+      ? { per: 'tp', max: 1 }
+      : /once per battle/i.test(text)
+        ? { per: 'battle', max: 1 }
+        : undefined
+
 
 
 export const KIND_LABEL: Record<RefKind, string> = {
